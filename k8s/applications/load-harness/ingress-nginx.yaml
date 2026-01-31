@@ -1,0 +1,83 @@
+---
+# NGINX Ingress for load-harness
+#
+# =============================================================================
+# MIGRATION FROM ALB TO NGINX
+# =============================================================================
+#
+# Previous: ingress.yaml.disabled (ALB-based ingress)
+# Current:  ingress-nginx.yaml (NGINX Ingress for Flagger traffic splitting)
+#
+# Why the change:
+#   - ALB does not support weighted routing for canary deployments
+#   - Flagger requires meshProvider: nginx for true traffic splitting
+#   - NGINX Ingress uses canary annotations managed by Flagger
+#
+# Traffic flow (with TLS):
+#   Internet -> AWS NLB (TCP) -> NGINX Ingress (TLS termination) -> load-harness
+#
+# =============================================================================
+# TLS CONFIGURATION (example.com + cert-manager)
+# =============================================================================
+#
+# Cloudflare DNS: app.example.com -> NLB hostname (managed by workflow)
+# cert-manager requests Let's Encrypt certificate for app.example.com
+#
+# Certificate lifecycle:
+#   1. rebuild-stack.yml updates Cloudflare DNS to point to NLB
+#   2. cert-manager sees the TLS config and requests certificate
+#   3. Let's Encrypt performs HTTP-01 challenge
+#   4. Certificate stored in load-harness-tls secret
+#   5. NGINX uses cert for TLS termination
+#
+# =============================================================================
+# FLAGGER CANARY
+# =============================================================================
+#
+# During canary analysis, Flagger will:
+#   1. Create a canary ingress (load-harness-canary) as a copy of this ingress
+#   2. Add annotation: nginx.ingress.kubernetes.io/canary: "true"
+#   3. Set annotation: nginx.ingress.kubernetes.io/canary-weight: "<percentage>"
+#   4. NGINX routes <percentage>% of traffic to canary pods
+#
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: load-harness
+  namespace: applications
+  annotations:
+    # TLS certificate management via cert-manager
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Force HTTPS redirect after certificate is ready
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Health check configuration
+    nginx.ingress.kubernetes.io/healthcheck-path: /health
+    # Connection and timeout settings
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    # Note: Security headers (CSP, Permissions-Policy, COOP, CORP, etc.) are
+    # implemented in the Flask application middleware (security_headers.py)
+    # rather than NGINX, as configuration-snippet requires allow-snippet-annotations.
+  labels:
+    app: load-harness
+    managed-by: flux
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.example.com
+      secretName: load-harness-tls
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Apex service - Flagger manages traffic splitting
+                name: load-harness
+                port:
+                  number: 5000

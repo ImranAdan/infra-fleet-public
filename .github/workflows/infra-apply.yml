@@ -1,0 +1,113 @@
+name: Infra Apply (main)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'infrastructure/**'
+      - '!infrastructure/**/*.md'  # Exclude markdown files
+
+env:
+  AWS_REGION: eu-west-2
+
+permissions:
+  contents: write  # Flux needs write access to commit sync manifests
+  id-token: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      staging: ${{ steps.detect.outputs.staging-changed }}
+      permanent: ${{ steps.detect.outputs.permanent-changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed stacks
+        id: detect
+        uses: ./.github/actions/detect-terraform-changes
+        with:
+          base-ref: ${{ github.event.before }}
+          head-ref: ${{ github.sha }}
+
+  apply-staging:
+    name: Deploy Infrastructure
+    needs: detect
+    if: needs.detect.outputs.staging == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ vars.ENVIRONMENT || 'staging' }}
+      url: https://github.com/${{ github.repository }}/deployments
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup AWS and Terraform
+        uses: ./.github/actions/setup-aws-terraform
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          session-name: GitHubActions-Apply
+          tf-api-token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform fmt (check)
+        run: terraform -chdir=infrastructure/staging fmt -check
+
+      - name: Terraform init
+        run: |
+          UPGRADE_FLAG=""
+          if [[ "$COMMIT_MESSAGE" == deps:* ]] || [[ "$COMMIT_MESSAGE" == *"dependabot"* ]]; then
+            UPGRADE_FLAG="-upgrade"
+          fi
+          terraform -chdir=infrastructure/staging init -input=false $UPGRADE_FLAG
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+
+      - name: Terraform plan (staging)
+        run: terraform -chdir=infrastructure/staging plan -input=false
+        env:
+          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+
+      - name: Terraform apply (staging)
+        run: terraform -chdir=infrastructure/staging apply -input=false -auto-approve
+        env:
+          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+
+  apply-permanent:
+    needs: detect
+    if: needs.detect.outputs.permanent == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup AWS and Terraform
+        uses: ./.github/actions/setup-aws-terraform
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          session-name: GitHubActions-Apply
+          tf-api-token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform fmt (check)
+        run: terraform -chdir=infrastructure/permanent fmt -check
+
+      - name: Terraform init
+        run: |
+          UPGRADE_FLAG=""
+          if [[ "$COMMIT_MESSAGE" == deps:* ]] || [[ "$COMMIT_MESSAGE" == *"dependabot"* ]]; then
+            UPGRADE_FLAG="-upgrade"
+          fi
+          terraform -chdir=infrastructure/permanent init -input=false $UPGRADE_FLAG
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+
+      - name: Terraform plan (permanent)
+        run: terraform -chdir=infrastructure/permanent plan -input=false
+
+      - name: Terraform apply (permanent)
+        run: terraform -chdir=infrastructure/permanent apply -input=false -auto-approve

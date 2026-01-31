@@ -1,0 +1,31 @@
+# Trivy IaC Scanning - Ignored Findings
+# ======================================
+# These findings are documented and accepted risks for this platform.
+# See docs/terraform-cloud-eks-ddr.md for detailed rationale.
+
+# AVD-AWS-0040: Public cluster access is enabled
+# Reason: Required for Terraform Cloud workers to reach EKS API
+# Mitigation: IAM authentication required, no anonymous access
+# Documentation: docs/terraform-cloud-eks-ddr.md
+AVD-AWS-0040
+
+# AVD-AWS-0041: Cluster allows access from public CIDR 0.0.0.0/0
+# Reason: Terraform Cloud workers have dynamic IPs, cannot whitelist
+# Mitigation: IAM authentication required, no anonymous access
+# Documentation: docs/terraform-cloud-eks-ddr.md
+AVD-AWS-0041
+
+# AVD-AWS-0104: Security group rule allows unrestricted egress
+# Reason: EKS worker nodes require outbound access to pull container images
+# from ECR, Docker Hub, ghcr.io, quay.io, and other registries
+# Mitigation: Standard Kubernetes pattern, nodes are in private subnets
+AVD-AWS-0104
+
+
+# AVD-AWS-0039: EKS cluster secrets encryption requires customer-managed KMS key
+# Reason: Cost optimization - CMK costs $1/month and creates orphaned keys on destroy
+# Reality: Secrets ARE still encrypted using AWS-managed encryption (encryption_config = null)
+# Trade-off: No customer control over key rotation (AWS manages it)
+# Re-evaluate: Enable CMK for production environments requiring key rotation control
+# Documentation: https://github.com/terraform-aws-modules/terraform-aws-eks/blob/master/docs/UPGRADE-21.0.md
+AVD-AWS-0039

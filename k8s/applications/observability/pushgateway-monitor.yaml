@@ -1,0 +1,22 @@
+# ServiceMonitor for Pushgateway
+# This is in applications (not infrastructure) because the ServiceMonitor CRD
+# is installed by kube-prometheus-stack HelmRelease in infrastructure.
+# The applications kustomization depends on infrastructure, ensuring the CRD exists.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pushgateway
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - observability
+  selector:
+    matchLabels:
+      app: pushgateway
+  endpoints:
+    - port: http
+      path: /metrics

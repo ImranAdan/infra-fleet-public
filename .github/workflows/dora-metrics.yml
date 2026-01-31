@@ -1,0 +1,259 @@
+name: DORA Metrics Collector
+
+on:
+  workflow_run:
+    workflows:
+      - Rebuild Stack (Manual)
+      - Infra Apply (main)
+      - Load Harness CI
+    types:
+      - completed
+  # schedule:
+  #   - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-west-2
+  PUSHGATEWAY_URL: http://127.0.0.1:9091
+
+jobs:
+  workflow-metrics:
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-session-name: GitHubActions-DoraMetrics-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check cluster exists
+        id: cluster
+        run: |
+          if aws eks describe-cluster --name staging --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure kubectl
+        if: steps.cluster.outputs.exists == 'true'
+        uses: ./.github/actions/configure-eks-kubectl
+        with:
+          cluster-name: staging
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Map workflow context
+        id: context
+        env:
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+
+          if [ "$WORKFLOW_EVENT" = "pull_request" ]; then
+            echo "Skipping pull_request workflow run"
+            exit 0
+          fi
+
+          case "$WORKFLOW_NAME" in
+            "Rebuild Stack (Manual)") SOURCE="rebuild-stack" ;;
+            "Infra Apply (main)") SOURCE="infra-apply" ;;
+            "Load Harness CI") SOURCE="load-harness-ci" ;;
+            *) echo "Unknown workflow: $WORKFLOW_NAME"; exit 0 ;;
+          esac
+
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "status=${CONCLUSION:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "sha=${HEAD_SHA:-}" >> "$GITHUB_OUTPUT"
+          echo "ref=${HEAD_BRANCH:-}" >> "$GITHUB_OUTPUT"
+          echo "run_id=${RUN_ID:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Check Pushgateway ready
+        id: pushgateway
+        if: steps.cluster.outputs.exists == 'true'
+        run: |
+          # Check if Pushgateway service exists (observability stack deployed)
+          if ! kubectl -n observability get svc pushgateway >/dev/null 2>&1; then
+            echo "Pushgateway service not found - observability stack not yet deployed"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Port-forward Pushgateway
+        if: steps.cluster.outputs.exists == 'true' && steps.pushgateway.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          kubectl -n observability port-forward svc/pushgateway 9091:9091 >/tmp/pushgateway.log 2>&1 &
+          PF_PID=$!
+          for i in {1..10}; do
+            if curl -sf "$PUSHGATEWAY_URL/-/ready" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -sf "$PUSHGATEWAY_URL/-/ready" >/dev/null; then
+            echo "Pushgateway not reachable"
+            cat /tmp/pushgateway.log || true
+            kill "$PF_PID" || true
+            exit 1
+          fi
+
+      - name: Push workflow metrics
+        if: steps.cluster.outputs.exists == 'true' && steps.pushgateway.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE: ${{ steps.context.outputs.source }}
+          STATUS: ${{ steps.context.outputs.status }}
+          SHA: ${{ steps.context.outputs.sha }}
+          REF: ${{ steps.context.outputs.ref }}
+          RUN_ID: ${{ steps.context.outputs.run_id }}
+        run: |
+          set -euo pipefail
+
+          NOW=$(date +%s)
+          LEAD_TIME=""
+
+          if [ -n "$SHA" ]; then
+            COMMIT_TIME=$(gh api repos/${{ github.repository }}/commits/"$SHA" --jq '.commit.committer.date')
+            COMMIT_TS=$(date -u -d "$COMMIT_TIME" +%s)
+            LEAD_TIME=$((NOW - COMMIT_TS))
+          fi
+
+          printf '%s\n' \
+            "dora_workflow_deploy_event{source=\"$SOURCE\",status=\"$STATUS\",sha=\"$SHA\",ref=\"$REF\"} 1" \
+            "dora_workflow_deploy_timestamp{source=\"$SOURCE\",status=\"$STATUS\",sha=\"$SHA\"} $NOW" | \
+            curl -sSf --data-binary @- "$PUSHGATEWAY_URL/metrics/job/dora_workflow/source/$SOURCE/run/$RUN_ID"
+
+          if [ -n "$LEAD_TIME" ]; then
+            printf '%s\n' \
+              "dora_workflow_lead_time_seconds{source=\"$SOURCE\",status=\"$STATUS\",sha=\"$SHA\"} $LEAD_TIME" | \
+              curl -sSf --data-binary @- "$PUSHGATEWAY_URL/metrics/job/dora_workflow_lead/source/$SOURCE/run/$RUN_ID"
+          fi
+
+  cluster-metrics:
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-session-name: GitHubActions-DoraCluster-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check cluster exists
+        id: cluster
+        run: |
+          if aws eks describe-cluster --name staging --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure kubectl
+        if: steps.cluster.outputs.exists == 'true'
+        uses: ./.github/actions/configure-eks-kubectl
+        with:
+          cluster-name: staging
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check Pushgateway ready
+        id: pushgateway
+        if: steps.cluster.outputs.exists == 'true'
+        run: |
+          # Check if Pushgateway service exists (observability stack deployed)
+          if ! kubectl -n observability get svc pushgateway >/dev/null 2>&1; then
+            echo "Pushgateway service not found - observability stack not yet deployed"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Port-forward Pushgateway
+        if: steps.cluster.outputs.exists == 'true' && steps.pushgateway.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          kubectl -n observability port-forward svc/pushgateway 9091:9091 >/tmp/pushgateway.log 2>&1 &
+          PF_PID=$!
+          for i in {1..10}; do
+            if curl -sf "$PUSHGATEWAY_URL/-/ready" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -sf "$PUSHGATEWAY_URL/-/ready" >/dev/null; then
+            echo "Pushgateway not reachable"
+            cat /tmp/pushgateway.log || true
+            kill "$PF_PID" || true
+            exit 1
+          fi
+
+      - name: Push Flux metrics
+        if: steps.cluster.outputs.exists == 'true' && steps.pushgateway.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NOW=$(date +%s)
+          KUSTOMIZATION_JSON=$(kubectl get kustomization applications -n flux-system -o json)
+          REV=$(echo "$KUSTOMIZATION_JSON" | jq -r '.status.lastAppliedRevision // empty')
+          READY=$(echo "$KUSTOMIZATION_JSON" | jq -r '.status.conditions[]? | select(.type=="Ready") | .status' | head -1)
+
+          if [ -z "$REV" ]; then
+            echo "No Flux revision found"
+            exit 0
+          fi
+
+          REV_SHA="${REV##*:}"
+          LEAD_TIME=""
+          if [ -n "$REV_SHA" ]; then
+            COMMIT_TIME=$(gh api repos/${{ github.repository }}/commits/"$REV_SHA" --jq '.commit.committer.date')
+            COMMIT_TS=$(date -u -d "$COMMIT_TIME" +%s)
+            LEAD_TIME=$((NOW - COMMIT_TS))
+          fi
+
+          printf '%s\n' \
+            "dora_flux_applied_timestamp{revision=\"$REV\",ready=\"$READY\"} $NOW" \
+            "dora_flux_ready{revision=\"$REV\",ready=\"$READY\"} 1" | \
+            curl -sSf --data-binary @- "$PUSHGATEWAY_URL/metrics/job/dora_flux/revision/$REV_SHA"
+
+          if [ -n "$LEAD_TIME" ]; then
+            printf '%s\n' \
+              "dora_flux_lead_time_seconds{revision=\"$REV\"} $LEAD_TIME" | \
+              curl -sSf --data-binary @- "$PUSHGATEWAY_URL/metrics/job/dora_flux_lead/revision/$REV_SHA"
+          fi
+
+      - name: Push Flagger canary status
+        if: steps.cluster.outputs.exists == 'true' && steps.pushgateway.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          NOW=$(date +%s)
+          CANARY_JSON=$(kubectl get canary -n applications -o json 2>/dev/null || echo '{"items":[]}')
+
+          echo "$CANARY_JSON" | jq -r '.items[] | [.metadata.name, (.status.phase // "Unknown")] | @tsv' | while IFS=$'\t' read -r NAME PHASE; do
+            if [ -n "$NAME" ]; then
+              printf '%s\n' \
+                "dora_flagger_canary_phase{canary=\"$NAME\",phase=\"$PHASE\"} 1" \
+                "dora_flagger_canary_timestamp{canary=\"$NAME\",phase=\"$PHASE\"} $NOW" | \
+                curl -sSf --data-binary @- "$PUSHGATEWAY_URL/metrics/job/dora_flagger/canary/$NAME"
+            fi
+          done

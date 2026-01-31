@@ -1,0 +1,32 @@
+# GitHub Actions Self-Hosted Runner
+#
+# Usage:
+#   1. Create .env file with your GITHUB_TOKEN
+#   2. docker-compose up -d
+#
+# Or run directly:
+#   GITHUB_TOKEN=your-token docker-compose up -d
+#
+
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: infra-fleet-runner
+    restart: unless-stopped
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - RUNNER_NAME=${RUNNER_NAME:-docker-runner}
+      - RUNNER_LABELS=${RUNNER_LABELS:-self-hosted,Linux,X64,docker}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-your-org/infra-fleet}
+    volumes:
+      # Mount Docker socket for docker-in-docker builds
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persist runner configuration
+      - runner-data:/home/runner/_work
+    # Allow access to host network for AWS credential retrieval if needed
+    # network_mode: host  # Uncomment if needed for IMDS access
+
+volumes:
+  runner-data:

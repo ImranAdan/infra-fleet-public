@@ -1,0 +1,11 @@
+---
+# Namespace for NGINX Ingress Controller
+#
+# Separate namespace following Kubernetes convention for ingress controllers.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/managed-by: flux

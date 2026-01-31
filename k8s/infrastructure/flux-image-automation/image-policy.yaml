@@ -1,0 +1,20 @@
+# ImagePolicy - Selects which image tag to use
+# Uses SemVer ordering on release tags
+# Tag format: vX.Y.Z (e.g., v0.1.0)
+# See: https://fluxcd.io/flux/components/image/imagepolicies/
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: load-harness
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: load-harness
+  # Filter tags matching SemVer with a v prefix
+  filterTags:
+    pattern: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+  policy:
+    # SemVer ordering - highest version = newest image
+    semver:
+      range: '>=1.0.0'

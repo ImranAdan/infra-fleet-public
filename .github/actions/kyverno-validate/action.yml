@@ -1,0 +1,59 @@
+# --------------------------------------------------------------------------------------------------
+# Kyverno Policy Validation Composite Action
+# Validates Kubernetes manifests against Kyverno policies using the Kyverno CLI.
+# This provides shift-left policy enforcement before manifests reach the cluster.
+# --------------------------------------------------------------------------------------------------
+name: 'Kyverno Policy Validate'
+description: 'Validate Kubernetes manifests against Kyverno policies'
+
+inputs:
+  policy-path:
+    description: 'Path to directory containing Kyverno policies'
+    required: true
+    default: 'policies/'
+  resource-path:
+    description: 'Path to directory containing Kubernetes manifests (application workloads)'
+    required: true
+    default: 'k8s/applications/'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Kyverno CLI
+      shell: bash
+      run: |
+        KYVERNO_VERSION="1.13.4"
+        curl -sSL "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz" | tar xz -C /tmp
+        chmod +x /tmp/kyverno
+        sudo mv /tmp/kyverno /usr/local/bin/
+
+    - name: Check for policies
+      shell: bash
+      id: check-policies
+      run: |
+        if [ -d "${{ inputs.policy-path }}" ] && [ "$(ls -A ${{ inputs.policy-path }}/*.yaml 2>/dev/null)" ]; then
+          echo "policies_exist=true" >> $GITHUB_OUTPUT
+          echo "Found Kyverno policies in ${{ inputs.policy-path }}"
+        else
+          echo "policies_exist=false" >> $GITHUB_OUTPUT
+          echo "No Kyverno policies found in ${{ inputs.policy-path }}, skipping validation"
+        fi
+
+    - name: Validate against policies
+      shell: bash
+      if: steps.check-policies.outputs.policies_exist == 'true'
+      run: |
+        echo "Validating manifests against Kyverno policies..."
+
+        # Find all YAML files and format as --resource flags (one per file)
+        RESOURCE_FLAGS=$(find ${{ inputs.resource-path }} -name "*.yaml" -o -name "*.yml" | sed 's/^/--resource /' | tr '\n' ' ')
+
+        if [ -n "$RESOURCE_FLAGS" ]; then
+          echo "Found resources in ${{ inputs.resource-path }}"
+          echo ""
+          kyverno apply ${{ inputs.policy-path }} $RESOURCE_FLAGS --table
+          echo ""
+          echo "Kyverno policy validation passed"
+        else
+          echo "No resource files found to validate"
+        fi

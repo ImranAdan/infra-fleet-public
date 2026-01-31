@@ -1,0 +1,80 @@
+{# Pod metrics partial - shows per-pod CPU/Memory for Cluster Load tab #}
+{# Polled via HTMX every 3s when Cluster Load tab is active #}
+{% if is_local %}
+{# Local mode - single container #}
+<div class="space-y-2">
+    <div class="p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg">
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+                <span class="text-xs font-medium text-gray-700 dark:text-gray-200">Local Container</span>
+            </div>
+            <span class="text-xs text-gray-500 dark:text-gray-400 font-mono">single</span>
+        </div>
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+            Pod metrics not available locally (no cAdvisor). In Kubernetes, this panel shows per-pod CPU and memory usage with live data from Prometheus.
+        </p>
+    </div>
+</div>
+<p class="mt-2 text-xs text-gray-400 dark:text-gray-500 text-center">Local development mode</p>
+{% elif pods %}
+<div class="space-y-2">
+    {% for pod in pods %}
+    <div class="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+                <span class="text-xs font-medium text-blue-800 dark:text-blue-200">Running</span>
+            </div>
+            <span class="text-xs text-blue-600 dark:text-blue-400 font-mono">{{ pod.short_name }}</span>
+        </div>
+
+        {# CPU Usage Bar #}
+        <div class="mb-2">
+            <div class="flex justify-between text-xs text-blue-600 dark:text-blue-400 mb-1">
+                <span>CPU</span>
+                <span class="font-medium {% if pod.cpu_percent and pod.cpu_percent > 80 %}text-red-600 dark:text-red-400{% elif pod.cpu_percent and pod.cpu_percent > 50 %}text-yellow-600 dark:text-yellow-400{% endif %}">
+                    {{ pod.cpu_percent if pod.cpu_percent is not none else '--' }}%
+                </span>
+            </div>
+            <div class="w-full bg-blue-100 dark:bg-blue-900/50 rounded-full h-1.5">
+                {% set cpu_width = pod.cpu_percent if pod.cpu_percent is not none else 0 %}
+                {% set cpu_color = 'bg-red-500' if cpu_width > 80 else ('bg-yellow-500' if cpu_width > 50 else 'bg-blue-500') %}
+                <div class="{{ cpu_color }} h-1.5 rounded-full transition-all duration-300" style="width: {{ [cpu_width, 100] | min }}%"></div>
+            </div>
+        </div>
+
+        {# Memory Usage Bar #}
+        <div>
+            <div class="flex justify-between text-xs text-blue-600 dark:text-blue-400 mb-1">
+                <span>Memory</span>
+                <span class="font-medium {% if pod.memory_percent and pod.memory_percent > 80 %}text-red-600 dark:text-red-400{% elif pod.memory_percent and pod.memory_percent > 50 %}text-yellow-600 dark:text-yellow-400{% endif %}">
+                    {{ pod.memory_percent if pod.memory_percent is not none else '--' }}%
+                </span>
+            </div>
+            <div class="w-full bg-blue-100 dark:bg-blue-900/50 rounded-full h-1.5">
+                {% set mem_width = pod.memory_percent if pod.memory_percent is not none else 0 %}
+                {% set mem_color = 'bg-red-500' if mem_width > 80 else ('bg-yellow-500' if mem_width > 50 else 'bg-green-500') %}
+                <div class="{{ mem_color }} h-1.5 rounded-full transition-all duration-300" style="width: {{ [mem_width, 100] | min }}%"></div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+<p class="mt-2 text-xs text-gray-400 dark:text-gray-500 text-center">Live from Prometheus</p>
+{% else %}
+<div class="text-center py-4">
+    <svg class="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+              d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
+    </svg>
+    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">No pods found</p>
+    <p class="text-xs text-gray-400 dark:text-gray-500">Waiting for Prometheus metrics...</p>
+</div>
+{% endif %}

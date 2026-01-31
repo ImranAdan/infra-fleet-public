@@ -1,0 +1,326 @@
+name: Nightly Stack Destruction
+
+on:
+  schedule:
+    - cron: '0 20 * * *'  # 8 PM UTC every night - hard stop for work day
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual destroy (optional)'
+        required: false
+        default: 'On-demand stack destruction'
+        type: string
+      force:
+        description: 'Force destroy even if cleanup fails'
+        required: false
+        default: false
+        type: boolean
+
+# Global environment variables
+env:
+  AWS_REGION: eu-west-2
+  CLUSTER_NAME: staging
+
+jobs:
+  # ===========================================================================
+  # Job 1: Pre-Destroy Verification
+  # ===========================================================================
+  pre-verification:
+    name: 📊 Pre-Destroy Verification
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      cluster_exists: ${{ steps.check.outputs.cluster_exists }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-session-name: GitHubActions-PreVerify-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check if cluster exists
+        id: check
+        run: |
+          if aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }} &>/dev/null; then
+            echo "cluster_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Cluster found: ${{ env.CLUSTER_NAME }}"
+          else
+            echo "cluster_exists=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  Cluster not found - may already be destroyed"
+          fi
+
+      - name: Run verification script
+        run: |
+          chmod +x scripts/verify-cleanup-resources.sh
+          ./scripts/verify-cleanup-resources.sh ${{ env.CLUSTER_NAME }} ${{ env.AWS_REGION }} || true
+
+  # ===========================================================================
+  # Job 2: Kubernetes Resource Cleanup
+  # ===========================================================================
+  cleanup-kubernetes:
+    name: 🧹 Cleanup Kubernetes Resources
+    runs-on: ubuntu-latest
+    needs: pre-verification
+    # Run even if cluster doesn't exist (to clean orphaned AWS resources)
+    if: always()
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-session-name: GitHubActions-Cleanup-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run Kubernetes cleanup
+        uses: ./.github/actions/cleanup-kubernetes-resources
+        with:
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          aws-region: ${{ env.AWS_REGION }}
+          mode: 'live'
+          run-verification: 'false'  # Separate verification jobs handle this
+
+  # ===========================================================================
+  # Job 3: Post-Cleanup Verification
+  # ===========================================================================
+  post-verification:
+    name: ✅ Post-Cleanup Verification
+    runs-on: ubuntu-latest
+    needs: cleanup-kubernetes
+    if: always()
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      cleanup_successful: ${{ steps.verify.outputs.success }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-session-name: GitHubActions-PostVerify-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify cleanup results
+        id: verify
+        run: |
+          echo "Checking for orphaned resources..."
+
+          # Check for orphaned ALBs
+          ALB_COUNT=0
+          ALB_ARNS=$(aws elbv2 describe-load-balancers --region ${{ env.AWS_REGION }} \
+            --query 'LoadBalancers[*].LoadBalancerArn' --output text 2>/dev/null || echo "")
+
+          if [ -n "$ALB_ARNS" ]; then
+            for alb_arn in $ALB_ARNS; do
+              CLUSTER_TAG=$(aws elbv2 describe-tags --resource-arns "$alb_arn" \
+                --region ${{ env.AWS_REGION }} \
+                --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster' && Value=='${{ env.CLUSTER_NAME }}'].Value" \
+                --output text 2>/dev/null || echo "")
+              if [ -n "$CLUSTER_TAG" ]; then
+                ALB_COUNT=$((ALB_COUNT + 1))
+              fi
+            done
+          fi
+
+          # Check for orphaned ENIs
+          ENI_COUNT=$(aws ec2 describe-network-interfaces \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:kubernetes.io/cluster/${{ env.CLUSTER_NAME }},Values=owned" \
+            --query 'NetworkInterfaces[*].NetworkInterfaceId' \
+            --output text 2>/dev/null | wc -w | tr -d ' ')
+
+          echo "Remaining orphaned resources:"
+          echo "  - ALBs: $ALB_COUNT"
+          echo "  - ENIs: $ENI_COUNT"
+
+          if [ "$ALB_COUNT" -gt 0 ] || [ "$ENI_COUNT" -gt 0 ]; then
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "❌ Orphaned resources detected - Terraform destroy may fail!"
+            exit 1
+          else
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ All critical resources cleaned - safe to proceed with Terraform destroy"
+          fi
+
+  # ===========================================================================
+  # Job 4: Terraform Destroy
+  # ===========================================================================
+  terraform-destroy:
+    name: 🔥 Terraform Destroy
+    runs-on: ubuntu-latest
+    needs: [cleanup-kubernetes, post-verification]
+    # Only run if cleanup succeeded OR if we're forcing destroy
+    if: needs.post-verification.outputs.cleanup_successful == 'true' || github.event.inputs.force == 'true'
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup AWS and Terraform
+        uses: ./.github/actions/setup-aws-terraform
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          session-name: GitHubActions-TerraformDestroy
+          tf-api-token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Destroy
+        working-directory: infrastructure/staging
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔥 TERRAFORM DESTRUCTION"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "⚠️  DESTROYING: Ephemeral infrastructure (infrastructure/staging/)"
+          echo "✅ PRESERVING: Permanent infrastructure (infrastructure/permanent/)"
+          echo ""
+
+          terraform init -input=false
+          terraform destroy -auto-approve -lock=false
+        env:
+          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+
+  # ===========================================================================
+  # Job 5: Final Verification & Reporting
+  # ===========================================================================
+  final-report:
+    name: 📋 Final Report
+    runs-on: ubuntu-latest
+    needs: [pre-verification, cleanup-kubernetes, post-verification, terraform-destroy]
+    if: always()
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-session-name: GitHubActions-FinalReport-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Generate final report
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📋 DESTROY WORKFLOW SUMMARY"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Job Results:"
+          echo "  1. Pre-Verification:    ${{ needs.pre-verification.result }}"
+          echo "  2. Cleanup:             ${{ needs.cleanup-kubernetes.result }}"
+          echo "  3. Post-Verification:   ${{ needs.post-verification.result }}"
+          echo "  4. Terraform Destroy:   ${{ needs.terraform-destroy.result }}"
+          echo ""
+
+          # Determine overall success
+          if [ "${{ needs.terraform-destroy.result }}" == "success" ]; then
+            echo "✅ DESTROY COMPLETED SUCCESSFULLY"
+            echo ""
+            echo "Summary:"
+            echo "  - Kubernetes resources cleaned"
+            echo "  - Terraform infrastructure destroyed"
+            echo "  - Permanent infrastructure (OIDC, IAM) preserved"
+            echo ""
+            echo "Next scheduled run: Tomorrow at 8 PM UTC"
+          else
+            echo "❌ DESTROY FAILED"
+            echo ""
+            echo "Check individual job logs above for details"
+          fi
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      - name: Check if infrastructure still exists (idempotency check)
+        run: |
+          echo ""
+          echo "🔍 Idempotency Check - Verifying nothing remains..."
+          echo ""
+
+          # Check if cluster exists
+          if aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }} &>/dev/null; then
+            echo "⚠️  WARNING: Cluster still exists!"
+            exit 1
+          else
+            echo "✅ Cluster destroyed"
+          fi
+
+          # Check for VPC
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:kubernetes.io/cluster/${{ env.CLUSTER_NAME }},Values=shared,owned" \
+            --query 'Vpcs[0].VpcId' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+            echo "⚠️  WARNING: VPC still exists: $VPC_ID"
+            exit 1
+          else
+            echo "✅ VPC destroyed"
+          fi
+
+          echo ""
+          echo "✅ Idempotency verified - all resources destroyed"
+
+      - name: Create issue on failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `Nightly Destroy Failed - ${new Date().toISOString().split('T')[0]}`;
+            const body = `## Nightly Destroy Failure Report
+
+            **Date**: ${new Date().toISOString()}
+            **Run ID**: ${{ github.run_id }}
+            **Workflow**: [View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            ### Job Results
+
+            | Job | Status |
+            |-----|--------|
+            | Pre-Verification | ${{ needs.pre-verification.result }} |
+            | Cleanup | ${{ needs.cleanup-kubernetes.result }} |
+            | Post-Verification | ${{ needs.post-verification.result }} |
+            | Terraform Destroy | ${{ needs.terraform-destroy.result }} |
+
+            ### Next Steps
+
+            1. Review individual job logs
+            2. Check for orphaned AWS resources
+            3. Manually clean up if needed
+            4. Re-run workflow
+
+            **Labels**: bug, infrastructure, destroy-failure
+            `;
+
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['bug', 'infrastructure', 'destroy-failure']
+            });

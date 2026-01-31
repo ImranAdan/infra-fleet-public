@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-harness
+  namespace: applications
+  labels:
+    app: load-harness
+    managed-by: flux
+spec:
+  # Single replica - HPA will scale up based on CPU load (see issue #129)
+  # Node capacity: t3.large = 35 pods max
+  replicas: 1
+  selector:
+    matchLabels:
+      app: load-harness
+  template:
+    metadata:
+      labels:
+        app: load-harness
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Defense in depth: Dockerfile already runs as non-root (USER app),
+      # but K8s securityContext enforces it and adds additional controls
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: load-harness
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        image: 123456789012.dkr.ecr.eu-west-2.amazonaws.com/load-harness:v1.5.3 # {"$imagepolicy": "flux-system:load-harness"}
+        ports:
+        - containerPort: 5000
+          name: http
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "staging"
+        # APP_VERSION is baked into the Docker image at build time (--build-arg)
+        - name: PORT
+          value: "5000"
+        # API Key authentication - requires X-API-Key header for protected endpoints
+        # Secret created by rebuild-stack.yml from GitHub secret LOAD_HARNESS_API_KEY
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: load-harness-api-key
+              key: api-key
+              optional: true # Auth disabled if secret doesn't exist
+        # Chaos/fault injection - set >0.0 to enable random failures
+        # Used for testing Flagger canary rollbacks
+        - name: FAIL_RATE
+          value: "0.0"
+        # Flask SECRET_KEY for session management
+        # Must be consistent across gunicorn workers to prevent session loss
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: load-harness-secret-key
+              key: secret-key
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "1Gi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 15
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3

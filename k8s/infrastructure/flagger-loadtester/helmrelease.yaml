@@ -1,0 +1,73 @@
+---
+# Flagger Load Tester - Generates traffic for canary analysis
+#
+# =============================================================================
+# WHY THIS IS NEEDED
+# =============================================================================
+#
+# Problem:
+#   Without traffic during canary analysis, Flagger's metrics return NaN
+#   or pass by default. Canaries promote without actual validation.
+#
+# Solution:
+#   The load tester runs `hey` commands during canary analysis to generate
+#   synthetic traffic. Flagger's webhooks trigger the load tester, which
+#   hits the canary endpoints and populates Prometheus metrics.
+#
+# How it works:
+#   1. Canary starts, Flagger calls rollout webhook
+#   2. Webhook triggers load tester to run `hey` against canary service
+#   3. Traffic flows through NGINX Ingress to canary pods
+#   4. Prometheus scrapes NGINX metrics (request-success-rate, latency)
+#   5. Flagger evaluates metrics and decides to advance or rollback
+#
+# =============================================================================
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: flagger-loadtester
+  namespace: flux-system
+spec:
+  # Wait for Flagger to be ready
+  dependsOn:
+    - name: flagger
+      namespace: flux-system
+  interval: 1h
+  # Deploy to applications namespace where the API key secret exists
+  targetNamespace: applications
+  chart:
+    spec:
+      chart: loadtester
+      version: "0.x"
+      sourceRef:
+        kind: HelmRepository
+        name: flagger
+        namespace: flux-system
+      interval: 1h
+  values:
+    fullnameOverride: flagger-loadtester
+
+    # Resource limits for t3.large node
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+    # Command timeout - allows longer load tests
+    cmd:
+      timeout: 5m
+
+    # Mount API key secret for authenticated load tests
+    # Note: Chart uses 'volumes' not 'extraVolumes'
+    volumes:
+      - name: api-key
+        secret:
+          secretName: load-harness-api-key
+
+    volumeMounts:
+      - name: api-key
+        mountPath: /etc/loadtester/secrets
+        readOnly: true

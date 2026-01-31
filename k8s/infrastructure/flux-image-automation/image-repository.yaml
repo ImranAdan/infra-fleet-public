@@ -1,0 +1,19 @@
+# ImageRepository - Scans ECR for new load-harness images
+# Flux image-reflector-controller uses this to discover available tags
+# See: https://fluxcd.io/flux/components/image/imagerepositories/
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: load-harness
+  namespace: flux-system
+spec:
+  # ECR repository URL
+  image: 123456789012.dkr.ecr.eu-west-2.amazonaws.com/load-harness
+  # Scan interval - check for new images every minute
+  interval: 1m
+  # AWS provider enables automatic ECR authentication
+  # Uses EKS Pod Identity (configured in Terraform: flux-image-reflector.tf)
+  # The image-reflector-controller service account is associated with an IAM role
+  # that has ECR read permissions
+  provider: aws

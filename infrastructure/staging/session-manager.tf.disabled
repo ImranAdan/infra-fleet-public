@@ -1,0 +1,215 @@
+# --------------------------------------------------------------------------------------------------
+# Session Manager Jumpbox Resources
+# This file defines all the resources required to create a secure EC2 instance (jumpbox) that can be
+# accessed via AWS Systems Manager (SSM) Session Manager. This jumpbox is used to access the
+# private EKS cluster's Kubernetes API endpoint from within the VPC.
+# --------------------------------------------------------------------------------------------------
+
+# --- IAM Role and Policies for the Jumpbox ---
+
+# Creates the IAM role that the EC2 jumpbox instance will assume.
+resource "aws_iam_role" "session_manager_role" {
+  name = "session-manager-role"
+
+  # The assume role policy allows EC2 instances to assume this role.
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Attaches the AWS managed policy 'AmazonSSMManagedInstanceCore' to the role.
+# This policy grants the necessary permissions for the EC2 instance to be managed by SSM,
+# which is required to use Session Manager.
+resource "aws_iam_role_policy_attachment" "session_manager_policy_attachment" {
+  role       = aws_iam_role.session_manager_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Creates an IAM instance profile, which is a container for an IAM role that you can use
+# to pass role information to an EC2 instance when the instance starts.
+resource "aws_iam_instance_profile" "session_manager_instance_profile" {
+  name = "session-manager-instance-profile"
+  role = aws_iam_role.session_manager_role.name
+}
+
+# Defines a custom IAM policy with permissions needed by the jumpbox to interact with the EKS cluster
+# and other related AWS services.
+resource "aws_iam_policy" "session_manager_eks_viewer_policy" {
+  name        = "session-manager-eks-viewer-policy"
+  description = "Allows Session Manager instance to view EKS cluster details"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          # EKS permissions to describe the cluster and access the API.
+          "eks:DescribeCluster",
+          "eks:ListClusters",
+          "eks:AccessKubernetesApi",
+          "eks:CreateAccessEntry",
+          "eks:AssociateAccessPolicy",
+          # EC2 permissions to describe network components.
+          "ec2:DescribeInstances",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
+          # ECR permissions to pull container images.
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+# Defines a policy to allow management of EKS add-ons from the jumpbox.
+resource "aws_iam_role_policy" "eks_addon_policy" {
+  name = "eks-addon-policy"
+  role = aws_iam_role.session_manager_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "eks:CreateAddon",
+          "eks:DeleteAddon",
+          "eks:DescribeAddon",
+          "eks:ListAddons",
+          "eks:UpdateAddon"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:PassRole"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Attaches the custom EKS viewer policy to the Session Manager role.
+resource "aws_iam_role_policy_attachment" "session_manager_eks_viewer_policy_attachment" {
+  role       = aws_iam_role.session_manager_role.name
+  policy_arn = aws_iam_policy.session_manager_eks_viewer_policy.arn
+}
+
+# --- EC2 Instance and Networking ---
+
+# Data source to get the latest Amazon Linux 2 AMI ID.
+data "aws_ami" "amazon_linux_2" {
+  most_recent = true
+  owners      = ["amazon"]
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+}
+
+# Defines the security group for the Session Manager jumpbox instance.
+resource "aws_security_group" "session_manager_sg" {
+  name        = "session-manager-sg"
+  description = "Security group for the Session Manager instance"
+  vpc_id      = module.vpc.vpc_id
+
+  # Allows all outbound traffic, enabling the jumpbox to connect to AWS services and the internet (via NAT).
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic for SSM"
+  }
+
+  # Allows outbound HTTPS traffic to the entire VPC, which is necessary for the jumpbox
+  # to communicate with the private EKS cluster API endpoint.
+  egress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [module.vpc.vpc_cidr_block]
+    description = "Allow outbound to EKS cluster API (VPC CIDR for testing)"
+  }
+
+  tags = {
+    Name = "session-manager-sg"
+  }
+}
+
+# Creates the EC2 instance that will serve as the jumpbox.
+resource "aws_instance" "session_manager_instance" {
+  # The Amazon Machine Image (AMI) for the instance.
+  ami = data.aws_ami.amazon_linux_2.id
+  # The size of the instance.
+  instance_type = "t3.micro"
+  # Deploys the instance into a public subnet for direct internet access.
+  # This allows downloads of kubectl and AWS CLI while EKS workers stay private.
+  # Session Manager still secured via SSM (no SSH keys needed).
+  subnet_id                   = module.vpc.public_subnets[0]
+  associate_public_ip_address = true
+
+  # Associates the IAM instance profile, granting the instance its permissions.
+  iam_instance_profile = aws_iam_instance_profile.session_manager_instance_profile.name
+  # Associates the security group to control network traffic.
+  vpc_security_group_ids = [aws_security_group.session_manager_sg.id]
+
+  # This user data script runs on instance launch to install necessary tools.
+  user_data = <<-EOF
+              #!/bin/bash
+              yum update -y
+              yum install -y curl unzip
+
+              # Remove any existing AWS CLI v1 installation
+              if command -v aws &>/dev/null; then
+                  echo "AWS CLI v1 found, attempting to remove..."
+                  sudo yum remove -y aws-cli || true
+                  sudo rm -rf /usr/local/bin/aws /usr/local/bin/aws_completer /usr/local/aws-cli || true
+              fi
+
+              # Install AWS CLI v2
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip awscliv2.zip
+              sudo ./aws/install --update
+              rm -rf awscliv2.zip aws/
+
+              # Ensure AWS CLI v2 is in PATH
+              export PATH="/usr/local/bin:$PATH"
+
+              # Install kubectl for interacting with the Kubernetes cluster.
+              curl -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.15/2025-09-19/bin/linux/amd64/kubectl
+              chmod +x ./kubectl
+              sudo mv ./kubectl /usr/local/bin
+
+              # Ensure kubectl is in PATH
+              export PATH="/usr/local/bin:$PATH"
+              EOF
+
+  tags = {
+    Name = "session-manager-instance"
+  }
+}
+
+# --- Outputs ---
+
+# Outputs the ID of the created jumpbox instance, which is needed to connect to it via SSM.
+output "session_manager_instance_id" {
+  value = aws_instance.session_manager_instance.id
+}

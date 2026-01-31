@@ -1,0 +1,74 @@
+# Local development setup with hot reload
+#
+# This file is in local-dev/ directory for better organization.
+# All paths are relative to the parent directory (load-harness/)
+#
+# Usage from load-harness/:
+#   docker-compose -f local-dev/docker-compose.yml up
+#
+# Or use the helper script:
+#   ./local-dev/dev.sh up
+#
+version: '3.8'
+
+services:
+  load-harness:
+    build: ..  # Build from parent directory (load-harness root)
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../src:/app/src  # Mount source directory for hot reload
+    env_file:
+      - ../.env
+    environment:
+      - PYTHONPATH=/app/src
+      - DEBUG_METRICS=1  # Enable Prometheus metrics
+    # Run the app via the package, not a hardcoded path
+    command: ["python", "-m", "load_harness.app"]
+
+  # Test service - runs tests in same environment as app
+  test:
+    build: ..
+    volumes:
+      - ../src:/app/src
+      - ../tests:/app/tests
+    env_file:
+      - ../.env
+    environment:
+      - PYTHONPATH=/app/src
+    command: ["pytest", "tests/", "-v"]
+    profiles:
+      - test
+
+  # Prometheus - scrapes /metrics from load-harness
+  # Access at: http://localhost:9090
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml  # Still in local-dev/
+      - prometheus-data:/prometheus
+    profiles:
+      - observability
+
+  # Grafana - visualization dashboards
+  # Access at: http://localhost:3000 (login: admin/admin)
+  # Dashboard auto-imported via setup script
+  # Note: Pinned to 11.4.0 to match cluster version
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    profiles:
+      - observability
+
+volumes:
+  prometheus-data:
+  grafana-data:

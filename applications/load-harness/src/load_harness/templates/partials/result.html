@@ -1,0 +1,162 @@
+{# Result partial for load test responses #}
+
+{% if status == "success" %}
+<div class="rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 p-4">
+    <div class="flex items-start">
+        <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+            </svg>
+        </div>
+        <div class="ml-3 flex-1">
+            <h3 class="text-sm font-medium text-green-800 dark:text-green-200">
+                {{ test_type }} - {{ data.status|default('Completed')|title }}
+            </h3>
+
+            {% if is_cpu_load %}
+            {# CPU load response (non-blocking) #}
+            <div class="mt-2 text-sm text-green-700 dark:text-green-300">
+                <dl class="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <dt class="font-medium">Job ID</dt>
+                    <dd class="font-mono text-xs">{{ data.job_id }}</dd>
+
+                    <dt class="font-medium">Cores</dt>
+                    <dd>{{ data.cores }}</dd>
+
+                    <dt class="font-medium">Duration</dt>
+                    <dd>{{ data.duration_seconds }}s</dd>
+
+                    <dt class="font-medium">Intensity</dt>
+                    <dd>{{ data.intensity }} / 10</dd>
+                </dl>
+
+                <p class="mt-3 text-xs text-green-600 dark:text-green-400">
+                    {{ data.message }}
+                </p>
+            </div>
+
+            {% elif is_cluster_load %}
+            {# Cluster load response #}
+            <div class="mt-2 text-sm text-green-700 dark:text-green-300">
+                <dl class="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <dt class="font-medium">Total Requests</dt>
+                    <dd>{{ data.total_requests }}</dd>
+
+                    <dt class="font-medium">Successful</dt>
+                    <dd class="text-green-700 dark:text-green-300">{{ data.successful }}</dd>
+
+                    {% if data.failed > 0 %}
+                    <dt class="font-medium">Failed</dt>
+                    <dd class="text-red-600 dark:text-red-400">{{ data.failed }}</dd>
+                    {% endif %}
+
+                    <dt class="font-medium">Iterations/Request</dt>
+                    <dd>{{ "{:,}".format(data.iterations_per_request) }}</dd>
+
+                    <dt class="font-medium">Avg Duration</dt>
+                    <dd>{{ data.avg_duration_ms }} ms</dd>
+
+                    <dt class="font-medium">Pods Used</dt>
+                    <dd>{{ data.pods_used }}</dd>
+                </dl>
+
+                {% if data.pod_distribution %}
+                <div class="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
+                    <p class="text-xs font-medium text-green-800 dark:text-green-200 mb-2">Load Distribution:</p>
+                    <div class="flex flex-wrap gap-2">
+                        {% for pod_name, count in data.pod_distribution.items() %}
+                        <span class="inline-flex items-center px-2 py-1 rounded-md text-xs bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200">
+                            {{ pod_name.split('-')[-1][:8] }}: {{ count }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% elif is_memory_load %}
+            {# Memory load response (non-blocking) #}
+            <div class="mt-2 text-sm text-green-700 dark:text-green-300">
+                <dl class="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <dt class="font-medium">Job ID</dt>
+                    <dd class="font-mono text-xs">{{ data.job_id }}</dd>
+
+                    <dt class="font-medium">Size</dt>
+                    <dd>{{ data.size_mb }} MB</dd>
+
+                    <dt class="font-medium">Duration</dt>
+                    <dd>{{ data.duration_seconds }}s</dd>
+                </dl>
+
+                <p class="mt-3 text-xs text-green-600 dark:text-green-400">
+                    {{ data.message }}
+                </p>
+            </div>
+
+            {% elif data.actual_bytes_allocated is defined %}
+            {# Legacy sync memory load response #}
+            <div class="mt-2 text-sm text-green-700 dark:text-green-300">
+                <dl class="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <dt class="font-medium">Size Allocated</dt>
+                    <dd>{{ data.requested_size_mb }} MB</dd>
+
+                    <dt class="font-medium">Actual Bytes</dt>
+                    <dd>{{ "{:,}".format(data.actual_bytes_allocated) }}</dd>
+
+                    <dt class="font-medium">Requested Duration</dt>
+                    <dd>{{ data.requested_duration_ms }} ms</dd>
+
+                    <dt class="font-medium">Actual Duration</dt>
+                    <dd>{{ "%.2f"|format(data.actual_duration_ms) }} ms</dd>
+
+                    <dt class="font-medium">Allocation Time</dt>
+                    <dd>{{ "%.2f"|format(data.allocation_time_ms) }} ms</dd>
+                </dl>
+            </div>
+
+            {% endif %}
+
+            <p class="mt-3 text-xs text-green-500 dark:text-green-400">
+                {{ data.timestamp }}
+            </p>
+        </div>
+    </div>
+</div>
+
+{% elif status == "error" %}
+<div class="rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 p-4">
+    <div class="flex items-start">
+        <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+            </svg>
+        </div>
+        <div class="ml-3">
+            <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+                Test Failed
+            </h3>
+            <p class="mt-1 text-sm text-red-700 dark:text-red-300">
+                {{ message }}
+            </p>
+        </div>
+    </div>
+</div>
+
+{% elif status == "loading" %}
+<div class="rounded-lg bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 p-4">
+    <div class="flex items-center">
+        <svg class="animate-spin h-5 w-5 text-blue-500 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span class="text-sm text-blue-700 dark:text-blue-300">Running test...</span>
+    </div>
+</div>
+
+{% else %}
+<div class="rounded-lg bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 p-4">
+    <p class="text-sm text-gray-500 dark:text-gray-400 text-center">
+        Test results will appear here
+    </p>
+</div>
+{% endif %}

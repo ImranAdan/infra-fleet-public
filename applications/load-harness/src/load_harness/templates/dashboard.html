@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Page header -->
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Trigger synthetic load tests and monitor system behavior in real-time.
+        </p>
+    </div>
+
+    <!-- Main grid layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Load Tests Panel (spans 2 columns on large screens) -->
+        <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="text-lg font-medium text-gray-900 dark:text-white">Load Tests</h2>
+            </div>
+            <div class="p-6">
+                <!-- Tab navigation -->
+                <div class="border-b border-gray-200 dark:border-gray-700">
+                    <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                        <button type="button"
+                                class="tab-btn border-primary-500 text-primary-600 dark:text-primary-400 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"
+                                data-tab="cpu">
+                            CPU Load
+                            <span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(Single Pod)</span>
+                        </button>
+                        <button type="button"
+                                class="tab-btn border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"
+                                data-tab="cluster">
+                            Cluster Load
+                            <span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(Distributed)</span>
+                        </button>
+                        <button type="button"
+                                class="tab-btn border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"
+                                data-tab="memory">
+                            Memory Load
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- Tab content -->
+                <div class="mt-6">
+                    <!-- CPU Load Tab -->
+                    <div id="tab-cpu" class="tab-content">
+                        <div class="mb-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600">
+                            <p class="text-sm text-gray-600 dark:text-gray-300">
+                                {% if is_local %}
+                                <span class="font-medium text-gray-700 dark:text-gray-200">Local Mode:</span>
+                                Runs CPU workers on this container. Live Metrics show actual process CPU usage (% of {{ system_info.cpu_cores }} cores).
+                                {% else %}
+                                <span class="font-medium text-gray-700 dark:text-gray-200">Cluster Mode:</span>
+                                Runs CPU workers on a <em>single pod</em>. Live Metrics show <strong>avg</strong> (across all pods) and <strong>max</strong> (hottest pod). Since load hits one pod, max shows the actual impact while avg is diluted by idle pods.
+                                {% endif %}
+                            </p>
+                        </div>
+                        <form hx-post="{{ url_for('dashboard.cpu_result') }}"
+                              hx-target="#result"
+                              hx-swap="innerHTML"
+                              hx-indicator="#cpu-loading"
+                              class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                                    Cores: <span id="cpu-cores-value" class="font-semibold text-primary-600 dark:text-primary-400">1</span>
+                                    <span class="text-gray-400 dark:text-gray-500 text-xs">/ {{ system_info.cpu_cores }} available</span>
+                                    <div class="relative group">
+                                        <svg class="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity w-48 pointer-events-none z-10">
+                                            Number of CPU cores to load. One worker process per core. More cores = more parallel load.
+                                        </div>
+                                    </div>
+                                </label>
+                                <input type="range" name="cores" min="1" max="{{ system_info.cpu_cores }}" value="1"
+                                       class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                       id="cpu-cores">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Duration: <span id="cpu-duration-value" class="font-semibold">1 min</span>
+                                </label>
+                                <input type="range" name="duration_seconds" min="10" max="900" value="60" step="10"
+                                       class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                       id="cpu-duration">
+                                <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    <span>10s</span>
+                                    <span>5m</span>
+                                    <span>10m</span>
+                                    <span>15m</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                                    Intensity: <span id="cpu-intensity-label" class="font-semibold text-primary-600 dark:text-primary-400">Medium</span>
+                                    <div class="relative group">
+                                        <svg class="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity w-48 pointer-events-none z-10">
+                                            Controls how hard the CPU works per cycle. Higher intensity = more mathematical operations = greater CPU pressure.
+                                        </div>
+                                    </div>
+                                </label>
+                                <input type="range" name="intensity" min="1" max="10" value="5"
+                                       class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                       id="cpu-intensity">
+                                <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    <span>Light</span>
+                                    <span>Heavy</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <button type="submit"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                    Start Load
+                                </button>
+                                <span id="cpu-loading" class="htmx-indicator">
+                                    <svg class="animate-spin h-5 w-5 text-primary-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </span>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Cluster Load Tab -->
+                    <div id="tab-cluster" class="tab-content hidden">
+                        <div class="mb-4 p-3 rounded-lg {% if is_local %}bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800{% else %}bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600{% endif %}">
+                            <p class="text-sm {% if is_local %}text-amber-700 dark:text-amber-300{% else %}text-gray-600 dark:text-gray-300{% endif %}">
+                                {% if is_local %}
+                                <span class="font-medium text-amber-800 dark:text-amber-200">Local Mode (Single-Node):</span>
+                                All requests hit the same container. Use CPU Load tab for meaningful local testing. This tab is for testing the distributed load endpoint.
+                                {% else %}
+                                <span class="font-medium text-gray-700 dark:text-gray-200">Cluster Mode:</span>
+                                Requests are distributed across <em>all pods</em> via the K8s Service. Live Metrics show load spread across the cluster. Watch Pod Monitor to see which pods receive work. High concurrency can trigger HPA scaling.
+                                {% endif %}
+                            </p>
+                        </div>
+                        <form hx-post="{{ url_for('dashboard.cluster_result') }}"
+                              hx-target="#result"
+                              hx-swap="innerHTML"
+                              hx-indicator="#cluster-loading"
+                              class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                                    Concurrent Requests: <span id="cluster-concurrency-value" class="font-semibold text-primary-600 dark:text-primary-400">10</span>
+                                    <div class="relative group">
+                                        <svg class="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity w-48 pointer-events-none z-10">
+                                            Number of parallel requests to send. Each request is distributed across pods by the load balancer.
+                                        </div>
+                                    </div>
+                                </label>
+                                <input type="range" name="concurrency" min="5" max="50" value="10" step="5"
+                                       class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                       id="cluster-concurrency">
+                                <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    <span>5</span>
+                                    <span>25</span>
+                                    <span>50</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                                    Iterations per Request: <span id="cluster-iterations-value" class="font-semibold text-primary-600 dark:text-primary-400">500K</span>
+                                    <div class="relative group">
+                                        <svg class="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity w-48 pointer-events-none z-10">
+                                            CPU work per request. Higher values create more sustained load per pod.
+                                        </div>
+                                    </div>
+                                </label>
+                                <input type="range" name="iterations" min="100000" max="2000000" value="500000" step="100000"
+                                       class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                       id="cluster-iterations">
+                                <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    <span>100K</span>
+                                    <span>1M</span>
+                                    <span>2M</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <button type="submit"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                    </svg>
+                                    Run Distributed Load
+                                </button>
+                                <span id="cluster-loading" class="htmx-indicator">
+                                    <svg class="animate-spin h-5 w-5 text-primary-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </span>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Memory Load Tab -->
+                    <div id="tab-memory" class="tab-content hidden">
+                        <div class="mb-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600">
+                            <p class="text-sm text-gray-600 dark:text-gray-300">
+                                {% if is_local %}
+                                <span class="font-medium text-gray-700 dark:text-gray-200">Local Mode:</span>
+                                Allocates memory in this container. Live Metrics show actual process memory as a percentage of system RAM (~{{ (system_info.memory_total_mb / 1024)|round(1) }} GB).
+                                {% else %}
+                                <span class="font-medium text-gray-700 dark:text-gray-200">Cluster Mode:</span>
+                                Allocates memory on a <em>single pod</em>. Pods have a <strong>1Gi memory limit</strong> with ~128Mi baseline usage. Max allocation capped at 800MB to prevent OOMKill. Live Metrics show <strong>avg</strong> and <strong>max</strong> memory across all pods.
+                                {% endif %}
+                            </p>
+                        </div>
+                        <form hx-post="{{ url_for('dashboard.memory_result') }}"
+                              hx-target="#result"
+                              hx-swap="innerHTML"
+                              hx-indicator="#memory-loading"
+                              class="space-y-4">
+                            {# Calculate dynamic memory limit based on environment #}
+                            {# Local: min of available memory and 2048MB API limit #}
+                            {# Cluster: 800MB (safe headroom within 1Gi pod limit minus ~128Mi baseline) #}
+                            {% if is_local %}
+                                {% set available_mb = system_info.memory_available_mb or 2048 %}
+                                {% set max_memory_mb = [available_mb, 2048] | min %}
+                            {% else %}
+                                {% set max_memory_mb = 800 %}
+                            {% endif %}
+                            {% set half_max = (max_memory_mb / 2) | int %}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                                    Size: <span id="memory-size-value" class="font-semibold text-primary-600 dark:text-primary-400">100</span> MB
+                                    <span class="text-gray-400 dark:text-gray-500 text-xs">/ {{ max_memory_mb }} MB max</span>
+                                    <div class="relative group">
+                                        <svg class="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity w-56 pointer-events-none z-10">
+                                            {% if is_local %}
+                                            Amount of memory to allocate. All pages are touched to ensure physical allocation. Limit: {{ max_memory_mb }} MB.
+                                            {% else %}
+                                            Pod limit: 1Gi. Baseline: ~128Mi. Safe allocation: up to 800MB to avoid OOMKill.
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </label>
+                                <input type="range" name="size_mb" min="10" max="{{ max_memory_mb }}" value="100" step="10"
+                                       class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                       id="memory-size"
+                                       data-max="{{ max_memory_mb }}">
+                                <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    <span>10 MB</span>
+                                    <span>{{ half_max }} MB</span>
+                                    <span>{{ max_memory_mb }} MB</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Duration: <span id="memory-duration-value" class="font-semibold">30s</span>
+                                </label>
+                                <input type="range" name="duration_seconds" min="5" max="300" value="30" step="5"
+                                       class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                       id="memory-duration">
+                                <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    <span>5s</span>
+                                    <span>1m</span>
+                                    <span>3m</span>
+                                    <span>5m</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <button type="submit"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                    Start Load
+                                </button>
+                                <span id="memory-loading" class="htmx-indicator">
+                                    <svg class="animate-spin h-5 w-5 text-primary-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </span>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Result area -->
+                <div id="result" class="mt-6">
+                    {% include "partials/result.html" %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Right column -->
+        <div class="space-y-6">
+            <!-- Active Jobs Panel (Client-side tracking) - shown for CPU Load tab -->
+            <div id="active-jobs-panel" class="bg-white dark:bg-gray-800 rounded-lg shadow">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <h2 class="text-lg font-medium text-gray-900 dark:text-white">Active Jobs</h2>
+                    <span class="text-xs text-gray-400 dark:text-gray-500">Client-tracked</span>
+                </div>
+                <div class="p-6" id="jobs-panel">
+                    <!-- Jobs rendered by JavaScript -->
+                    <div id="jobs-list"></div>
+                    <!-- Empty state -->
+                    <div id="jobs-empty" class="text-center py-4">
+                        <svg class="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">No active jobs</p>
+                        <p class="text-xs text-gray-400 dark:text-gray-500">Start a load test to see jobs here</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pod Monitor Panel - shown for Cluster Load tab -->
+            <div id="pod-monitor-panel" class="bg-white dark:bg-gray-800 rounded-lg shadow hidden">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <h2 class="text-lg font-medium text-gray-900 dark:text-white">Pod Monitor</h2>
+                    <span class="text-xs text-gray-400 dark:text-gray-500">Auto-refresh: 3s</span>
+                </div>
+                <div class="p-6"
+                     id="pod-metrics-container"
+                     hx-get="{{ url_for('dashboard.pod_metrics') }}"
+                     hx-trigger="load, every 3s"
+                     hx-swap="innerHTML">
+                    <!-- Initial loading state -->
+                    <div class="flex items-center justify-center py-4">
+                        <svg class="animate-spin h-5 w-5 text-gray-400 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">Loading pod metrics...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Metrics Panel -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <h2 class="text-lg font-medium text-gray-900 dark:text-white">Live Metrics</h2>
+                    <span class="text-xs text-gray-400 dark:text-gray-500">Auto-refresh: 5s</span>
+                </div>
+                <div class="p-6"
+                     id="metrics-panel"
+                     hx-get="{{ url_for('dashboard.live_metrics') }}"
+                     hx-trigger="load, every 5s"
+                     hx-swap="innerHTML">
+                    <!-- Initial loading state -->
+                    <div class="flex items-center justify-center py-4">
+                        <svg class="animate-spin h-5 w-5 text-gray-400 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">Loading metrics...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- External dashboard script (tabs, sliders, job tracking) -->
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

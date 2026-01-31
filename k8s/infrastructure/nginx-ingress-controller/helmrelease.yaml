@@ -1,0 +1,127 @@
+---
+# NGINX Ingress Controller - NLB Mode
+#
+# =============================================================================
+# WHY NGINX INSTEAD OF ALB?
+# =============================================================================
+#
+# ALB Limitations:
+#   - AWS ALB does not support weighted routing between backend services
+#   - Flagger with meshProvider: kubernetes only does iteration-based analysis
+#   - No actual percentage-based traffic splitting during canary analysis
+#
+# NGINX Ingress Benefits:
+#   - Native Flagger integration via meshProvider: nginx
+#   - Supports canary-weight annotation for true traffic splitting
+#   - Flagger automatically manages nginx.ingress.kubernetes.io/canary-weight
+#   - Enables the stepWeight progression: 10% -> 20% -> 30% -> 40% -> 50%
+#
+# Architecture:
+#   Internet -> NLB (Layer 4) -> NGINX Ingress (Layer 7) -> Services
+#
+# =============================================================================
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nginx-ingress-controller
+  namespace: ingress-nginx
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ingress-nginx
+      version: "4.x"
+      sourceRef:
+        kind: HelmRepository
+        name: ingress-nginx
+        namespace: flux-system
+      interval: 1h
+  install:
+    createNamespace: true
+  upgrade:
+    crds: CreateReplace
+  values:
+    controller:
+      # -------------------------------------------------------------------------
+      # AWS NLB Configuration
+      # -------------------------------------------------------------------------
+      # Expose via AWS NLB (Network Load Balancer)
+      # NLB provides Layer 4 load balancing, NGINX handles Layer 7
+      service:
+        type: LoadBalancer
+        annotations:
+          # AWS NLB configuration
+          service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+          service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+          service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+          # Cross-zone load balancing
+          service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+          # Tags for cost tracking
+          service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "Environment=staging,ManagedBy=flux,Component=nginx-ingress"
+
+      # -------------------------------------------------------------------------
+      # Resource Configuration
+      # -------------------------------------------------------------------------
+      # Single replica for t3.large node capacity (35 pods max)
+      # Acceptable for dev/staging environment
+      replicaCount: 1
+
+      # Resource limits for t3.large node constraints
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+      # -------------------------------------------------------------------------
+      # Pod Annotations for Prometheus Scraping
+      # -------------------------------------------------------------------------
+      # Required for Flagger to get per-request metrics
+      # See: https://docs.flagger.app/tutorials/nginx-progressive-delivery
+      podAnnotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "10254"
+
+      # -------------------------------------------------------------------------
+      # Metrics & Observability
+      # -------------------------------------------------------------------------
+      # Enable metrics for Prometheus scraping (required for Flagger analysis)
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
+          namespace: observability
+
+      # -------------------------------------------------------------------------
+      # Controller Arguments
+      # -------------------------------------------------------------------------
+      # CRITICAL: By default, NGINX doesn't generate per-ingress metrics for
+      # ingresses without a 'host' field. This breaks Flagger's nginx metric
+      # queries (nginx_ingress_controller_requests histogram).
+      #
+      # --metrics-per-host=false: Disables host-based metric labeling but KEEPS
+      # ingress-based labels. This ensures metrics are generated even without
+      # explicit host fields, which is required for Flagger canary analysis.
+      #
+      # See: https://github.com/kubernetes/ingress-nginx/issues/6937
+      extraArgs:
+        metrics-per-host: "false"
+
+      # -------------------------------------------------------------------------
+      # Ingress Class Configuration
+      # -------------------------------------------------------------------------
+      # Create 'nginx' IngressClass (separate from 'alb')
+      ingressClassResource:
+        name: nginx
+        enabled: true
+        default: false
+        controllerValue: "k8s.io/ingress-nginx"
+
+      # -------------------------------------------------------------------------
+      # Admission Webhooks
+      # -------------------------------------------------------------------------
+      # Disable for simplicity in staging
+      admissionWebhooks:
+        enabled: false

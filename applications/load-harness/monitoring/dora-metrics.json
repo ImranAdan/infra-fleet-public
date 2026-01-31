@@ -1,0 +1,368 @@
+{
+  "dashboard": {
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": {
+            "type": "grafana",
+            "uid": "-- Grafana --"
+          },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "description": "DORA metrics for workflow, GitOps, and Flagger signals",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": null,
+    "links": [],
+    "panels": [
+      {
+        "collapsed": false,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+        "id": 1,
+        "panels": [],
+        "title": "Workflow Deployments",
+        "type": "row"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 5 },
+                { "color": "red", "value": 10 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+        "id": 2,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": [ "lastNotNull" ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.4.0",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "count(dora_workflow_deploy_timestamp{status=\"success\"} > time() - 86400)",
+            "refId": "A"
+          }
+        ],
+        "title": "Workflow Deploys (24h)",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 10 },
+                { "color": "red", "value": 25 }
+              ]
+            },
+            "unit": "percent"
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 5, "w": 9, "x": 6, "y": 1 },
+        "id": 3,
+        "options": {
+          "showHeader": true
+        },
+        "pluginVersion": "11.4.0",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "100 * count by (source) (dora_workflow_deploy_timestamp{status=\"failure\"} > time() - 86400) / clamp_min(count by (source) (dora_workflow_deploy_timestamp > time() - 86400), 1)",
+            "refId": "A"
+          }
+        ],
+        "title": "Workflow Failure Rate (24h)",
+        "type": "table"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 3600 },
+                { "color": "red", "value": 14400 }
+              ]
+            },
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 5, "w": 9, "x": 15, "y": 1 },
+        "id": 4,
+        "options": {
+          "showHeader": true
+        },
+        "pluginVersion": "11.4.0",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "avg by (source) (dora_workflow_lead_time_seconds{status=\"success\"} and on (source, status, sha) (dora_workflow_deploy_timestamp{status=\"success\"} > time() - 86400))",
+            "refId": "A"
+          }
+        ],
+        "title": "Workflow Lead Time (avg, 24h)",
+        "type": "table"
+      },
+      {
+        "collapsed": false,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+        "id": 5,
+        "panels": [],
+        "title": "GitOps / Flux",
+        "type": "row"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 2 },
+                { "color": "red", "value": 5 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 5, "w": 6, "x": 0, "y": 7 },
+        "id": 6,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": [ "lastNotNull" ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.4.0",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "count(dora_flux_applied_timestamp > time() - 86400)",
+            "refId": "A"
+          }
+        ],
+        "title": "Flux Deploys (24h)",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 3600 },
+                { "color": "red", "value": 14400 }
+              ]
+            },
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 5, "w": 6, "x": 6, "y": 7 },
+        "id": 7,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": [ "lastNotNull" ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.4.0",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "avg(dora_flux_lead_time_seconds and on (revision) (dora_flux_applied_timestamp > time() - 86400))",
+            "refId": "A"
+          }
+        ],
+        "title": "Flux Lead Time (avg, 24h)",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "unit": "dateTimeAsIso"
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 5, "w": 12, "x": 12, "y": 7 },
+        "id": 8,
+        "options": {
+          "showHeader": true
+        },
+        "pluginVersion": "11.4.0",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "topk(1, dora_flux_applied_timestamp) * 1000",
+            "refId": "A"
+          }
+        ],
+        "title": "Latest Flux Revision",
+        "type": "table"
+      },
+      {
+        "collapsed": false,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 },
+        "id": 9,
+        "panels": [],
+        "title": "Rollbacks",
+        "type": "row"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 3 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 5, "w": 6, "x": 0, "y": 13 },
+        "id": 10,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": [ "lastNotNull" ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.4.0",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "count(dora_flagger_canary_timestamp{phase=\"Failed\"} > time() - 86400)",
+            "refId": "A"
+          }
+        ],
+        "title": "Flagger Rollbacks (24h)",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 2 }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 5, "w": 18, "x": 6, "y": 13 },
+        "id": 11,
+        "options": {
+          "showHeader": true
+        },
+        "pluginVersion": "11.4.0",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "dora_flagger_canary_phase",
+            "refId": "A"
+          }
+        ],
+        "title": "Flagger Canary Phases (current)",
+        "type": "table"
+      }
+    ],
+    "schemaVersion": 40,
+    "tags": [
+      "dora",
+      "release-engineering",
+      "prometheus"
+    ],
+    "templating": {
+      "list": []
+    },
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "DORA Metrics",
+    "uid": "dora-metrics",
+    "version": 1,
+    "weekStart": ""
+  },
+  "overwrite": true
+}

@@ -1,0 +1,80 @@
+---
+# cert-manager - Automatic TLS Certificate Management
+#
+# =============================================================================
+# PURPOSE
+# =============================================================================
+# cert-manager automates TLS certificate issuance and renewal using Let's Encrypt.
+# Combined with sslip.io, this provides automatic HTTPS for ephemeral infrastructure
+# without requiring a purchased domain.
+#
+# Traffic flow with TLS:
+#   Client -> NLB (TCP passthrough) -> NGINX Ingress (TLS termination) -> Pod
+#
+# Certificate lifecycle:
+#   1. Ingress created with cert-manager annotation
+#   2. cert-manager requests cert from Let's Encrypt
+#   3. Let's Encrypt performs HTTP-01 challenge via NGINX
+#   4. Certificate stored in K8s Secret
+#   5. NGINX uses cert for TLS termination
+#   6. cert-manager auto-renews before expiry
+#
+# =============================================================================
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: flux-system
+spec:
+  # Wait for AWS LB Controller (its webhook intercepts Service resources)
+  dependsOn:
+    - name: aws-load-balancer-controller
+      namespace: kube-system
+  targetNamespace: cert-manager
+  interval: 1h
+  chart:
+    spec:
+      chart: cert-manager
+      version: "v1.x"
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: CreateReplace
+    createNamespace: true
+  upgrade:
+    crds: CreateReplace
+  values:
+    # Install CRDs with Helm (required for ClusterIssuer)
+    installCRDs: true
+
+    # Resource limits for t3.large node
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+    # Webhook resources
+    webhook:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 50m
+          memory: 64Mi
+
+    # CA Injector resources
+    cainjector:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 50m
+          memory: 128Mi

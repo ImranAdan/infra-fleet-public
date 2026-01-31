@@ -1,0 +1,110 @@
+name: Infra Plan (PR)
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'infrastructure/**'
+      - '!infrastructure/**/*.md'  # Exclude markdown files
+
+env:
+  AWS_REGION: eu-west-2
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      staging: ${{ steps.detect.outputs.staging-changed }}
+      permanent: ${{ steps.detect.outputs.permanent-changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed stacks
+        id: detect
+        uses: ./.github/actions/detect-terraform-changes
+        with:
+          base-ref: origin/${{ github.base_ref }}
+          head-ref: HEAD
+
+  plan-staging:
+    needs: detect
+    if: needs.detect.outputs.staging == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Security scan (Trivy)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: 'config'
+          scan-ref: 'infrastructure/staging'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+          trivyignores: 'infrastructure/staging/.trivyignore'
+          skip-dirs: '.terraform'
+          hide-progress: true
+        env:
+          TRIVY_QUIET: true
+
+      - name: Setup AWS and Terraform
+        uses: ./.github/actions/setup-aws-terraform
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          session-name: GitHubActions-Plan
+          tf-api-token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform fmt (check)
+        run: terraform -chdir=infrastructure/staging fmt -check
+
+      - name: Terraform init
+        run: terraform -chdir=infrastructure/staging init -input=false ${{ github.actor == 'dependabot[bot]' && '-upgrade' || '' }}
+
+      - name: Terraform plan (staging)
+        run: terraform -chdir=infrastructure/staging plan -input=false
+        env:
+          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+
+  plan-permanent:
+    needs: detect
+    if: needs.detect.outputs.permanent == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Security scan (Trivy)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: 'config'
+          scan-ref: 'infrastructure/permanent'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+          skip-dirs: '.terraform'
+          hide-progress: true
+        env:
+          TRIVY_QUIET: true
+
+      - name: Setup AWS and Terraform
+        uses: ./.github/actions/setup-aws-terraform
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          session-name: GitHubActions-Plan
+          tf-api-token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform fmt (check)
+        run: terraform -chdir=infrastructure/permanent fmt -check
+
+      - name: Terraform init
+        run: terraform -chdir=infrastructure/permanent init -input=false ${{ github.actor == 'dependabot[bot]' && '-upgrade' || '' }}
+
+      - name: Terraform plan (permanent)
+        run: terraform -chdir=infrastructure/permanent plan -input=false

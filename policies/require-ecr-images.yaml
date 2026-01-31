@@ -1,0 +1,50 @@
+# --------------------------------------------------------------------------------------------------
+# Require ECR Images Policy
+# Ensures application containers only use images from the organization's ECR registry.
+# This prevents pulling untrusted images from public registries.
+#
+# Note: This policy excludes system namespaces (kube-system, flux-system, observability)
+# which may need to pull images from external registries for infrastructure components.
+# --------------------------------------------------------------------------------------------------
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-ecr-images
+  annotations:
+    policies.kyverno.io/title: Require ECR Images
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Application containers must use images from the organization's ECR registry.
+      This ensures only trusted, scanned images are deployed to the cluster.
+      System namespaces are excluded to allow infrastructure components.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-ecr-images
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - Job
+                - CronJob
+              namespaces:
+                - applications  # Only enforce for application namespace
+      validate:
+        message: "Images must come from ECR (*.dkr.ecr.*.amazonaws.com/*). External images are not allowed in application namespaces."
+        anyPattern:
+          # For Pods (spec.containers)
+          - spec:
+              containers:
+                - image: "*.dkr.ecr.*.amazonaws.com/*"
+          # For Deployments/StatefulSets/etc. (spec.template.spec.containers)
+          - spec:
+              template:
+                spec:
+                  containers:
+                    - image: "*.dkr.ecr.*.amazonaws.com/*"

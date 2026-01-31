@@ -1,0 +1,62 @@
+---
+# Flagger - Progressive Delivery Controller
+#
+# Flagger automates canary deployments by:
+# 1. Creating primary/canary versions of deployments
+# 2. Gradually shifting traffic based on metrics
+# 3. Rolling back automatically on failures
+#
+# =============================================================================
+# MESH PROVIDER: nginx
+# =============================================================================
+# Changed from: meshProvider: kubernetes (iteration-based, no traffic splitting)
+# Changed to:   meshProvider: nginx (weighted traffic via ingress annotations)
+#
+# Why the change:
+#   - meshProvider: kubernetes only supports pod selector routing
+#   - No actual percentage-based traffic splitting occurs
+#   - meshProvider: nginx uses canary-weight annotation for true splitting
+#   - Enables the stepWeight progression: 10% -> 20% -> 30% -> 40% -> 50%
+#
+# Metrics: Prometheus via kube-prometheus-stack
+# =============================================================================
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: flagger
+  namespace: flux-system
+spec:
+  # Wait for NGINX Ingress Controller to be ready
+  dependsOn:
+    - name: nginx-ingress-controller
+      namespace: ingress-nginx
+  interval: 1h
+  chart:
+    spec:
+      chart: flagger
+      version: "1.x"
+      sourceRef:
+        kind: HelmRepository
+        name: flagger
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  values:
+    # Prometheus for metrics analysis
+    metricsServer: http://kube-prometheus-stack-prometheus.observability:9090
+
+    # NGINX Ingress - enables weighted traffic splitting
+    # Flagger will manage nginx.ingress.kubernetes.io/canary-weight annotation
+    meshProvider: nginx
+
+    # Resource limits for t3.large node
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

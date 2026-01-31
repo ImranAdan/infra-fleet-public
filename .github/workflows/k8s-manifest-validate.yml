@@ -1,0 +1,77 @@
+# --------------------------------------------------------------------------------------------------
+# Kubernetes Manifest Validation Workflow
+# Sequential validation pipeline for Kubernetes manifests:
+#   1. YAML Syntax (yamllint) - Foundation, catches malformed YAML
+#   2. K8s Schema (kubeconform) - Structure, validates against K8s API schemas
+#   3. Kyverno Policies - Policies, enforces organizational standards
+#
+# Each step depends on the previous one passing (fail-fast).
+# --------------------------------------------------------------------------------------------------
+name: K8s Manifest Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'k8s/**'
+      - 'policies/**'
+  push:
+    branches: [main]
+    paths:
+      - 'k8s/**'
+      - 'policies/**'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Step 1: YAML Syntax Validation
+  # Must pass before schema validation can work
+  # ---------------------------------------------------------------------------
+  yaml-lint:
+    name: YAML Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate YAML syntax
+        uses: ./.github/actions/yaml-lint
+        with:
+          path: k8s/
+
+  # ---------------------------------------------------------------------------
+  # Step 2: Kubernetes Schema Validation
+  # Validates structure against K8s API and CRD schemas
+  # Only runs if YAML syntax is valid
+  # ---------------------------------------------------------------------------
+  k8s-schema:
+    name: K8s Schema
+    needs: yaml-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Kubernetes schemas
+        uses: ./.github/actions/k8s-schema-validate
+        with:
+          path: k8s/
+          kubernetes-version: '1.32.0'
+
+  # ---------------------------------------------------------------------------
+  # Step 3: Kyverno Policy Validation
+  # Enforces organizational policies (security, standards, best practices)
+  # Only runs if schema validation passes
+  # ---------------------------------------------------------------------------
+  kyverno-policies:
+    name: Kyverno Policies
+    needs: k8s-schema
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate against Kyverno policies
+        uses: ./.github/actions/kyverno-validate
+        with:
+          policy-path: policies/
+          resource-path: k8s/applications/

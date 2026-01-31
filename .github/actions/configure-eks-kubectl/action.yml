@@ -1,0 +1,34 @@
+name: 'Configure EKS kubectl'
+description: 'Configures kubectl for EKS cluster access'
+
+inputs:
+  cluster-name:
+    description: 'EKS cluster name'
+    required: false
+    default: 'staging'
+  aws-region:
+    description: 'AWS region'
+    required: false
+    default: 'eu-west-2'
+
+outputs:
+  cluster-endpoint:
+    description: 'EKS cluster API endpoint'
+    value: ${{ steps.config.outputs.cluster-endpoint }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure kubectl
+      id: config
+      shell: bash
+      run: |
+        echo "Configuring kubectl for cluster: ${{ inputs.cluster-name }}"
+        aws eks update-kubeconfig --name ${{ inputs.cluster-name }} --region ${{ inputs.aws-region }}
+
+        # Get cluster endpoint for output
+        ENDPOINT=$(aws eks describe-cluster --name ${{ inputs.cluster-name }} --region ${{ inputs.aws-region }} --query 'cluster.endpoint' --output text)
+        echo "cluster-endpoint=$ENDPOINT" >> $GITHUB_OUTPUT
+
+        echo "kubectl configured successfully"
+        kubectl cluster-info

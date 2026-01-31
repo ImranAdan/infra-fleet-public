@@ -1,0 +1,39 @@
+---
+# ClusterIssuer for Let's Encrypt Production
+#
+# =============================================================================
+# HTTP-01 CHALLENGE
+# =============================================================================
+# Let's Encrypt verifies domain ownership by:
+#   1. cert-manager requests certificate for hostname
+#   2. Let's Encrypt calls http://<hostname>/.well-known/acme-challenge/<token>
+#   3. cert-manager (via NGINX ingress) responds with expected token
+#   4. Certificate issued if challenge passes
+#
+# This works with example.com because:
+#   - Cloudflare DNS provides managed DNS: app.example.com -> NLB hostname
+#   - Let's Encrypt can reach the NLB via the Cloudflare-managed hostname
+#   - DNS configuration automated via Terraform and GitHub workflow
+#
+# =============================================================================
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # Let's Encrypt production server
+    server: https://acme-v02.api.letsencrypt.org/directory
+
+    # Email for expiry notifications (required by Let's Encrypt)
+    email: admin@example.com
+
+    # Secret to store the ACME account private key
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+
+    # HTTP-01 challenge solver using NGINX ingress
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

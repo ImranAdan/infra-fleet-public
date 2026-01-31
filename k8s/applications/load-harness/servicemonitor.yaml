@@ -1,0 +1,43 @@
+---
+# ServiceMonitor - Prometheus auto-discovery for load-harness metrics
+#
+# Purpose: Tells Prometheus Operator to automatically scrape metrics from load-harness
+# How it works:
+#   1. Prometheus Operator watches for ServiceMonitor CRDs
+#   2. This ServiceMonitor matches the load-harness Service (via selector)
+#   3. Prometheus automatically scrapes /metrics endpoint on port 5000
+#
+# Metrics exposed by load-harness:
+#   - flask_http_request_duration_seconds: Request latency histogram
+#   - flask_http_request_total: Total HTTP requests counter
+#   - process_cpu_seconds_total: CPU usage
+#   - process_resident_memory_bytes: Memory usage
+#
+# Related: applications/load-harness/service.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: load-harness
+  namespace: applications
+  labels:
+    app: load-harness
+    release: kube-prometheus-stack  # Important: matches Prometheus Operator label selector
+spec:
+  # Select the load-harness Service
+  selector:
+    matchLabels:
+      app: load-harness
+
+  # Define which endpoints to scrape
+  endpoints:
+    - port: http           # Matches Service port name
+      path: /metrics       # Metrics endpoint path
+      interval: 15s        # Scrape every 15 seconds
+      scrapeTimeout: 10s   # Timeout for each scrape
+
+      # Optional: relabeling to add custom labels
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace

@@ -1,0 +1,276 @@
+name: Verify Cluster Health
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'EKS cluster name to verify'
+        required: false
+        default: 'staging'
+        type: string
+  workflow_call:
+    inputs:
+      cluster_name:
+        description: 'EKS cluster name to verify'
+        required: false
+        default: 'staging'
+        type: string
+
+env:
+  AWS_REGION: eu-west-2
+
+jobs:
+  verify-cluster:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-session-name: GitHubActions-VerifyCluster-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure kubectl
+        uses: ./.github/actions/configure-eks-kubectl
+        with:
+          cluster-name: ${{ inputs.cluster_name || 'staging' }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check cluster nodes
+        id: nodes
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🖥️  CLUSTER NODES"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          if ! kubectl get nodes -o wide; then
+            echo "❌ Failed to get nodes"
+            exit 1
+          fi
+
+          # Check if all nodes are ready
+          NOT_READY=$(kubectl get nodes --no-headers | grep -v " Ready " | wc -l || echo "0")
+          TOTAL_NODES=$(kubectl get nodes --no-headers | wc -l)
+          READY_NODES=$((TOTAL_NODES - NOT_READY))
+
+          echo ""
+          echo "📊 Node Status: $READY_NODES/$TOTAL_NODES ready"
+
+          if [ "$NOT_READY" -gt 0 ]; then
+            echo "⚠️  Warning: $NOT_READY node(s) not ready"
+            echo "nodes_status=warning" >> "$GITHUB_OUTPUT"
+          else
+            echo "✅ All nodes are ready"
+            echo "nodes_status=healthy" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check CoreDNS
+        id: coredns
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🌐 COREDNS STATUS"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          kubectl get pods -n kube-system -l k8s-app=kube-dns -o wide
+
+          # Check CoreDNS replicas
+          DESIRED=$(kubectl get deployment -n kube-system coredns -o jsonpath='{.spec.replicas}')
+          READY=$(kubectl get deployment -n kube-system coredns -o jsonpath='{.status.readyReplicas}')
+
+          echo ""
+          echo "📊 CoreDNS: $READY/$DESIRED replicas ready"
+
+          if [ "$READY" = "$DESIRED" ]; then
+            echo "✅ CoreDNS is healthy"
+            echo "coredns_status=healthy" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ CoreDNS is not healthy"
+            echo "coredns_status=unhealthy" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Check Flux System
+        id: flux
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔄 FLUX GITOPS STATUS"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          if ! kubectl get namespace flux-system &>/dev/null; then
+            echo "⚠️  Flux namespace not found (may not be deployed yet)"
+            echo "flux_status=not_deployed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "📦 Flux Pods:"
+          kubectl get pods -n flux-system -o wide
+
+          # Check if all Flux pods are running
+          NOT_RUNNING=$(kubectl get pods -n flux-system --no-headers | grep -v "Running" | wc -l || echo "0")
+          TOTAL_FLUX=$(kubectl get pods -n flux-system --no-headers | wc -l)
+          RUNNING=$((TOTAL_FLUX - NOT_RUNNING))
+
+          echo ""
+          echo "📊 Flux Pods: $RUNNING/$TOTAL_FLUX running"
+
+          if [ "$NOT_RUNNING" -gt 0 ]; then
+            echo "⚠️  Warning: $NOT_RUNNING Flux pod(s) not running"
+            echo "flux_status=warning" >> "$GITHUB_OUTPUT"
+          else
+            echo "✅ All Flux pods are running"
+            echo "flux_status=healthy" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Check Flux reconciliation
+          echo ""
+          echo "🔄 Flux Kustomizations:"
+          kubectl get kustomizations -n flux-system || echo "No kustomizations found"
+
+          echo ""
+          echo "📦 Flux HelmReleases:"
+          kubectl get helmreleases --all-namespaces || echo "No helm releases found"
+
+      - name: Check ALB Controller
+        id: alb
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔀 AWS LOAD BALANCER CONTROLLER"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          if ! kubectl get deployment -n kube-system aws-load-balancer-controller &>/dev/null; then
+            echo "⚠️  ALB controller not deployed (managed by Flux)"
+            echo "alb_status=not_deployed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide
+
+          # Check ALB controller deployment
+          DESIRED=$(kubectl get deployment -n kube-system aws-load-balancer-controller -o jsonpath='{.spec.replicas}')
+          READY=$(kubectl get deployment -n kube-system aws-load-balancer-controller -o jsonpath='{.status.readyReplicas}')
+
+          echo ""
+          echo "📊 ALB Controller: $READY/$DESIRED replicas ready"
+
+          if [ "$READY" = "$DESIRED" ]; then
+            echo "✅ ALB controller is healthy"
+            echo "alb_status=healthy" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠️  ALB controller is not fully ready"
+            echo "alb_status=warning" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Show recent logs for troubleshooting
+          echo ""
+          echo "📋 Recent ALB controller logs (last 20 lines):"
+          kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=20 || echo "Unable to fetch logs"
+
+      - name: Check Ingress Resources
+        id: ingress
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🌐 INGRESS RESOURCES"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          INGRESS_COUNT=$(kubectl get ingress --all-namespaces --no-headers 2>/dev/null | wc -l || echo "0")
+
+          if [ "$INGRESS_COUNT" -eq 0 ]; then
+            echo "ℹ️  No Ingress resources found"
+            echo "ingress_status=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "📊 Found $INGRESS_COUNT Ingress resource(s):"
+          kubectl get ingress --all-namespaces -o wide
+
+          # Check if any ingress has ALB provisioned
+          echo ""
+          echo "🔍 Checking ALB provisioning status..."
+          kubectl get ingress --all-namespaces -o json | jq -r '.items[] | "\(.metadata.namespace)/\(.metadata.name): \(.status.loadBalancer.ingress[0].hostname // "No ALB provisioned")"'
+
+          echo "ingress_status=found" >> "$GITHUB_OUTPUT"
+
+      - name: Check Application Pods
+        id: apps
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 APPLICATION PODS"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          if ! kubectl get namespace applications &>/dev/null; then
+            echo "ℹ️  Applications namespace not found"
+            echo "apps_status=not_deployed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "📦 Pods in applications namespace:"
+          kubectl get pods -n applications -o wide || echo "No pods found"
+
+          # Check pod status
+          NOT_RUNNING=$(kubectl get pods -n applications --no-headers 2>/dev/null | grep -v "Running" | grep -v "Completed" | wc -l || echo "0")
+          TOTAL_APPS=$(kubectl get pods -n applications --no-headers 2>/dev/null | wc -l || echo "0")
+
+          if [ "$TOTAL_APPS" -eq 0 ]; then
+            echo "ℹ️  No application pods found"
+            echo "apps_status=not_deployed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          RUNNING=$((TOTAL_APPS - NOT_RUNNING))
+          echo ""
+          echo "📊 Application Pods: $RUNNING/$TOTAL_APPS running"
+
+          if [ "$NOT_RUNNING" -gt 0 ]; then
+            echo "⚠️  Warning: $NOT_RUNNING pod(s) not running"
+            echo "apps_status=warning" >> "$GITHUB_OUTPUT"
+          else
+            echo "✅ All application pods are running"
+            echo "apps_status=healthy" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cluster Health Summary
+        if: always()
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 CLUSTER HEALTH SUMMARY"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Component Status:"
+          echo "  🖥️  Nodes:        ${{ steps.nodes.outputs.nodes_status || 'unknown' }}"
+          echo "  🌐 CoreDNS:      ${{ steps.coredns.outputs.coredns_status || 'unknown' }}"
+          echo "  🔄 Flux:         ${{ steps.flux.outputs.flux_status || 'unknown' }}"
+          echo "  🔀 ALB Controller: ${{ steps.alb.outputs.alb_status || 'unknown' }}"
+          echo "  🌐 Ingress:      ${{ steps.ingress.outputs.ingress_status || 'unknown' }}"
+          echo "  📦 Applications: ${{ steps.apps.outputs.apps_status || 'unknown' }}"
+          echo ""
+
+          # Determine overall health
+          NODES="${{ steps.nodes.outputs.nodes_status }}"
+          COREDNS="${{ steps.coredns.outputs.coredns_status }}"
+
+          if [ "$NODES" = "healthy" ] && [ "$COREDNS" = "healthy" ]; then
+            echo "✅ CLUSTER IS HEALTHY"
+            echo ""
+            echo "Core components (nodes, CoreDNS) are operational."
+            echo "Additional components may still be deploying via Flux."
+          else
+            echo "❌ CLUSTER HAS ISSUES"
+            echo ""
+            echo "Core components are not healthy. Please investigate."
+            exit 1
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

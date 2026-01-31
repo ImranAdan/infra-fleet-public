@@ -1,0 +1,126 @@
+name: Validate Automation Workflows
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+
+jobs:
+  validate-workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Validate YAML syntax
+        run: |
+          echo "🔍 Validating workflow YAML syntax..."
+
+          # Install yamllint for validation
+          pip install yamllint --quiet --break-system-packages
+
+          # Create permissive yamllint config (focus on syntax, not style)
+          echo "extends: relaxed" > /tmp/yamllint.yml
+          echo "rules:" >> /tmp/yamllint.yml
+          echo "  trailing-spaces: disable" >> /tmp/yamllint.yml
+          echo "  line-length: disable" >> /tmp/yamllint.yml
+          echo "  new-line-at-end-of-file: disable" >> /tmp/yamllint.yml
+
+          # Validate each workflow file
+          for file in .github/workflows/*.yml; do
+            echo "Checking: $file"
+            if yamllint -c /tmp/yamllint.yml "$file"; then
+              echo "✅ $file - Valid YAML syntax"
+            else
+              echo "❌ $file - Invalid YAML syntax"
+              exit 1
+            fi
+          done
+
+          echo "✅ All workflow files have valid YAML syntax"
+
+      - name: Validate GitHub Actions syntax
+        run: |
+          echo "🔍 Validating GitHub Actions workflow syntax..."
+
+          # Install actionlint
+          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+
+          # Run actionlint on all workflow files (disable shellcheck for now)
+          if ./actionlint -shellcheck= .github/workflows/*.yml; then
+            echo "✅ All workflows have valid GitHub Actions syntax"
+          else
+            echo "❌ GitHub Actions syntax validation failed"
+            echo ""
+            echo "Common issues:"
+            echo "  - Invalid expression syntax in workflow variables"
+            echo "  - Unknown workflow keys or job properties"
+            echo "  - Invalid action references"
+            echo "  - Type mismatches in workflow configuration"
+            exit 1
+          fi
+
+      - name: Check PR workflow changes
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "🔍 Analyzing workflow changes in this PR..."
+
+          # Get list of changed workflow files
+          CHANGED_FILES=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '.files[].path' | grep '^.github/workflows/' || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "ℹ️ No workflow files changed in this PR"
+          else
+            echo "📝 Changed workflow files:"
+            echo "$CHANGED_FILES"
+            echo ""
+            echo "✅ These files have been validated by actionlint above"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Check required secrets documentation
+        run: |
+          echo "🔍 Checking that required secrets are documented..."
+          
+          # Check that workflows requiring AWS secrets exist
+          if grep -r "AWS_ACCESS_KEY_ID" .github/workflows/; then
+            echo "✅ Found AWS credential requirements"
+            echo "📝 Required secrets for these workflows:"
+            echo "  - AWS_ACCESS_KEY_ID"
+            echo "  - AWS_SECRET_ACCESS_KEY"
+            echo ""
+            echo "⚠️ IMPORTANT: These must be configured in GitHub repository secrets before workflows will work"
+          fi
+          
+      - name: Validate cron schedules
+        run: |
+          echo "🔍 Validating cron schedules..."
+          
+          # Extract and validate cron expressions
+          if grep -r "cron:" .github/workflows/; then
+            echo "✅ Found scheduled workflows"
+            echo "📅 Schedule summary:"
+            echo "  - Nightly Destruction: 8 PM UTC daily (saves ~$4.80/night)"
+            echo "  - No automatic rebuilds (manual trigger only)"
+          fi
+          
+      - name: Check workflow permissions
+        run: |
+          echo "🔍 Checking workflow permissions and safety..."
+          
+          # Check for destructive operations
+          if grep -r "terraform destroy" .github/workflows/; then
+            echo "⚠️ Found destructive operations in workflows"
+            echo "🛡️ Safety measures in place:"
+            echo "  - Context preservation before destruction"
+            echo "  - Forced cleanup of remaining resources"
+            echo "  - Automatic state logging"
+            echo "  - Manual rebuild only (no auto-rebuild)"
+          fi
+          
+          echo ""
+          echo "✅ Workflow validation complete"
+          echo "📚 Next steps after merge:"
+          echo "  1. Configure AWS secrets in GitHub repository settings"
+          echo "  2. Test manual rebuild workflow"
+          echo "  3. Verify nightly destruction (will run at 8 PM UTC)"

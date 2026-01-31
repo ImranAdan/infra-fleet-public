@@ -1,0 +1,56 @@
+# NetworkPolicy - Controls traffic to/from load-harness pods
+#
+# Approach: Permissive egress, restricted ingress
+# - Ingress: Only allow known sources (NGINX, Prometheus, self)
+# - Egress: Allow all for now (app needs Prometheus, DNS, self)
+#
+# TODO: Tighten egress rules once traffic patterns are understood
+# See issue #294 for future Gateway API migration which may change this
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: load-harness
+  namespace: applications
+spec:
+  podSelector:
+    matchLabels:
+      app: load-harness
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # INGRESS: Only allow traffic from known sources
+  ingress:
+    # Allow traffic from NGINX Ingress Controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 5000
+
+    # Allow Prometheus to scrape /metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 5000
+
+    # Allow load-harness pods to communicate with each other
+    # (needed for distributed load testing feature)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: load-harness
+      ports:
+        - protocol: TCP
+          port: 5000
+
+  # EGRESS: Allow all outbound traffic for now
+  # App needs: Prometheus (9090), DNS (53), self (5000)
+  egress:
+    - {}

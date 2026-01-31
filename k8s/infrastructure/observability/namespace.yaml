@@ -1,0 +1,18 @@
+---
+# Observability Namespace
+# Managed by Flux (not Terraform) to avoid state conflicts
+#
+# Why Flux manages this:
+# - Flux creates HelmReleases in this namespace
+# - Resources may have finalizers (though not in Phase 1 - no Ingress)
+# - Flux can cleanly delete namespace when we remove this file
+# - No Terraform state conflicts during destroy
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    app.kubernetes.io/managed-by: flux
+    app.kubernetes.io/part-of: observability-stack
+  annotations:
+    description: "Observability stack (Prometheus, future: Grafana)"

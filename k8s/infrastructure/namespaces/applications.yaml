@@ -1,0 +1,27 @@
+# Namespace for application workloads
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: applications
+  labels:
+    name: applications
+    managed-by: flux
+---
+# ResourceQuota to prevent resource exhaustion
+# Caps total resource usage for all pods in the namespace
+# Node capacity: t3.large = 2 vCPU, 8GB RAM
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: applications-quota
+  namespace: applications
+spec:
+  hard:
+    # CPU: allow up to 4 cores total (2x node capacity for bursting)
+    requests.cpu: "4"
+    limits.cpu: "8"
+    # Memory: allow up to 8Gi requests, 16Gi limits
+    requests.memory: 8Gi
+    limits.memory: 16Gi
+    # Pod count: reasonable limit for staging
+    pods: "20"

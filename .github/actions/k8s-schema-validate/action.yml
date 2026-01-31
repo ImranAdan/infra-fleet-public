@@ -1,0 +1,42 @@
+# --------------------------------------------------------------------------------------------------
+# Kubernetes Schema Validation Composite Action
+# Validates Kubernetes manifests against schemas using kubeconform.
+# Supports both core Kubernetes resources and CRDs (Flux, Prometheus, etc.).
+# --------------------------------------------------------------------------------------------------
+name: 'Kubernetes Schema Validate'
+description: 'Validate Kubernetes manifests against schemas using kubeconform'
+
+inputs:
+  path:
+    description: 'Path to directory containing Kubernetes manifests'
+    required: true
+    default: 'k8s/'
+  kubernetes-version:
+    description: 'Kubernetes version for schema validation'
+    required: false
+    default: '1.32.0'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install kubeconform
+      shell: bash
+      run: |
+        KUBECONFORM_VERSION="0.6.4"
+        curl -sSL "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz -C /tmp
+        chmod +x /tmp/kubeconform
+        sudo mv /tmp/kubeconform /usr/local/bin/
+
+    - name: Validate Kubernetes schemas
+      shell: bash
+      run: |
+        echo "Validating Kubernetes manifests against v${{ inputs.kubernetes-version }} schemas..."
+        kubeconform \
+          -strict \
+          -summary \
+          -kubernetes-version ${{ inputs.kubernetes-version }} \
+          -schema-location default \
+          -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+          -ignore-missing-schemas \
+          ${{ inputs.path }}
+        echo "Kubernetes schema validation passed"

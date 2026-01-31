@@ -1,0 +1,87 @@
+name: 'Cleanup Kubernetes Resources'
+description: 'Installs Flux CLI and runs Kubernetes resource cleanup scripts'
+
+inputs:
+  cluster-name:
+    description: 'EKS cluster name'
+    required: false
+    default: 'staging'
+  aws-region:
+    description: 'AWS region'
+    required: false
+    default: 'eu-west-2'
+  mode:
+    description: 'Cleanup mode: dry-run or live'
+    required: false
+    default: 'dry-run'
+  run-verification:
+    description: 'Run pre/post verification scripts'
+    required: false
+    default: 'true'
+
+outputs:
+  status:
+    description: 'Cleanup status: success, failed, or skipped'
+    value: ${{ steps.cleanup.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Flux CLI
+      uses: fluxcd/flux2/action@main
+      # Official Flux action - verified and secure installation
+      # See: https://github.com/fluxcd/flux2/tree/main/action
+
+    - name: Pre-cleanup verification
+      if: inputs.run-verification == 'true'
+      shell: bash
+      run: |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "PRE-CLEANUP STATE"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        if [ -f scripts/verify-cleanup-resources.sh ]; then
+          chmod +x scripts/verify-cleanup-resources.sh
+          ./scripts/verify-cleanup-resources.sh ${{ inputs.cluster-name }} ${{ inputs.aws-region }} || true
+        else
+          echo "Verification script not found, skipping..."
+        fi
+
+    - name: Run cleanup script
+      id: cleanup
+      shell: bash
+      run: |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "RUNNING CLEANUP (mode: ${{ inputs.mode }})"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        if [ ! -f scripts/cleanup-k8s-resources-v2.sh ]; then
+          echo "Cleanup script not found, skipping..."
+          echo "status=skipped" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        chmod +x scripts/cleanup-k8s-resources-v2.sh
+
+        if [ "${{ inputs.mode }}" == "dry-run" ]; then
+          ./scripts/cleanup-k8s-resources-v2.sh ${{ inputs.cluster-name }} ${{ inputs.aws-region }} dry-run
+        else
+          ./scripts/cleanup-k8s-resources-v2.sh ${{ inputs.cluster-name }} ${{ inputs.aws-region }}
+        fi
+
+        if [ $? -eq 0 ]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Post-cleanup verification
+      if: inputs.run-verification == 'true'
+      shell: bash
+      run: |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "POST-CLEANUP STATE"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        if [ -f scripts/verify-cleanup-resources.sh ]; then
+          chmod +x scripts/verify-cleanup-resources.sh
+          ./scripts/verify-cleanup-resources.sh ${{ inputs.cluster-name }} ${{ inputs.aws-region }} || true
+        fi

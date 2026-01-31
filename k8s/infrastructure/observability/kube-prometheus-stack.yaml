@@ -1,0 +1,165 @@
+---
+# kube-prometheus-stack - Prometheus + Grafana (Phase 2)
+#
+# Phase 2 Strategy: Full observability stack with Grafana dashboards
+#
+# Components Enabled:
+#   ✅ Prometheus: Metrics collection and time-series database
+#   ✅ Prometheus Operator: Manages Prometheus instances via CRDs
+#   ✅ ServiceMonitors: Auto-discovery of application metrics
+#   ✅ Grafana: Metrics visualization and dashboards
+#   ✅ kube-state-metrics: Kubernetes metrics
+#   ✅ node-exporter: Node-level metrics (CPU, memory, etc.)
+#
+# Components Disabled:
+#   ❌ Alertmanager: Saves 1 pod, not needed for ephemeral stack
+#   ❌ Admission webhooks: Known timeout issues
+#
+# Storage Strategy:
+#   - EPHEMERAL: All data lost on pod restart/nightly rebuild
+#   - No persistent volumes (acceptable for dev/testing)
+#
+# Access:
+#   - Prometheus: kubectl port-forward -n observability prometheus-kube-prometheus-stack-prometheus-0 9090:9090
+#   - Grafana: kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
+#   - No Ingress = No ALB = No finalizer issues on destroy
+#
+# Resource Constraints:
+#   - Configured for t3.medium node (2 vCPU, 4GB RAM)
+#   - Minimal retention (2 days, 1GB max)
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: observability
+spec:
+  # dependsOn ensures kube-prometheus-stack waits for ALB controller webhook to be ready
+  # Without this, Helm install fails with "no endpoints available for service aws-load-balancer-webhook-service"
+  # See: https://github.com/your-org/infra-fleet/issues/154
+  dependsOn:
+    - name: aws-load-balancer-controller
+      namespace: kube-system
+  interval: 10m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: 67.4.0
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  values:
+    # ============================================================================
+    # Prometheus Configuration
+    # ============================================================================
+    prometheus:
+      prometheusSpec:
+        # Ephemeral storage - no persistence
+        storageSpec: {}
+
+        # Minimal retention for t3.small constraints
+        retention: 2d
+        retentionSize: "1GB"
+
+        # Resource limits for t3.small node
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+        # ServiceMonitor discovery
+        # These settings allow Prometheus to discover all ServiceMonitors in any namespace
+        serviceMonitorSelectorNilUsesHelmValues: false
+        serviceMonitorSelector: {}
+        podMonitorSelector: {}
+
+    # ============================================================================
+    # Grafana Configuration - ENABLED FOR PHASE 2
+    # ============================================================================
+    grafana:
+      enabled: true  # ← PHASE 2: Enable Grafana for dashboards
+
+      # Ephemeral storage - no persistent volumes
+      # Dashboards will need to be re-imported after pod restarts
+      persistence:
+        enabled: false
+
+      # Resource limits for t3.medium node (plenty of capacity)
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+      # Admin credentials
+      # Note: kube-prometheus-stack chart automatically creates admin credentials
+      # Default username: admin
+      # Default password: prom-operator (should be changed in production)
+      # For now, using default credentials with port-forward access only
+
+      # Prometheus datasource auto-configured by kube-prometheus-stack chart
+      # No additional datasource configuration needed
+
+    # ============================================================================
+    # Alertmanager Configuration - DISABLED
+    # ============================================================================
+    # Disabled to save pod capacity on t3.medium (17 pod limit)
+    # Alertmanager sends notifications to humans - not needed for:
+    #   - Ephemeral stack that rebuilds nightly
+    #   - Manual monitoring via Grafana dashboards
+    #   - HPA (uses metrics-server, not Alertmanager)
+    alertmanager:
+      enabled: false
+
+    # ============================================================================
+    # Node Exporter - ENABLED
+    # ============================================================================
+    # Provides node-level metrics (CPU, memory, disk, network)
+    # Required for Load Testing Overview dashboard infrastructure panels
+    nodeExporter:
+      enabled: true
+
+    # ============================================================================
+    # Prometheus Operator Configuration
+    # ============================================================================
+    prometheusOperator:
+      # Disable TLS (required when disabling admission webhooks)
+      # See: https://github.com/prometheus-community/helm-charts/issues/418
+      tls:
+        enabled: false
+
+      # Disable admission webhooks (known timeout issues)
+      # Webhooks validate PrometheusRule and other CRDs but not critical
+      admissionWebhooks:
+        enabled: false
+
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+    # ============================================================================
+    # kube-state-metrics Configuration
+    # ============================================================================
+    # Provides metrics about Kubernetes objects (pods, deployments, etc.)
+    kube-state-metrics:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi

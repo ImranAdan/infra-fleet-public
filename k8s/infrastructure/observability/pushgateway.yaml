@@ -1,0 +1,72 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pushgateway
+  namespace: observability
+  labels:
+    app: pushgateway
+    app.kubernetes.io/name: pushgateway
+    app.kubernetes.io/part-of: observability-stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pushgateway
+  template:
+    metadata:
+      labels:
+        app: pushgateway
+        app.kubernetes.io/name: pushgateway
+        app.kubernetes.io/part-of: observability-stack
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: pushgateway
+          image: prom/pushgateway:v1.7.0
+          args:
+            - "--web.listen-address=:9091"
+            - "--web.enable-lifecycle"
+          ports:
+            - name: http
+              containerPort: 9091
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pushgateway
+  namespace: observability
+  labels:
+    app: pushgateway
+spec:
+  selector:
+    app: pushgateway
+  ports:
+    - name: http
+      port: 9091
+      targetPort: http
+      protocol: TCP
+
+# NOTE: ServiceMonitor moved to k8s/applications/observability/pushgateway-monitor.yaml
+# This avoids chicken-and-egg problem: ServiceMonitor CRD is installed by
+# kube-prometheus-stack HelmRelease, but Flux dry-runs all resources before
+# applying any. Moving it to applications (which depends on infrastructure)
+# ensures the CRD exists before the ServiceMonitor is applied.

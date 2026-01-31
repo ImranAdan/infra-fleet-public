@@ -1,0 +1,68 @@
+---
+# MetricTemplates for Flagger canary analysis
+#
+# =============================================================================
+# WHY CUSTOM METRIC TEMPLATES?
+# =============================================================================
+#
+# When using prometheus-operator with NGINX Ingress Controller, the namespace
+# label is relabeled to avoid conflicts:
+#   - Original: namespace="applications"
+#   - Relabeled: exported_namespace="applications", namespace="ingress-nginx"
+#
+# Flagger's built-in nginx metrics use `namespace` which now points to the
+# ingress controller's namespace, not the application namespace. This causes
+# "no values found" errors during canary analysis.
+#
+# These templates use `exported_namespace` to correctly filter metrics.
+#
+# =============================================================================
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: nginx-request-success-rate
+  namespace: applications
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability:9090
+  query: |
+    sum(
+      rate(
+        nginx_ingress_controller_requests{
+          exported_namespace="{{ namespace }}",
+          ingress="{{ ingress }}",
+          status!~"5.."
+        }[{{ interval }}]
+      )
+    )
+    /
+    sum(
+      rate(
+        nginx_ingress_controller_requests{
+          exported_namespace="{{ namespace }}",
+          ingress="{{ ingress }}"
+        }[{{ interval }}]
+      )
+    ) * 100
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: nginx-request-duration
+  namespace: applications
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability:9090
+  query: |
+    histogram_quantile(0.99,
+      sum(
+        rate(
+          nginx_ingress_controller_request_duration_seconds_bucket{
+            exported_namespace="{{ namespace }}",
+            ingress="{{ ingress }}"
+          }[{{ interval }}]
+        )
+      ) by (le)
+    ) * 1000

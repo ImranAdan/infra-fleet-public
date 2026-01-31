@@ -1,0 +1,234 @@
+---
+# Canary - Progressive delivery for load-harness
+#
+# =============================================================================
+# HOW FLAGGER WORKS
+# =============================================================================
+#
+# On first deploy, Flagger creates:
+#   - load-harness-primary  → stable version, receives production traffic
+#   - load-harness-canary   → new version staging area (scaled to 0 initially)
+#   - load-harness (svc)    → routes traffic between primary/canary
+#
+# The original Deployment is scaled to 0 - Flagger takes full control.
+#
+# =============================================================================
+# CANARY DEPLOYMENT FLOW (when new image/config detected)
+# =============================================================================
+#
+#   Step 1: Canary pods created with new version
+#   Step 2: Traffic split begins (10% canary, 90% primary)
+#   Step 3: Prometheus metrics analyzed every 30s
+#   Step 4: If healthy, increase canary traffic by 10%
+#   Step 5: Repeat until maxWeight (50%) reached
+#   Step 6: After 3 successful iterations at max → promote canary to primary
+#
+# Timeline example (happy path):
+#   t=0:00  canary 10% ← analyze
+#   t=0:30  canary 20% ← analyze
+#   t=1:00  canary 30% ← analyze
+#   t=1:30  canary 40% ← analyze
+#   t=2:00  canary 50% ← analyze (max weight)
+#   t=2:30  canary 50% ← iteration 1 of 3
+#   t=3:00  canary 50% ← iteration 2 of 3
+#   t=3:30  canary 50% ← iteration 3 of 3 → PROMOTED
+#
+# =============================================================================
+# AUTOMATIC ROLLBACK
+# =============================================================================
+#
+# Rollback triggers:
+#   - Success rate drops below 99% (more than 1% 5xx errors)
+#   - p99 latency exceeds 500ms
+#   - Pod health checks fail
+#
+# On rollback:
+#   1. All traffic immediately returns to primary (stable version)
+#   2. Canary pods are scaled to 0
+#   3. Canary status set to "Failed"
+#   4. Users experience minimal impact (only canary % saw issues)
+#
+# =============================================================================
+# TESTING ROLLBACK
+# =============================================================================
+#
+# To test the rollback mechanism:
+#   1. Set FAIL_RATE=0.3 in deployment.yaml (30% of requests will 500)
+#   2. Commit and push → Flux deploys → Flagger starts canary
+#   3. Watch: kubectl -n applications get canary -w
+#   4. Canary will fail analysis (70% success < 99% threshold)
+#   5. Flagger rolls back automatically
+#   6. Revert FAIL_RATE=0.0 to restore normal operation
+#
+# =============================================================================
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: load-harness
+  namespace: applications
+spec:
+  # Traffic routing provider - must match Flagger's meshProvider setting
+  provider: nginx
+
+  # ---------------------------------------------------------------------------
+  # TARGET: Which Deployment does Flagger manage?
+  # ---------------------------------------------------------------------------
+  # Flagger will:
+  #   - Scale this deployment to 0
+  #   - Create load-harness-primary and load-harness-canary deployments
+  #   - Sync spec changes from this deployment to canary during rollouts
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: load-harness
+
+  # ---------------------------------------------------------------------------
+  # INGRESS REFERENCE: Required for NGINX traffic splitting
+  # ---------------------------------------------------------------------------
+  # Flagger uses this ingress to create canary routing rules.
+  # For each canary analysis step, Flagger:
+  #   1. Creates load-harness-canary ingress (copy of this ingress)
+  #   2. Adds nginx.ingress.kubernetes.io/canary: "true"
+  #   3. Sets nginx.ingress.kubernetes.io/canary-weight: "<stepWeight>"
+  #   4. NGINX routes <stepWeight>% of traffic to canary pods
+  ingressRef:
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    name: load-harness
+
+  # ---------------------------------------------------------------------------
+  # AUTOSCALER: HPA integration
+  # ---------------------------------------------------------------------------
+  # Flagger pauses HPA during canary analysis to prevent scaling interference.
+  # After promotion, HPA resumes normal operation on the primary deployment.
+  autoscalerRef:
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    name: load-harness
+
+  # ---------------------------------------------------------------------------
+  # SERVICE: Traffic routing configuration
+  # ---------------------------------------------------------------------------
+  # Flagger creates Services for primary and canary deployments.
+  # With meshProvider: nginx, traffic splitting is done via ingress annotations
+  # (nginx.ingress.kubernetes.io/canary-weight) rather than pod selectors.
+  service:
+    port: 5000
+    targetPort: 5000
+
+  # ---------------------------------------------------------------------------
+  # ANALYSIS: Canary promotion/rollback rules
+  # ---------------------------------------------------------------------------
+  analysis:
+    # How often to run metric analysis and adjust traffic weights.
+    # Shorter = faster rollouts but less data per decision.
+    # Longer = slower rollouts but more confidence per step.
+    interval: 30s
+
+    # Maximum traffic percentage routed to canary.
+    # 50% means primary always handles at least half the traffic.
+    # Lower values = safer but slower validation.
+    # Higher values = faster validation but more exposure to bad releases.
+    maxWeight: 50
+
+    # Traffic percentage increase per successful analysis.
+    # With stepWeight=10 and maxWeight=50:
+    #   10% → 20% → 30% → 40% → 50% (5 steps to reach max)
+    stepWeight: 10
+
+    # Number of successful metric checks required at maxWeight before promotion.
+    # Higher threshold = more confidence but longer rollout time.
+    # With interval=30s and threshold=3: 90s of validation at max weight.
+    threshold: 3
+
+    # ---------------------------------------------------------------------------
+    # METRICS: What determines success or failure?
+    # ---------------------------------------------------------------------------
+    # Custom MetricTemplates are required because prometheus-operator relabels
+    # the namespace label to exported_namespace. The built-in Flagger metrics
+    # use namespace which points to ingress-nginx, not our app namespace.
+    #
+    # See: metrictemplate.yaml for the PromQL queries
+    metrics:
+      # SUCCESS RATE
+      # Measures: percentage of HTTP requests that don't return 5xx errors
+      # Threshold: must be >= 99% (allows only 1% error rate)
+      # Why 99%: balances reliability requirements with realistic expectations
+      # Rollback if: error rate exceeds 1%
+      - name: nginx-request-success-rate
+        templateRef:
+          name: nginx-request-success-rate
+          namespace: applications
+        templateVariables:
+          ingress: load-harness
+        thresholdRange:
+          min: 99
+        interval: 1m
+
+      # LATENCY (P99)
+      # Measures: 99th percentile response time in milliseconds
+      # Threshold: must be <= 500ms
+      # Why 500ms: typical web app threshold; adjust based on your SLOs
+      # Rollback if: slowest 1% of requests exceed 500ms
+      - name: nginx-request-duration
+        templateRef:
+          name: nginx-request-duration
+          namespace: applications
+        templateVariables:
+          ingress: load-harness
+        thresholdRange:
+          max: 500
+        interval: 1m
+
+    # ---------------------------------------------------------------------------
+    # WEBHOOKS: Automated load testing during canary analysis
+    # ---------------------------------------------------------------------------
+    # Without traffic, Flagger's metrics return NaN or pass by default.
+    # These webhooks trigger load tests to generate real traffic and populate
+    # Prometheus metrics for accurate success rate evaluation.
+    #
+    # The flagger-loadtester service runs `hey` (HTTP load generator) commands.
+    # Traffic flows: hey -> load-harness-canary service -> canary pods
+    #
+    # API Key: Mounted at /etc/loadtester/secrets/api-key from load-harness-api-key secret
+    webhooks:
+      # Pre-rollout: Smoke test before any traffic shift
+      # Runs once at the start of canary analysis
+      # Verifies the canary is healthy before receiving user traffic
+      # Note: /health doesn't require auth and is protected from chaos injection
+      - name: "smoke-test"
+        type: pre-rollout
+        url: http://flagger-loadtester.applications/
+        timeout: 30s
+        metadata:
+          type: cmd
+          cmd: "hey -z 5s -q 5 -c 2 http://load-harness-canary.applications:5000/health"
+
+      # Rollout webhooks: Continuous load tests during each analysis interval
+      # Run before every metric check (every 30s based on interval)
+      # Multiple webhooks test different endpoint types for comprehensive validation
+      #
+      # IMPORTANT: Traffic must route through NGINX Ingress Controller for metrics
+      # to be captured. Direct service calls bypass NGINX and won't populate
+      # nginx_ingress_controller_requests metrics used by Flagger for analysis.
+
+      # Load test 1: GET /version (lightweight, JSON response)
+      # Tests basic request handling and serialization
+      - name: "load-test-version"
+        type: rollout
+        url: http://flagger-loadtester.applications/
+        timeout: 15s
+        metadata:
+          type: cmd
+          cmd: "hey -z 10s -q 10 -c 5 -H 'Host: app.example.com' -H 'X-API-Key: '$(cat /etc/loadtester/secrets/api-key) http://nginx-ingress-controller-ingress-nginx-controller.ingress-nginx/version"
+
+      # Load test 2: POST /load/cpu/work (CPU-intensive, synchronous)
+      # Tests compute-heavy requests - designed for distributed load testing
+      # Each request performs 50k math iterations (~50-100ms response time)
+      - name: "load-test-cpu"
+        type: rollout
+        url: http://flagger-loadtester.applications/
+        timeout: 15s
+        metadata:
+          type: cmd
+          cmd: "hey -z 10s -q 5 -c 3 -m POST -T 'application/json' -d '{\"iterations\": 50000}' -H 'Host: app.example.com' -H 'X-API-Key: '$(cat /etc/loadtester/secrets/api-key) http://nginx-ingress-controller-ingress-nginx-controller.ingress-nginx/load/cpu/work"

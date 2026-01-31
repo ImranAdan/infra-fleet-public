@@ -1,0 +1,37 @@
+# --------------------------------------------------------------------------------------------------
+# Block Default Namespace Policy
+# Prevents deployments to the 'default' namespace to enforce explicit namespace usage.
+# This ensures all resources are organized into purpose-specific namespaces.
+# --------------------------------------------------------------------------------------------------
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: block-default-namespace
+  annotations:
+    policies.kyverno.io/title: Block Default Namespace
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Kubernetes provides a default namespace for resources without an explicit namespace.
+      This policy blocks Pod creation in the default namespace to enforce proper
+      namespace organization and prevent accidental deployments.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: block-default-namespace
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - Job
+                - CronJob
+      validate:
+        message: "Using the 'default' namespace is not allowed. Please specify a namespace."
+        pattern:
+          metadata:
+            namespace: "!default"

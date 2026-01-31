@@ -1,0 +1,420 @@
+name: Rebuild Stack (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      reason:
+        description: 'Reason for rebuild (optional)'
+        required: false
+        default: 'On-demand stack rebuild'
+        type: string
+      force_rebuild:
+        description: 'Skip health gate (infra-apply) and force rebuild'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # ===========================================================================
+  # Job 1: Health Gate
+  # ===========================================================================
+  health-check:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      healthy: ${{ steps.check.outputs.healthy }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check main branch health
+        id: check
+        env:
+          FORCE_REBUILD: ${{ inputs.force_rebuild }}
+          REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ "$FORCE_REBUILD" = "true" ]; then
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          api="https://api.github.com/repos/$REPO/actions/workflows/infra-apply.yml/runs?branch=main&per_page=1"
+          run_json=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" "$api")
+          run_info=$(echo "$run_json" | jq -r '.workflow_runs[0]')
+
+          if [ "$run_info" = "null" ]; then
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          status=$(echo "$run_info" | jq -r '.status')
+          conclusion=$(echo "$run_info" | jq -r '.conclusion')
+
+          if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "healthy=true" >> "$GITHUB_OUTPUT"
+
+  # ===========================================================================
+  # Job 2: Rebuild Infrastructure
+  # ===========================================================================
+  build-infrastructure:
+    name: Deploy to ${{ inputs.environment }}
+    needs: health-check
+    if: needs.health-check.outputs.healthy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: https://github.com/${{ github.repository }}/deployments
+    permissions:
+      id-token: write
+      contents: write
+    env:
+      AWS_REGION: eu-west-2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup AWS and Terraform
+        uses: ./.github/actions/setup-aws-terraform
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          session-name: GitHubActions-RebuildStack
+          tf-api-token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Validate Terraform
+        run: |
+          cd infrastructure/staging
+          terraform init -backend=false
+          terraform validate
+
+      # -----------------------------------------------------------------------
+      # TERRAFORM APPLY
+      # Note: Flux is bootstrapped separately after Terraform completes.
+      # This eliminates the two-phase targeted apply that was previously needed.
+      # -----------------------------------------------------------------------
+      - name: Terraform Apply
+        id: terraform
+        run: |
+          cd infrastructure/staging
+          terraform init
+          terraform apply -auto-approve
+
+          # Export outputs for use in subsequent steps
+          echo "vpc_id=$(terraform output -raw vpc_id)" >> "$GITHUB_OUTPUT"
+          echo "cluster_name=$(terraform output -raw cluster_name)" >> "$GITHUB_OUTPUT"
+          echo "aws_account_id=$(terraform output -raw aws_account_id)" >> "$GITHUB_OUTPUT"
+          echo "ecr_registry=$(terraform output -raw ecr_registry)" >> "$GITHUB_OUTPUT"
+        env:
+          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+
+      # -----------------------------------------------------------------------
+      # CONFIGURE KUBECTL
+      # -----------------------------------------------------------------------
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --name staging --region ${{ env.AWS_REGION }}
+
+      # -----------------------------------------------------------------------
+      # CLUSTER HEALTH CHECK (before Flux)
+      # -----------------------------------------------------------------------
+      - name: Cluster Health Check
+        run: |
+          kubectl wait --for=condition=ready nodes --all --timeout=5m
+          kubectl wait --for=condition=ready pod -n kube-system -l k8s-app=kube-dns --timeout=5m
+
+      # -----------------------------------------------------------------------
+      # CREATE TERRAFORM-OUTPUTS CONFIGMAP FOR FLUX
+      # This ConfigMap is used by Flux for variable substitution in GitOps manifests.
+      # -----------------------------------------------------------------------
+      - name: Create terraform-outputs ConfigMap
+        run: |
+          # Create flux-system namespace if it doesn't exist
+          kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create/update ConfigMap with Terraform outputs
+          kubectl create configmap terraform-outputs \
+            --namespace=flux-system \
+            --from-literal=VPC_ID=${{ steps.terraform.outputs.vpc_id }} \
+            --from-literal=CLUSTER_NAME=${{ steps.terraform.outputs.cluster_name }} \
+            --from-literal=AWS_REGION=${{ env.AWS_REGION }} \
+            --from-literal=AWS_ACCOUNT_ID=${{ steps.terraform.outputs.aws_account_id }} \
+            --from-literal=ENVIRONMENT=staging \
+            --from-literal=ECR_REGISTRY=${{ steps.terraform.outputs.ecr_registry }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Add labels for Flux compatibility
+          kubectl label configmap terraform-outputs \
+            --namespace=flux-system \
+            --overwrite \
+            app.kubernetes.io/managed-by=rebuild-workflow \
+            app.kubernetes.io/part-of=flux-system \
+            app.kubernetes.io/component=configuration
+
+      # -----------------------------------------------------------------------
+      # CREATE APPLICATION SECRETS
+      # Secrets that applications need must be created before Flux deploys them.
+      # -----------------------------------------------------------------------
+      - name: Create load-harness API key secret
+        run: |
+          # Create applications namespace if it doesn't exist
+          kubectl create namespace applications --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create/update the API key secret
+          kubectl create secret generic load-harness-api-key \
+            --namespace=applications \
+            --from-literal=api-key=${{ secrets.LOAD_HARNESS_API_KEY }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Add labels for tracking
+          kubectl label secret load-harness-api-key \
+            --namespace=applications \
+            --overwrite \
+            app.kubernetes.io/managed-by=rebuild-workflow \
+            app.kubernetes.io/part-of=load-harness
+
+      - name: Create load-harness Flask secret key
+        run: |
+          # Generate a random secret key for Flask session management
+          # This must be consistent across all gunicorn workers to prevent session loss
+          SECRET_KEY=$(openssl rand -hex 32)
+
+          # Create/update the secret key
+          kubectl create secret generic load-harness-secret-key \
+            --namespace=applications \
+            --from-literal=secret-key="$SECRET_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Add labels for tracking
+          kubectl label secret load-harness-secret-key \
+            --namespace=applications \
+            --overwrite \
+            app.kubernetes.io/managed-by=rebuild-workflow \
+            app.kubernetes.io/part-of=load-harness
+
+      # -----------------------------------------------------------------------
+      # BOOTSTRAP FLUX
+      # Flux is bootstrapped using the CLI instead of Terraform to avoid
+      # provider initialization issues when the cluster doesn't exist.
+      # This is idempotent and safe to run on every rebuild.
+      # -----------------------------------------------------------------------
+      - name: Install Flux CLI
+        run: |
+          curl -s https://fluxcd.io/install.sh | sudo bash
+
+      - name: Bootstrap Flux
+        run: |
+          flux bootstrap github \
+            --owner=your-org \
+            --repository=infra-fleet \
+            --path=k8s/flux-system \
+            --components=source-controller,kustomize-controller,helm-controller \
+            --components-extra=image-reflector-controller,image-automation-controller \
+            --version=v2.7.3 \
+            --token-auth
+        env:
+          GITHUB_TOKEN: ${{ secrets.FLUX_GITHUB_TOKEN }}
+
+      # -----------------------------------------------------------------------
+      # FINAL HEALTH CHECK
+      # -----------------------------------------------------------------------
+      - name: Final Health Check
+        run: |
+          kubectl get pods -n flux-system
+          flux check
+
+      # -----------------------------------------------------------------------
+      # INFRASTRUCTURE BAKE TIME
+      # Wait for Flux to deploy workloads and AWS to provision resources.
+      # The NLB for ingress-nginx typically takes 3-8 minutes to provision.
+      # -----------------------------------------------------------------------
+      - name: Infrastructure Bake Time
+        run: |
+          echo "Waiting 5 minutes for Flux to deploy workloads and AWS to provision NLB..."
+          sleep 300
+          echo "Bake time complete."
+
+      # -----------------------------------------------------------------------
+      # UPDATE CLOUDFLARE DNS FOR TLS
+      # Wait for NLB to be provisioned, then update Cloudflare DNS to point
+      # app.example.com to the NLB. This enables TLS via cert-manager.
+      # -----------------------------------------------------------------------
+      - name: Update Cloudflare DNS to point to NLB
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          echo "Waiting for NGINX Ingress NLB to be provisioned..."
+
+          # Wait for the ingress-nginx namespace to exist
+          kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/ingress-nginx --timeout=300s || true
+
+          # Wait for NLB service to get external hostname (may take a few minutes)
+          for i in {1..30}; do
+            NLB_HOST=$(kubectl get svc -n ingress-nginx \
+              -l app.kubernetes.io/name=ingress-nginx \
+              -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+
+            if [ -n "$NLB_HOST" ]; then
+              echo "NLB hostname: $NLB_HOST"
+              break
+            fi
+
+            echo "Waiting for NLB... (attempt $i/30)"
+            sleep 10
+          done
+
+          if [ -z "$NLB_HOST" ]; then
+            echo "ERROR: NLB hostname not available after 5 minutes"
+            exit 1
+          fi
+
+          # Get existing DNS record ID (if any)
+          echo "Checking for existing DNS record..."
+          RECORD_RESPONSE=$(curl -s -X GET \
+            "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records?name=app.example.com&type=CNAME" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json")
+
+          # Validate Cloudflare API response
+          if ! echo "$RECORD_RESPONSE" | jq -e . > /dev/null 2>&1; then
+            echo "ERROR: Cloudflare API returned invalid JSON"
+            echo "$RECORD_RESPONSE"
+            exit 1
+          fi
+          if [ "$(echo "$RECORD_RESPONSE" | jq -r '.success')" != "true" ]; then
+            echo "ERROR: Cloudflare API request failed"
+            echo "$RECORD_RESPONSE" | jq .
+            exit 1
+          fi
+
+          RECORD_ID=$(echo "$RECORD_RESPONSE" | jq -r '.result[0].id // empty')
+
+          if [ -z "$RECORD_ID" ]; then
+            # Create new DNS record
+            echo "Creating DNS record: app.example.com -> $NLB_HOST"
+            CREATE_RESPONSE=$(curl -s -X POST \
+              "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data '{
+                "type": "CNAME",
+                "name": "app",
+                "content": "'"$NLB_HOST"'",
+                "ttl": 300,
+                "proxied": false
+              }')
+
+            if ! echo "$CREATE_RESPONSE" | jq -e . > /dev/null 2>&1; then
+              echo "ERROR: Cloudflare API returned invalid JSON"
+              echo "$CREATE_RESPONSE"
+              exit 1
+            fi
+            if [ "$(echo "$CREATE_RESPONSE" | jq -r '.success')" != "true" ]; then
+              echo "ERROR: Failed to create DNS record"
+              echo "$CREATE_RESPONSE" | jq .
+              exit 1
+            fi
+            echo "$CREATE_RESPONSE" | jq .
+          else
+            # Update existing DNS record
+            echo "Updating DNS record: app.example.com -> $NLB_HOST"
+            UPDATE_RESPONSE=$(curl -s -X PUT \
+              "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records/$RECORD_ID" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data '{
+                "type": "CNAME",
+                "name": "app",
+                "content": "'"$NLB_HOST"'",
+                "ttl": 300,
+                "proxied": false
+              }')
+
+            if ! echo "$UPDATE_RESPONSE" | jq -e . > /dev/null 2>&1; then
+              echo "ERROR: Cloudflare API returned invalid JSON"
+              echo "$UPDATE_RESPONSE"
+              exit 1
+            fi
+            if [ "$(echo "$UPDATE_RESPONSE" | jq -r '.success')" != "true" ]; then
+              echo "ERROR: Failed to update DNS record"
+              echo "$UPDATE_RESPONSE" | jq .
+              exit 1
+            fi
+            echo "$UPDATE_RESPONSE" | jq .
+          fi
+
+          echo "DNS record updated: app.example.com -> $NLB_HOST"
+
+          # Wait for DNS propagation with verification
+          echo "Waiting for DNS propagation..."
+          for i in {1..12}; do
+            RESOLVED=$(dig +short app.example.com | head -1)
+            if [ -n "$RESOLVED" ]; then
+              echo "DNS resolved to: $RESOLVED"
+              break
+            fi
+            echo "Waiting for DNS propagation... (attempt $i/12)"
+            sleep 10
+          done
+
+          # Warn if DNS resolution failed
+          if [ -z "$RESOLVED" ]; then
+            echo "WARNING: DNS resolution returned empty result after 2 minutes"
+            echo "Certificate issuance may fail - check Cloudflare DNS configuration"
+          fi
+
+          # Trigger Flux reconciliation
+          echo "Triggering Flux reconciliation..."
+          flux reconcile kustomization applications --with-source
+
+          echo "TLS configuration complete. Certificate will be issued during bake time."
+
+  # ===========================================================================
+  # Job 3: Bake Time
+  # ===========================================================================
+  bake-time:
+    needs: build-infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - run: sleep 180
+
+  # ===========================================================================
+  # Job 4: Verify Cluster
+  # ===========================================================================
+  verify-cluster:
+    needs: bake-time
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/verify-cluster.yml
+    secrets: inherit
+
+  # ===========================================================================
+  # Job 5: Verify Flux
+  # ===========================================================================
+  verify-flux:
+    needs: verify-cluster
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/flux-validate.yml
+    with:
+      bake_time_seconds: '0'
+    secrets: inherit

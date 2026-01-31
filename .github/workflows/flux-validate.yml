@@ -1,0 +1,90 @@
+name: Flux Reconciliation Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'EKS cluster name'
+        required: false
+        default: 'staging'
+        type: string
+      bake_time_seconds:
+        description: 'Bake time before checking (seconds)'
+        required: false
+        default: '180'
+        type: string
+  workflow_call:
+    inputs:
+      cluster_name:
+        description: 'EKS cluster name'
+        type: string
+        required: false
+        default: 'staging'
+      bake_time_seconds:
+        description: 'Bake time before checking (seconds)'
+        type: string
+        required: false
+        default: '180'
+      expected_revision:
+        description: 'Expected Git revision (SHA) to verify'
+        type: string
+        required: false
+
+env:
+  AWS_REGION: eu-west-2
+
+jobs:
+  verify-flux:
+    name: Verify Flux Reconciliation
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      status: ${{ steps.flux-verify.outputs.status }}
+      kustomizations_ready: ${{ steps.flux-verify.outputs.kustomizations_ready }}
+      git_revision: ${{ steps.flux-verify.outputs.git_revision }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-session-name: GitHubActions-FluxValidate-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify Flux Reconciliation
+        id: flux-verify
+        uses: ./.github/actions/verify-flux-reconciliation
+        with:
+          cluster_name: ${{ inputs.cluster_name || 'staging' }}
+          aws_region: ${{ env.AWS_REGION }}
+          bake_time_seconds: ${{ inputs.bake_time_seconds || '180' }}
+          expected_revision: ${{ inputs.expected_revision || '' }}
+
+      - name: Report Status
+        if: always()
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "FLUX VALIDATION SUMMARY"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "Status: ${{ steps.flux-verify.outputs.status }}"
+          echo "Kustomizations Ready: ${{ steps.flux-verify.outputs.kustomizations_ready }}"
+          echo "Git Revision: ${{ steps.flux-verify.outputs.git_revision }}"
+          echo ""
+
+          STATUS="${{ steps.flux-verify.outputs.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "Flux reconciliation verified successfully!"
+          elif [ "$STATUS" = "cluster_unavailable" ]; then
+            echo "Cluster not available - cannot verify Flux reconciliation"
+            exit 1
+          else
+            echo "Flux reconciliation verification failed"
+            exit 1
+          fi

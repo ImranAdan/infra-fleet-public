@@ -1,0 +1,45 @@
+# --------------------------------------------------------------------------------------------------
+# Block Latest Tag Policy
+# Prevents use of the 'latest' tag or untagged images in container definitions.
+# This ensures all deployments use explicit, versioned image tags for reproducibility.
+# --------------------------------------------------------------------------------------------------
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: block-latest-tag
+  annotations:
+    policies.kyverno.io/title: Block Latest Tag
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      The 'latest' tag is mutable and can lead to unexpected container updates.
+      This policy requires all containers to use explicit version tags
+      for better reproducibility and rollback capabilities.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: block-latest-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - Job
+                - CronJob
+      validate:
+        message: "Using 'latest' tag or untagged images is not allowed. Use explicit version tags (e.g., v1.2.3)."
+        anyPattern:
+          # For Pods (spec.containers)
+          - spec:
+              containers:
+                - image: "!*:latest & *:*"
+          # For Deployments/StatefulSets/etc. (spec.template.spec.containers)
+          - spec:
+              template:
+                spec:
+                  containers:
+                    - image: "!*:latest & *:*"

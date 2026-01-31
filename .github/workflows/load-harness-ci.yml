@@ -1,0 +1,207 @@
+name: Load Harness CI
+
+on:
+  push:
+    tags: [ 'v*' ]
+    # Only push to ECR on release tags
+    # Aligns with Flux ImagePolicy semver range and release-please workflow
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'applications/load-harness/src/**'
+      - 'applications/load-harness/tests/**'
+      - 'applications/load-harness/Dockerfile'
+      - 'applications/load-harness/requirements.txt'
+      - '.github/workflows/load-harness-ci.yml'
+  workflow_dispatch:  # Allow manual triggering
+
+defaults:
+  run:
+    working-directory: applications/load-harness
+
+env:
+  AWS_REGION: eu-west-2
+  ECR_REPOSITORY: load-harness
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Set PYTHONPATH
+        run: |
+          echo "PYTHONPATH=$PYTHONPATH:$PWD/src" >> $GITHUB_ENV
+
+      - name: Run unit tests
+        run: |
+          pytest tests/ -v
+
+  docker-build:
+    name: Build & Test Container
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+            echo "Building release image: ${GITHUB_REF_NAME}"
+          else
+            echo "IMAGE_TAG=pr-${GITHUB_SHA:0:8}" >> $GITHUB_ENV
+            echo "Building PR validation image"
+          fi
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg APP_VERSION=$IMAGE_TAG \
+            -t $ECR_REPOSITORY:$IMAGE_TAG .
+          echo "✅ Image built: $ECR_REPOSITORY:$IMAGE_TAG (version: $IMAGE_TAG)"
+
+      - name: Test Docker container
+        run: |
+          # Start container in background
+          docker run -d --name test-container \
+            -p 8080:8080 \
+            -e PORT=8080 \
+            -e ENVIRONMENT=ci \
+            -e APP_VERSION=$IMAGE_TAG \
+            $ECR_REPOSITORY:$IMAGE_TAG
+
+          # Wait for container to start
+          echo "Waiting for container to be ready..."
+          sleep 15
+
+          # Test endpoints
+          echo "Testing /health endpoint..."
+          curl -f http://localhost:8080/health
+
+          echo "Testing root endpoint..."
+          curl -f http://localhost:8080/
+
+          echo "Testing /metrics endpoint..."
+          curl -f http://localhost:8080/metrics
+
+          echo "✅ All endpoints responding"
+
+          # Cleanup
+          docker stop test-container
+          docker rm test-container
+
+      - name: Save image artifact
+        run: |
+          docker save $ECR_REPOSITORY:$IMAGE_TAG | gzip > /tmp/image.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/image.tar.gz
+          retention-days: 1
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: docker-build
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: |
+          docker load < /tmp/image.tar.gz
+
+      - name: Get image tag
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          else
+            echo "IMAGE_TAG=pr-${GITHUB_SHA:0:8}" >> $GITHUB_ENV
+          fi
+
+      - name: Security scan (Trivy)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          format: table
+          ignore-unfixed: true
+
+  push-to-ecr:
+    name: Push to ECR
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: ${{ vars.ENVIRONMENT || 'staging' }}
+      url: https://github.com/${{ github.repository }}/deployments
+    defaults:
+      run:
+        working-directory: .
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: |
+          docker load < /tmp/image.tar.gz
+          echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/${ECR_REPOSITORY}
+
+          echo "Tagging and pushing release image..."
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $IMAGE_URI:$IMAGE_TAG
+          docker push $IMAGE_URI:$IMAGE_TAG
+
+          echo "✅ Pushed $IMAGE_URI:$IMAGE_TAG"
+
+          echo "image_uri=$IMAGE_URI:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+# NOTE: Manifest updates are now handled by Flux Image Automation
+# The image-automation-controller detects new ECR images and commits
+# manifest updates automatically, eliminating CI race conditions.
+# See: https://github.com/your-org/infra-fleet/issues/145
+#
+# Old update-manifest job removed - CI now only builds and pushes images.
+# Flux handles: ECR scan -> ImagePolicy selection -> Git commit -> Cluster sync

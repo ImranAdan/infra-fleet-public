@@ -1,0 +1,35 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: load-harness
+  namespace: applications
+  annotations:
+    # ALB configuration
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/success-codes: "200"
+
+    # Cost optimization - use HTTP for dev/staging
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+
+    # Share single ALB across multiple ingresses (cost optimization)
+    # Groups this Ingress with grafana Ingress to use same ALB
+    alb.ingress.kubernetes.io/group.name: infra-fleet-staging
+
+    # Tags for cost tracking
+    alb.ingress.kubernetes.io/tags: Environment=staging,ManagedBy=flux,Application=load-harness
+spec:
+  ingressClassName: alb
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: load-harness
+            port:
+              number: 80

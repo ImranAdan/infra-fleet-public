@@ -1,0 +1,76 @@
+name: Test Destroy Cleanup (Safe)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Test mode'
+        required: true
+        default: 'dry-run'
+        type: choice
+        options:
+          - dry-run
+          - live-cleanup-only
+      cluster_name:
+        description: 'Cluster name'
+        required: false
+        default: 'staging'
+        type: string
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-west-2'
+        type: string
+
+jobs:
+  test-cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # Required for OIDC authentication
+      contents: read    # Required to checkout code
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          role-session-name: GitHubActions-TestDestroyCleanup-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run Kubernetes cleanup
+        uses: ./.github/actions/cleanup-kubernetes-resources
+        with:
+          cluster-name: ${{ inputs.cluster_name }}
+          aws-region: ${{ inputs.aws_region }}
+          mode: ${{ inputs.mode }}
+          run-verification: 'true'
+
+      - name: Important Notice
+        if: always()
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "IMPORTANT NOTICE"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+
+          if [ "${{ inputs.mode }}" == "dry-run" ]; then
+            echo "   DRY RUN mode - No actual changes were made"
+            echo ""
+            echo "   To actually delete resources, run again with mode: live-cleanup-only"
+          else
+            echo "   LIVE CLEANUP completed"
+            echo ""
+            echo "   Resources may have been deleted."
+            echo "   Note: This did NOT run terraform destroy."
+            echo ""
+            echo "   To fully destroy infrastructure, use the nightly-destroy workflow"
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

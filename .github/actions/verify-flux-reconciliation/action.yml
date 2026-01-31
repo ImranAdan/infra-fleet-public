@@ -1,0 +1,166 @@
+name: 'Verify Flux Reconciliation'
+description: 'Verifies Flux has successfully reconciled after changes'
+
+inputs:
+  cluster_name:
+    description: 'EKS cluster name'
+    required: false
+    default: 'staging'
+  aws_region:
+    description: 'AWS region'
+    required: false
+    default: 'eu-west-2'
+  bake_time_seconds:
+    description: 'Wait time before checking reconciliation (seconds)'
+    required: false
+    default: '180'
+  expected_revision:
+    description: 'Expected Git revision (SHA) to verify'
+    required: false
+    default: ''
+
+outputs:
+  status:
+    description: 'Verification status: success, failed, cluster_unavailable'
+    value: ${{ steps.verify.outputs.status }}
+  kustomizations_ready:
+    description: 'Number of ready kustomizations'
+    value: ${{ steps.verify.outputs.kustomizations_ready }}
+  git_revision:
+    description: 'Current GitRepository revision'
+    value: ${{ steps.verify.outputs.git_revision }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check cluster availability
+      id: cluster-check
+      shell: bash
+      run: |
+        echo "Checking cluster availability..."
+        if ! aws eks describe-cluster --name ${{ inputs.cluster_name }} --region ${{ inputs.aws_region }} &>/dev/null; then
+          echo "cluster_available=false" >> $GITHUB_OUTPUT
+          echo "::warning::Cluster ${{ inputs.cluster_name }} not available (may be destroyed)"
+        else
+          echo "cluster_available=true" >> $GITHUB_OUTPUT
+          echo "Cluster ${{ inputs.cluster_name }} is available"
+        fi
+
+    - name: Configure kubectl
+      if: steps.cluster-check.outputs.cluster_available == 'true'
+      shell: bash
+      run: |
+        echo "Configuring kubectl for cluster: ${{ inputs.cluster_name }}"
+        aws eks update-kubeconfig --name ${{ inputs.cluster_name }} --region ${{ inputs.aws_region }}
+
+    - name: Bake time for Flux reconciliation
+      if: steps.cluster-check.outputs.cluster_available == 'true'
+      shell: bash
+      run: |
+        echo "Waiting ${{ inputs.bake_time_seconds }}s for Flux to reconcile..."
+        sleep ${{ inputs.bake_time_seconds }}
+
+    - name: Verify Flux reconciliation
+      id: verify
+      shell: bash
+      run: |
+        # Handle cluster unavailable
+        if [ "${{ steps.cluster-check.outputs.cluster_available }}" != "true" ]; then
+          echo "status=cluster_unavailable" >> $GITHUB_OUTPUT
+          echo "kustomizations_ready=0" >> $GITHUB_OUTPUT
+          echo "git_revision=" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "FLUX RECONCILIATION VERIFICATION"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        # Check if flux-system namespace exists
+        if ! kubectl get namespace flux-system &>/dev/null; then
+          echo "Flux namespace not found"
+          echo "status=failed" >> $GITHUB_OUTPUT
+          echo "kustomizations_ready=0" >> $GITHUB_OUTPUT
+          echo "git_revision=" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        # Check Kustomizations
+        echo ""
+        echo "Checking Kustomizations..."
+        kubectl get kustomizations -n flux-system
+
+        TOTAL=$(kubectl get kustomizations -n flux-system --no-headers | wc -l | tr -d ' ')
+        READY=$(kubectl get kustomizations -n flux-system -o json | \
+          jq '[.items[] | select(.status.conditions[]? | select(.type=="Ready" and .status=="True"))] | length')
+
+        echo "kustomizations_ready=$READY" >> $GITHUB_OUTPUT
+
+        if [ "$READY" -ne "$TOTAL" ]; then
+          echo ""
+          echo "Not all Kustomizations are Ready: $READY/$TOTAL"
+          echo ""
+          echo "Kustomization details:"
+          kubectl get kustomizations -n flux-system -o wide
+          echo ""
+          echo "Failed Kustomizations:"
+          kubectl get kustomizations -n flux-system -o json | \
+            jq -r '.items[] | select(.status.conditions[]? | select(.type=="Ready" and .status!="True")) | "\(.metadata.name): \(.status.conditions[] | select(.type=="Ready") | .message)"'
+          echo "status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        echo "All Kustomizations Ready: $READY/$TOTAL"
+
+        # Check GitRepository revision
+        echo ""
+        echo "Checking GitRepository..."
+        GIT_REV_FULL=$(kubectl get gitrepository flux-system -n flux-system -o jsonpath='{.status.artifact.revision}')
+        # Extract SHA from format like "main@sha1:abc123..." or just use as-is
+        GIT_REV=$(echo "$GIT_REV_FULL" | sed 's/.*://' | cut -c1-7)
+        echo "git_revision=$GIT_REV" >> $GITHUB_OUTPUT
+        echo "Current GitRepository revision: $GIT_REV (full: $GIT_REV_FULL)"
+
+        EXPECTED="${{ inputs.expected_revision }}"
+        if [ -n "$EXPECTED" ]; then
+          SHORT_EXPECTED=$(echo "$EXPECTED" | cut -c1-7)
+          if [ "$GIT_REV" != "$SHORT_EXPECTED" ]; then
+            echo ""
+            echo "GitRepository revision mismatch"
+            echo "  Expected: $SHORT_EXPECTED"
+            echo "  Actual:   $GIT_REV"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "GitRepository synced to expected revision: $GIT_REV"
+        fi
+
+        # Check HelmReleases
+        echo ""
+        echo "Checking HelmReleases..."
+        HELM_RELEASES=$(kubectl get helmreleases --all-namespaces --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$HELM_RELEASES" -gt 0 ]; then
+          kubectl get helmreleases --all-namespaces
+
+          # Check if all HelmReleases are Ready
+          HELM_READY=$(kubectl get helmreleases --all-namespaces -o json | \
+            jq '[.items[] | select(.status.conditions[]? | select(.type=="Ready" and .status=="True"))] | length')
+
+          if [ "$HELM_READY" -ne "$HELM_RELEASES" ]; then
+            echo ""
+            echo "Not all HelmReleases are Ready: $HELM_READY/$HELM_RELEASES"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "All HelmReleases Ready: $HELM_READY/$HELM_RELEASES"
+        else
+          echo "No HelmReleases found"
+        fi
+
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "FLUX RECONCILIATION VERIFIED"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        echo "status=success" >> $GITHUB_OUTPUT

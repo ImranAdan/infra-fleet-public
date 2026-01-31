@@ -1,0 +1,70 @@
+name: 'Detect Terraform Changes'
+description: 'Detects which Terraform stacks have changes'
+
+inputs:
+  base-ref:
+    description: 'Git ref to compare against (e.g., origin/main or event.before SHA)'
+    required: true
+  head-ref:
+    description: 'Git ref to compare to (defaults to HEAD)'
+    required: false
+    default: 'HEAD'
+
+outputs:
+  staging-changed:
+    description: 'Whether staging stack has changes'
+    value: ${{ steps.detect.outputs.staging }}
+  permanent-changed:
+    description: 'Whether permanent stack has changes'
+    value: ${{ steps.detect.outputs.permanent }}
+  any-changed:
+    description: 'Whether any stack has changes'
+    value: ${{ steps.detect.outputs.any }}
+  changed-files:
+    description: 'List of changed files'
+    value: ${{ steps.detect.outputs.changed_files }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect changed stacks
+      id: detect
+      shell: bash
+      run: |
+        echo "Comparing ${{ inputs.base-ref }} to ${{ inputs.head-ref }}"
+
+        # Get list of changed files
+        CHANGED_FILES=$(git diff --name-only ${{ inputs.base-ref }} ${{ inputs.head-ref }} | grep '^infrastructure/' || true)
+
+        echo "Changed infrastructure files:"
+        echo "$CHANGED_FILES"
+        echo ""
+
+        # Store changed files (newline-separated to comma-separated)
+        CHANGED_CSV=$(echo "$CHANGED_FILES" | tr '\n' ',' | sed 's/,$//')
+        echo "changed_files=$CHANGED_CSV" >> $GITHUB_OUTPUT
+
+        # Check staging
+        if echo "$CHANGED_FILES" | grep -q '^infrastructure/staging/'; then
+          echo "staging=true" >> $GITHUB_OUTPUT
+          echo "Staging stack: CHANGED"
+        else
+          echo "staging=false" >> $GITHUB_OUTPUT
+          echo "Staging stack: no changes"
+        fi
+
+        # Check permanent
+        if echo "$CHANGED_FILES" | grep -q '^infrastructure/permanent/'; then
+          echo "permanent=true" >> $GITHUB_OUTPUT
+          echo "Permanent stack: CHANGED"
+        else
+          echo "permanent=false" >> $GITHUB_OUTPUT
+          echo "Permanent stack: no changes"
+        fi
+
+        # Check any
+        if [ -n "$CHANGED_FILES" ]; then
+          echo "any=true" >> $GITHUB_OUTPUT
+        else
+          echo "any=false" >> $GITHUB_OUTPUT
+        fi

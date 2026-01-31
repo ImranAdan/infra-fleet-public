@@ -1,0 +1,38 @@
+# --------------------------------------------------------------------------------------------------
+# YAML Lint Composite Action
+# Validates YAML syntax using yamllint with a relaxed configuration suitable for Kubernetes manifests.
+# --------------------------------------------------------------------------------------------------
+name: 'YAML Lint'
+description: 'Validate YAML syntax in the specified directory'
+
+inputs:
+  path:
+    description: 'Path to directory containing YAML files'
+    required: true
+    default: 'k8s/'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install yamllint
+      shell: bash
+      run: pip install yamllint --quiet
+
+    - name: Create yamllint config
+      shell: bash
+      run: |
+        cat > /tmp/yamllint-config.yml <<EOF
+        extends: relaxed
+        rules:
+          line-length: disable
+          trailing-spaces: disable
+          indentation: disable
+          document-start: disable
+        EOF
+
+    - name: Run yamllint
+      shell: bash
+      run: |
+        echo "Validating YAML syntax in ${{ inputs.path }}..."
+        yamllint -c /tmp/yamllint-config.yml ${{ inputs.path }}
+        echo "YAML syntax validation passed"

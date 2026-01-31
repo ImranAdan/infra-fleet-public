@@ -1,0 +1,14 @@
+---
+# NGINX Ingress Controller Helm Repository
+#
+# Added for Flagger canary traffic splitting support.
+# ALB does not support weighted routing required by Flagger's stepWeight/maxWeight.
+# NGINX Ingress enables true percentage-based traffic splitting via canary annotations.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: ingress-nginx
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://kubernetes.github.io/ingress-nginx

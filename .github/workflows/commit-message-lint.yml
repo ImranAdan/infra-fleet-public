@@ -1,0 +1,74 @@
+name: Commit Message Lint
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  gitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install gitlint
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint commit messages (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          gitlint --commits origin/${{ github.base_ref }}..HEAD
+
+      - name: Lint commit messages (push)
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+
+          BEFORE_SHA="${{ github.event.before }}"
+          AFTER_SHA="${{ github.sha }}"
+          FLUX_AUTHOR_NAME="fluxcdbot"
+          FLUX_AUTHOR_EMAIL="fluxcdbot@users.noreply.github.com"
+
+          COMMITS=$(git rev-list "${BEFORE_SHA}..${AFTER_SHA}")
+          if [[ -z "${COMMITS}" ]]; then
+            echo "No commits to lint."
+            exit 0
+          fi
+
+          COMMITS_TO_LINT=()
+          for COMMIT in ${COMMITS}; do
+            AUTHOR_NAME=$(git show -s --format='%an' "${COMMIT}")
+            AUTHOR_EMAIL=$(git show -s --format='%ae' "${COMMIT}")
+            COMMITTER_EMAIL=$(git show -s --format='%ce' "${COMMIT}")
+
+            # Skip Flux bot commits
+            if [[ "${AUTHOR_NAME}" == "${FLUX_AUTHOR_NAME}" && "${AUTHOR_EMAIL}" == "${FLUX_AUTHOR_EMAIL}" ]]; then
+              echo "Skipping Flux bot commit ${COMMIT}"
+              continue
+            fi
+
+            # Skip GitHub web-flow merge commits (squash/merge from UI)
+            if [[ "${COMMITTER_EMAIL}" == "noreply@github.com" ]]; then
+              echo "Skipping GitHub merge commit ${COMMIT}"
+              continue
+            fi
+
+            COMMITS_TO_LINT+=("${COMMIT}")
+          done
+
+          if [[ ${#COMMITS_TO_LINT[@]} -eq 0 ]]; then
+            echo "No commits to lint after excluding Flux bot commits."
+            exit 0
+          fi
+
+          for COMMIT in "${COMMITS_TO_LINT[@]}"; do
+            gitlint --commit "${COMMIT}"
+          done

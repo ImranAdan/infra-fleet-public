@@ -1,0 +1,9 @@
+[general]
+ignore=body-is-missing,B1
+
+[title-max-length]
+line-length=72
+
+[title-match-regex]
+# Added 'deps' for Dependabot compatibility
+regex=^(feat|fix|docs|style|refactor|test|chore|ci|perf|revert|deps)(\([a-z0-9_-]+\))?(!)?: [a-z0-9].+

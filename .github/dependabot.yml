@@ -1,0 +1,89 @@
+version: 2
+
+updates:
+  # Python dependencies - monthly, grouped
+  - package-ecosystem: "pip"
+    directory: "/applications/load-harness"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "python"
+    reviewers:
+      - "your-org"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 3
+
+  # Docker base images - monthly
+  - package-ecosystem: "docker"
+    directory: "/applications/load-harness"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "docker"
+    reviewers:
+      - "your-org"
+    ignore:
+      - dependency-name: "python"
+        versions: [">=3.14"]
+
+  # GitHub Actions - monthly, grouped, no major bumps
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    reviewers:
+      - "your-org"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Terraform providers - monthly, grouped
+  - package-ecosystem: "terraform"
+    directory: "/infrastructure/staging"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "terraform"
+    reviewers:
+      - "your-org"
+    groups:
+      terraform-staging:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "terraform"
+    directory: "/infrastructure/permanent"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "terraform"
+    reviewers:
+      - "your-org"
+    groups:
+      terraform-permanent:
+        patterns:
+          - "*"

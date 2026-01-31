@@ -1,0 +1,83 @@
+# --------------------------------------------------------------------------------------------------
+# Flux Kustomizations
+# These tell Flux what paths in the repository to monitor and apply to the cluster
+# --------------------------------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------------------------------
+# Infrastructure Kustomization
+# Monitors and applies infrastructure resources (namespaces, HelmReleases, observability)
+# --------------------------------------------------------------------------------------------------
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure
+  namespace: flux-system
+spec:
+  interval: 5m
+  path: ./k8s/infrastructure
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 3m
+  # Variable substitution from ConfigMap created by Terraform
+  # Replaces ${VAR_NAME} placeholders in manifests with actual values
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: terraform-outputs
+
+# --------------------------------------------------------------------------------------------------
+# Cert-Manager Issuer Kustomization
+# Creates ClusterIssuer for Let's Encrypt AFTER cert-manager CRDs are installed
+# Must wait for infrastructure (cert-manager HelmRelease) to complete first
+# --------------------------------------------------------------------------------------------------
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cert-manager-issuer
+  namespace: flux-system
+spec:
+  interval: 5m
+  path: ./k8s/cert-manager-issuer
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 2m
+  dependsOn:
+    - name: infrastructure
+
+# --------------------------------------------------------------------------------------------------
+# Applications Kustomization
+# Monitors and applies application deployments
+# Depends on infrastructure and cert-manager-issuer being ready first
+# --------------------------------------------------------------------------------------------------
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: applications
+  namespace: flux-system
+spec:
+  interval: 2m
+  path: ./k8s/applications
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 5m
+  dependsOn:
+    - name: infrastructure
+    - name: cert-manager-issuer
+  # Variable substitution from ConfigMap created by rebuild-stack.yml
+  # Replaces ${SSLIP_HOST} in ingress with actual sslip.io hostname
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: terraform-outputs

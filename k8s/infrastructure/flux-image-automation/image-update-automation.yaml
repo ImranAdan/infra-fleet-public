@@ -1,0 +1,40 @@
+# ImageUpdateAutomation - Commits manifest updates to Git
+# When ImagePolicy selects a new image, this controller updates the deployment
+# manifest and pushes the change to the repository
+# See: https://fluxcd.io/flux/components/image/imageupdateautomations/
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: load-harness
+  namespace: flux-system
+spec:
+  # Check for policy changes every 5 minutes
+  interval: 5m
+  # Reference to the GitRepository that Flux uses
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        name: fluxcdbot
+        email: fluxcdbot@users.noreply.github.com
+      messageTemplate: |
+        chore: Update load-harness image
+
+        {{range .Changed.Changes}}
+        - {{.OldValue}} -> {{.NewValue}}
+        {{end}}
+
+        Automated by Flux Image Automation
+    push:
+      branch: main
+  update:
+    # Path to scan for image policy markers
+    path: ./k8s/applications
+    # Setters strategy looks for {"$imagepolicy": ...} markers
+    strategy: Setters
