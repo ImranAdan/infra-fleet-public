@@ -2,16 +2,23 @@
 FROM python:3.11-slim AS builder
 
 # Install build dependencies for packages that need compilation (e.g., psutil)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Also run upgrade to get latest security patches
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip toolchain to fix CVE-2026-23949 (jaraco.context) and CVE-2026-24049 (wheel)
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 FROM python:3.11-slim AS runtime
+
+# Apply security patches for CVE-2025-15467 and CVE-2025-69419 (openssl)
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app
