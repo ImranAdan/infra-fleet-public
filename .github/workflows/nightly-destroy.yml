@@ -1,8 +1,6 @@
 name: Nightly Stack Destruction
 
-on:
-  schedule:
-    - cron: '0 20 * * *'  # 8 PM UTC every night - hard stop for work day
+on: 
   workflow_dispatch:
     inputs:
       reason:
