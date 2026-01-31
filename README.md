@@ -1,7 +1,7 @@
 # Infrastructure Fleet
 
-[![Load Harness CI](https://github.com/your-org/infra-fleet/actions/workflows/load-harness-ci.yml/badge.svg)](https://github.com/your-org/infra-fleet/actions/workflows/load-harness-ci.yml)
-[![Infra Apply](https://github.com/your-org/infra-fleet/actions/workflows/infra-apply.yml/badge.svg)](https://github.com/your-org/infra-fleet/actions/workflows/infra-apply.yml)
+[![Load Harness CI](https://github.com/ImranAdan/infra-fleet-public/actions/workflows/load-harness-ci.yml/badge.svg)](https://github.com/ImranAdan/infra-fleet-public/actions/workflows/load-harness-ci.yml)
+[![Infra Apply](https://github.com/ImranAdan/infra-fleet-public/actions/workflows/infra-apply.yml/badge.svg)](https://github.com/ImranAdan/infra-fleet-public/actions/workflows/infra-apply.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.32-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![Flux](https://img.shields.io/badge/Flux-v2.7.3-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
@@ -279,30 +279,6 @@ infra-fleet/
 - [Versioning Strategy](docs/VERSIONING-STRATEGY.md) - SemVer and release-please
 - [Commit Messages](docs/COMMIT-MESSAGES.md) - Conventional commits
 - [Cost Optimization Guide](docs/COST-OPTIMIZATION-GUIDE.md) - Cost analysis
-
----
-
-## Project Status
-
-### Completed
-- [x] EKS 1.32 + Flux v2.7.3 GitOps
-- [x] Prometheus + Grafana observability
-- [x] Flagger progressive delivery (canary deployments)
-- [x] TLS/HTTPS with cert-manager + Let's Encrypt
-- [x] Dashboard UI (Flask + HTMX + Tailwind)
-- [x] HPA autoscaling (metrics-server + HPA)
-- [x] DORA metrics collection and dashboard
-- [x] release-please versioning
-- [x] Dependabot dependency automation
-- [x] Kyverno policy validation in CI
-
-### In Progress
-- [ ] GitOps Grafana dashboard provisioning (Issue #124)
-- [ ] IAM least-privilege permissions (Issue #296)
-
-### Planned
-- [ ] OIDC/SSO cluster access (Issue #92)
-- [ ] Multi-environment architecture (Issue #264)
 
 ---
 
