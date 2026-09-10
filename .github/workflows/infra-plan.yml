@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Security scan (Trivy)
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'config'
           scan-ref: 'infrastructure/staging'
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Security scan (Trivy)
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'config'
           scan-ref: 'infrastructure/permanent'
