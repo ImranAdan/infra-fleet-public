@@ -11,6 +11,7 @@ EKS · GitOps · canary deployments with automatic rollback · Prometheus and Gr
 [![Flux](https://img.shields.io/badge/GitOps-Flux%20v2.7.3-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)](https://developer.hashicorp.com/terraform)
 [![No credentials](https://img.shields.io/badge/secrets%20in%20this%20repo-none-2ea44f)](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md)
+[![Use this template](https://img.shields.io/badge/Use%20this-template-2ea44f?logo=github)](https://github.com/ImranAdan/infra-fleet-public/generate)
 
 [Try it locally](#try-it-locally-first) · [What you get](#what-you-get) · [Make it yours](CONFIGURATION.md) · [Docs](docs/README.md)
 
@@ -79,14 +80,13 @@ yourself. Forking it grants nobody anything.
 
 ## Make it yours
 
+Click **Use this template** at the top of the repository, or:
+
 ```bash
-git clone https://github.com/ImranAdan/infra-fleet-public.git my-infra-fleet
-cd my-infra-fleet
-rm -rf .git && git init && git add -A && git commit -m "chore: initial commit from infra-fleet template"
-gh repo create my-infra-fleet --private --source=. --push
+gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
 ```
 
-**Make it private before adding any secret.**
+**Keep it private.** This template holds no secrets; your deployment will.
 
 Then follow **[CONFIGURATION.md](CONFIGURATION.md)** — every value you need to
 supply, where each one comes from, and what you can skip. You need an AWS

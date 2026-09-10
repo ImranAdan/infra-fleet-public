@@ -32,18 +32,16 @@ See [docs/COST-OPTIMIZATION-GUIDE.md](docs/COST-OPTIMIZATION-GUIDE.md).
 
 ## Step 1 — copy the template, privately
 
+Click **Use this template** on the repository page, or:
+
 ```bash
-git clone https://github.com/ImranAdan/infra-fleet-public.git my-infra-fleet
-cd my-infra-fleet
-rm -rf .git && git init && git add -A && git commit -m "chore: initial commit from infra-fleet template"
-gh repo create my-infra-fleet --private --source=. --push
+gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
 ```
 
 **Make it private before adding any secret.** Everything below assumes a
 private repository.
 
 ---
-
 ## Step 2 — bootstrap the permanent stack, locally
 
 The permanent stack creates the OIDC provider and the IAM role your CI will
