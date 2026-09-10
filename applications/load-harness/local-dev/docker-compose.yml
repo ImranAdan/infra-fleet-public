@@ -9,7 +9,6 @@
 # Or use the helper script:
 #   ./local-dev/dev.sh up
 #
-version: '3.8'
 
 services:
   load-harness:

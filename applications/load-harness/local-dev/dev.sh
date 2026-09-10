@@ -15,10 +15,30 @@ APP_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$APP_DIR"
 
+# Compose V1 is end-of-life and absent from Compose-V2-only installs, so
+# resolve whichever is available rather than assuming `docker-compose`.
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE="docker-compose"
+else
+  echo "❌ Neither 'docker compose' nor 'docker-compose' is available."
+  echo "   Install Docker Desktop, or the Compose plugin on Linux."
+  exit 1
+fi
+
+# docker-compose.yml declares env_file: ../.env, which is gitignored. On a
+# fresh clone it does not exist and Compose fails before starting anything.
+# Seed it from the committed example so the documented first command works.
+if [ ! -f "$APP_DIR/.env" ]; then
+  cp "$APP_DIR/.env.example" "$APP_DIR/.env"
+  echo "📝 Created .env from .env.example (edit it to change defaults)"
+fi
+
 case "${1:-help}" in
   up)
     echo "🚀 Starting Flask app..."
-    docker-compose -f local-dev/docker-compose.yml up -d load-harness
+    $COMPOSE -f local-dev/docker-compose.yml up -d load-harness
     echo ""
     echo "✅ Flask app running!"
     echo "🌐 App: http://localhost:8080"
@@ -28,7 +48,7 @@ case "${1:-help}" in
 
   up-full)
     echo "🚀 Starting full observability stack..."
-    docker-compose -f local-dev/docker-compose.yml --profile observability up -d
+    $COMPOSE -f local-dev/docker-compose.yml --profile observability up -d
     echo ""
     echo "✅ Stack running!"
     echo "🌐 Flask App: http://localhost:8080"
@@ -43,13 +63,13 @@ case "${1:-help}" in
 
   down)
     echo "🛑 Stopping all services..."
-    docker-compose -f local-dev/docker-compose.yml --profile observability down
+    $COMPOSE -f local-dev/docker-compose.yml --profile observability down
     echo "✅ All services stopped"
     ;;
 
   test)
     echo "🧪 Running tests..."
-    docker-compose -f local-dev/docker-compose.yml --profile test run --rm test
+    $COMPOSE -f local-dev/docker-compose.yml --profile test run --rm test
     ;;
 
   setup)
@@ -60,7 +80,7 @@ case "${1:-help}" in
     ;;
 
   logs)
-    docker-compose -f local-dev/docker-compose.yml --profile observability logs -f "${2:-load-harness}"
+    $COMPOSE -f local-dev/docker-compose.yml --profile observability logs -f "${2:-load-harness}"
     ;;
 
   help|*)
