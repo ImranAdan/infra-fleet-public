@@ -389,7 +389,7 @@ cluster-start
 - Hybrid cleanup approach (v2 script in `scripts/cleanup-k8s-resources-v2.sh`)
 - Handles both healthy clusters (kubectl) and destroyed clusters (AWS API)
 - Pre/post verification prevents silent failures
-- See `docs/implementation-summary-hybrid-cleanup.md` for details
+- See `.github/actions/cleanup-kubernetes-resources` for the implementation
 
 ---
 

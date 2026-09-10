@@ -15,8 +15,8 @@ The EKS cluster has a **public endpoint** with `publicAccessCidrs = ["0.0.0.0/0"
 The Session Manager jumpbox is **currently disabled** to reduce costs (~$10-15/month).
 
 **To re-enable:**
-1. Rename `clusters/staging/session-manager.tf.disabled` → `session-manager.tf`
-2. Uncomment session manager resources in `clusters/staging/eks.tf`:
+1. Rename `infrastructure/staging/session-manager.tf.disabled` → `session-manager.tf`
+2. Uncomment session manager resources in `infrastructure/staging/eks.tf`:
    - `access_entries.session_manager`
    - `security_group_additional_rules.allow_jumpbox_https`
 3. Run `terraform apply`

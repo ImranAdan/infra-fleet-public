@@ -123,7 +123,7 @@ infrastructure/
 │   ├── acm.tf             # (Future) SSL certificates
 │   └── README.md          # This file
 │
-└── staging/               # Destroyed nightly at 1 AM UTC
+└── staging/               # Destroyed on demand
     ├── eks.tf             # EKS cluster
     ├── vpc.tf             # Networking
     ├── session-manager.tf # Jumpbox

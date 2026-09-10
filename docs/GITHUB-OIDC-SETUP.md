@@ -82,11 +82,11 @@ terraform apply
 ### Why Separate Permanent Infrastructure?
 
 ```
-clusters/
+infrastructure/
 ├── permanent/              # NEVER destroyed (costs ~$0)
 │   └── github-oidc.tf     # GitHub Actions authentication
 │
-└── staging/               # Destroyed nightly at 2 AM UTC
+└── staging/               # Destroyed on demand
     ├── eks.tf             # EKS cluster (~$72/month)
     ├── vpc.tf             # NAT Gateway (~$45/month)
     └── ...                # Other ephemeral resources
@@ -112,7 +112,7 @@ github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.action
 
 You only need **ONE** secret in GitHub (the role ARN):
 
-1. Go to: https://github.com/your-org/infra-fleet/settings/secrets/actions
+1. Go to: https://github.com/OWNER/REPO/settings/secrets/actions
 2. Click "New repository secret"
 3. Add:
    - **Name**: `AWS_GITHUB_ACTIONS_ROLE_ARN`
@@ -144,7 +144,7 @@ aws iam list-attached-role-policies --role-name GitHubActions-InfraFleet
 ```
 ✅ OIDC Provider: arn:aws:iam::YOUR_ACCOUNT:oidc-provider/token.actions.githubusercontent.com
 ✅ IAM Role: GitHubActions-InfraFleet
-✅ Trust Policy: Restricts to repo:your-org/infra-fleet:*
+✅ Trust Policy: Restricts to repo:OWNER/REPO:ref:refs/heads/main
 ✅ Policy Attached: GitHubActions-InfraFleet-Policy
 ```
 
@@ -196,13 +196,20 @@ The IAM role trust policy restricts access to your specific repository:
 ```json
 "Condition": {
   "StringLike": {
-    "token.actions.githubusercontent.com:sub": "repo:your-org/infra-fleet:*"
+    "token.actions.githubusercontent.com:sub": "repo:OWNER/REPO:ref:refs/heads/main"
   }
 }
 ```
 
+**Do not use `repo:OWNER/REPO:*`.** The wildcard matches every ref context,
+including `pull_request`. On a public repository that is the difference between
+"only `main` may deploy" and "anything that opens a pull request may deploy".
+Pin it to the branch or GitHub Environment allowed to deploy, even in a private
+repository - it costs nothing. See [../SECURITY.md](../SECURITY.md).
+
+
 This means:
-- ✅ Only workflows from `your-org/infra-fleet` can assume the role
+- ✅ Only workflows from `main` in your repository can assume the role
 - ❌ Other repositories cannot use this role
 - ❌ Even if someone gets the role ARN, they can't use it from another repo
 
@@ -248,7 +255,7 @@ The role has permissions to manage:
 
 **Solution**:
 ```bash
-cd clusters/staging
+cd infrastructure/permanent
 terraform apply  # Ensure OIDC provider exists
 ```
 
@@ -259,7 +266,7 @@ terraform apply  # Ensure OIDC provider exists
 **Solution**:
 1. Check AWS IAM Console → Identity providers
 2. Should see: `token.actions.githubusercontent.com`
-3. If missing, run `terraform apply` in `clusters/staging`
+3. If missing, run `terraform apply` in `infrastructure/permanent`
 
 ### Error: "Access denied" during workflow
 

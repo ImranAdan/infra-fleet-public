@@ -104,7 +104,7 @@ Flux → Kubernetes manifests
 ALB Controller → ALBs, ENIs, Security Groups (NOT tracked!)
 ```
 
-See `docs/implementation-summary-hybrid-cleanup.md` for complete technical details.
+The implementation lives in `.github/actions/cleanup-kubernetes-resources`.
 
 #### Step 2: Terraform Destruction
 - Authenticate via GitHub Actions OIDC
@@ -336,7 +336,7 @@ The script is **idempotent** and handles:
 3. **Click "Run workflow"**
 4. **Optional**: Provide reason for rebuild
 5. **Wait**: ~25-30 minutes for completion
-6. **Resume work**: Check `ai/CLAUDE.md` for context
+6. **Resume work**: check the workflow run logs and `terraform state list`
 
 ### Emergency Override
 
@@ -422,7 +422,7 @@ ssh: handshake failed: ssh: unable to authenticate
 **Manual fix** (if needed):
 ```bash
 flux suspend kustomization applications
-./scripts/cleanup-k8s-resources.sh staging eu-west-2
+./scripts/cleanup-k8s-resources-v2.sh staging eu-west-2
 # Then run destroy
 ```
 
@@ -460,8 +460,6 @@ kubectl rollout restart deployment aws-load-balancer-controller -n kube-system
 ### Context Recovery
 
 All context is preserved in `ai/` directory:
-- `ai/CLAUDE.md` - Complete session context
-- `ai/destruction-log.md` - Destruction/rebuild history
 - `ai/last-*-state.*` - Infrastructure state snapshots
 
 ## Best Practices
@@ -482,7 +480,7 @@ All context is preserved in `ai/` directory:
 ### Development Continuity
 
 - **Commit frequently**: Preserve work before destruction
-- **Use context**: `ai/CLAUDE.md` maintains full project context
+- **Use context**: workflow run history and Terraform state are the source of truth
 - **Document progress**: Update context for future sessions
 
 ## Testing Status (2025-11-21)
@@ -569,7 +567,7 @@ All context is preserved in `ai/` directory:
 
 **Key Fix**: Security group verification now only fails for resources that truly block VPC deletion (ALBs with ENIs), not Security Groups managed by Terraform.
 
-See `docs/workflow-cleanup-plan.md` and `docs/implementation-summary-hybrid-cleanup.md` for complete details.
+The cleanup implementation lives in `.github/actions/cleanup-kubernetes-resources` and `scripts/cleanup-k8s-resources-v2.sh`.
 
 ---
 

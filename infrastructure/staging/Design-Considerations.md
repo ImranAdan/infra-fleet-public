@@ -160,7 +160,7 @@ resource "aws_eks_addon" "coredns" {
 ### Operational Cost Optimization (Highest Impact)
 
 #### Automated Nightly Destruction
-**Implementation**: GitHub Actions workflow at 1 AM UTC
+**Implementation**: `nightly-destroy.yml`, triggered manually (`workflow_dispatch`)
 - **Impact**: 73% cost reduction ($135/month → $36-41/month)
 - **Uptime pattern**: ~38% (278 hours in November 2025)
 - **Workflow**: `.github/workflows/nightly-destroy.yml`
@@ -176,7 +176,7 @@ resource "aws_eks_addon" "coredns" {
 - **Phase 4**: Terraform destroy
 - **Phase 5**: Final idempotency check
 
-See `docs/implementation-summary-hybrid-cleanup.md` for technical details.
+See `.github/actions/cleanup-kubernetes-resources` for the implementation.
 
 #### Version Management (Biggest Absolute Savings)
 **Current**: Kubernetes 1.32 (standard support until ~March 2026)
