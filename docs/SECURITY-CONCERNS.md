@@ -205,6 +205,51 @@ htmlcov/
 
 ---
 
+### H5: IAM Permission Scoping (High) - Issue #296
+
+**Finding:** Overly broad IAM wildcards on the GitHub Actions role.
+
+The original wildcards were `eks:*`, `ec2:*`, `autoscaling:*`, `ssm:*` and
+`ecr:*`, all on `Resource = "*"`. (This entry previously listed `iam:*` — that
+was never granted; the IAM statement was enumerated from the start.)
+
+**Status:** Scoped in `infrastructure/permanent/github-oidc.tf`. Each service
+wildcard is replaced by an enumerated action list; SSM is narrowed to the
+public EKS AMI parameter paths and ECR to repositories in this account and
+region; regional statements are pinned to `eu-west-2` via
+`aws:RequestedRegion`. `ec2:Describe*` is deliberately retained - EC2 Describe
+calls are read-only and do not support resource-level permissions.
+
+The policy is split across two managed policies attached to the same role,
+because the enumerated form exceeds the 6,144-character managed policy limit
+as a single document.
+
+**Residual risk - IAM write actions remain on `Resource = "*"`.** This is now
+the largest privilege in the role and it was not narrowed by the work above.
+The `Iam` statement grants `iam:CreateRole`, `iam:AttachRolePolicy`,
+`iam:PutRolePolicy` and `iam:CreatePolicyVersion` against any ARN, so a
+principal that assumes this role can create a privileged role, attach an
+arbitrary policy to it, or rewrite this policy. The OIDC trust conditions
+restrict *who may assume* the role; they place no limit on what the role can
+do once assumed.
+
+`iam:PassRole` is the one part that has been constrained: it sits in its own
+statement with an `iam:PassedToService` condition limiting it to
+`ec2.amazonaws.com`, `eks.amazonaws.com` and `eks-nodegroup.amazonaws.com`.
+Unconditioned, it would allow handing any existing role to any service.
+
+Scoping the remaining IAM write actions to the role and policy ARN patterns
+this stack creates is tracked separately. It is not a mechanical change: the
+EKS module generates role names from prefixes, so the patterns have to be
+derived from a real plan rather than guessed, and an over-tight pattern breaks
+the apply.
+
+**Caveat:** the scoped policy has not yet completed a full apply/destroy cycle
+against AWS. If a run fails with an `AccessDenied` naming a specific action,
+add that action to the relevant statement rather than restoring a wildcard.
+
+---
+
 ## Deferred Items (GitHub Issues)
 
 ### C3: TLS/HTTPS (Critical) - Issue #295
@@ -243,13 +288,6 @@ htmlcov/
 **Status:** Skipped - low risk for this application, not accessing K8s API.
 
 ---
-
-### H5: IAM Permission Scoping (High) - Issue #296
-
-**Finding:** Overly broad IAM wildcards (`eks:*`, `ec2:*`, `iam:*`).
-
-**Status:** Deferred - requires careful scoping to avoid breaking CI/CD.
-
 ---
 
 ### M2-M5, M8: Various Medium Issues
