@@ -3,6 +3,17 @@
 
 data "aws_caller_identity" "current" {}
 
+locals {
+  # This account operates in one region. Pinning regional statements to it
+  # means a leaked GitHub Actions token cannot spin up resources elsewhere,
+  # which is the usual first move after credential theft.
+  eu_west_2_only = {
+    StringEquals = {
+      "aws:RequestedRegion" = "eu-west-2"
+    }
+  }
+}
+
 # OIDC Provider for GitHub Actions
 resource "aws_iam_openid_connect_provider" "github_actions" {
   url = "https://token.actions.githubusercontent.com"
@@ -101,153 +112,159 @@ resource "aws_iam_role" "github_actions" {
   }
 }
 
-# IAM Policy with permissions needed for infrastructure automation
+# Permissions for GitHub Actions to manage infrastructure.
+#
+# Split across two managed policies purely because of the 6,144-character
+# limit on a single managed policy - the enumerated statements below render
+# to more than that as one document. The split is by service area, not by
+# trust boundary: both are attached to the same role.
+#
+# Every statement is scoped by action, and by resource wherever the AWS API
+# supports resource-level permissions. Regional statements are pinned to
+# eu-west-2, the only region this account operates in.
+#
+# The one remaining action wildcard is "ec2:Describe*". EC2 Describe calls
+# do not support resource-level permissions, are read-only, and the exact
+# set the VPC and EKS modules invoke changes between provider releases.
+# Enumerating them would add churn without narrowing blast radius.
+
+# Policy 1: the cluster and the network it runs on.
 resource "aws_iam_policy" "github_actions" {
   name        = "GitHubActions-InfraFleet-Policy"
-  description = "Permissions for GitHub Actions to manage EKS infrastructure"
+  description = "EKS, EC2 and Auto Scaling permissions for the staging stack"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # EKS: cluster, managed node groups, add-ons and access entries.
       {
+        Sid    = "EksLifecycle"
         Effect = "Allow"
         Action = [
-          "eks:*",
+          "eks:AssociateAccessPolicy",
+          "eks:CreateAccessEntry",
+          "eks:CreateAddon",
+          "eks:CreateCluster",
+          "eks:CreateNodegroup",
+          "eks:CreatePodIdentityAssociation",
+          "eks:DeleteAccessEntry",
+          "eks:DeleteAddon",
+          "eks:DeleteCluster",
+          "eks:DeleteNodegroup",
+          "eks:DeletePodIdentityAssociation",
+          "eks:DescribeAccessEntry",
+          "eks:DescribeAddon",
+          "eks:DescribeAddonConfiguration",
+          "eks:DescribeAddonVersions",
+          "eks:DescribeCluster",
+          "eks:DescribeNodegroup",
+          "eks:DescribePodIdentityAssociation",
+          "eks:DescribeUpdate",
+          "eks:DisassociateAccessPolicy",
+          "eks:ListAccessEntries",
+          "eks:ListAccessPolicies",
+          "eks:ListAddons",
+          "eks:ListAssociatedAccessPolicies",
+          "eks:ListClusters",
+          "eks:ListNodegroups",
+          "eks:ListPodIdentityAssociations",
+          "eks:ListTagsForResource",
+          "eks:ListUpdates",
+          "eks:TagResource",
+          "eks:UntagResource",
+          "eks:UpdateAccessEntry",
+          "eks:UpdateAddon",
+          "eks:UpdateClusterConfig",
+          "eks:UpdateClusterVersion",
+          "eks:UpdateNodegroupConfig",
+          "eks:UpdateNodegroupVersion",
+        ]
+        Resource  = "*"
+        Condition = local.eu_west_2_only
+      },
+      # EC2 reads. No resource-level support; read-only by definition.
+      {
+        Sid    = "Ec2Read"
+        Effect = "Allow"
+        Action = [
+          "ec2:Describe*",
+          "ec2:GetSecurityGroupsForVpc",
         ]
         Resource = "*"
       },
+      # EC2 writes: VPC, subnets, routing, NAT, security groups, and the
+      # launch templates / instances behind EKS managed node groups.
       {
+        Sid    = "Ec2Write"
         Effect = "Allow"
         Action = [
-          "ec2:*",
+          "ec2:AllocateAddress",
+          "ec2:AssociateAddress",
+          "ec2:AssociateRouteTable",
+          "ec2:AttachInternetGateway",
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:CreateInternetGateway",
+          "ec2:CreateLaunchTemplate",
+          "ec2:CreateLaunchTemplateVersion",
+          "ec2:CreateNatGateway",
+          "ec2:CreateNetworkInterface",
+          "ec2:CreateRoute",
+          "ec2:CreateRouteTable",
+          "ec2:CreateSecurityGroup",
+          "ec2:CreateSubnet",
+          "ec2:CreateTags",
+          "ec2:CreateVpc",
+          "ec2:DeleteInternetGateway",
+          "ec2:DeleteLaunchTemplate",
+          "ec2:DeleteLaunchTemplateVersions",
+          "ec2:DeleteNatGateway",
+          "ec2:DeleteNetworkInterface",
+          "ec2:DeleteRoute",
+          "ec2:DeleteRouteTable",
+          "ec2:DeleteSecurityGroup",
+          "ec2:DeleteSubnet",
+          "ec2:DeleteTags",
+          "ec2:DeleteVpc",
+          "ec2:DetachInternetGateway",
+          "ec2:DisassociateAddress",
+          "ec2:DisassociateRouteTable",
+          "ec2:ModifyLaunchTemplate",
+          "ec2:ModifyNetworkInterfaceAttribute",
+          "ec2:ModifySecurityGroupRules",
+          "ec2:ModifySubnetAttribute",
+          "ec2:ModifyVpcAttribute",
+          "ec2:ReleaseAddress",
+          "ec2:RevokeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:RunInstances",
+          "ec2:TerminateInstances",
         ]
-        Resource = "*"
+        Resource  = "*"
+        Condition = local.eu_west_2_only
       },
+      # Auto Scaling groups backing the EKS managed node group.
       {
+        Sid    = "AutoScaling"
         Effect = "Allow"
         Action = [
-          "iam:CreateRole",
-          "iam:DeleteRole",
-          "iam:GetRole",
-          "iam:PassRole",
-          "iam:AttachRolePolicy",
-          "iam:DetachRolePolicy",
-          "iam:ListAttachedRolePolicies",
-          "iam:ListRolePolicies",
-          "iam:GetRolePolicy",
-          "iam:PutRolePolicy",
-          "iam:DeleteRolePolicy",
-          "iam:CreatePolicy",
-          "iam:DeletePolicy",
-          "iam:GetPolicy",
-          "iam:ListPolicyVersions",
-          "iam:CreatePolicyVersion",
-          "iam:DeletePolicyVersion",
-          "iam:GetPolicyVersion",
-          "iam:CreateInstanceProfile",
-          "iam:DeleteInstanceProfile",
-          "iam:GetInstanceProfile",
-          "iam:AddRoleToInstanceProfile",
-          "iam:RemoveRoleFromInstanceProfile",
-          "iam:ListInstanceProfiles",
-          "iam:ListInstanceProfilesForRole",
-          "iam:TagRole",
-          "iam:TagPolicy",
-          "iam:TagInstanceProfile",
-          "iam:CreateOpenIDConnectProvider",
-          "iam:DeleteOpenIDConnectProvider",
-          "iam:GetOpenIDConnectProvider",
-          "iam:TagOpenIDConnectProvider",
-          "iam:UntagOpenIDConnectProvider",
-          "iam:UpdateOpenIDConnectProviderThumbprint",
+          "autoscaling:CreateAutoScalingGroup",
+          "autoscaling:CreateOrUpdateTags",
+          "autoscaling:DeleteAutoScalingGroup",
+          "autoscaling:DeleteTags",
+          "autoscaling:DescribeAutoScalingGroups",
+          "autoscaling:DescribeAutoScalingInstances",
+          "autoscaling:DescribeInstanceRefreshes",
+          "autoscaling:DescribeLaunchConfigurations",
+          "autoscaling:DescribeScalingActivities",
+          "autoscaling:DescribeTags",
+          "autoscaling:SetDesiredCapacity",
+          "autoscaling:StartInstanceRefresh",
+          "autoscaling:TerminateInstanceInAutoScalingGroup",
+          "autoscaling:UpdateAutoScalingGroup",
         ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "autoscaling:*",
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:DeleteLogGroup",
-          "logs:DescribeLogGroups",
-          "logs:PutRetentionPolicy",
-          "logs:TagLogGroup",
-          "logs:ListTagsForResource",
-          "logs:TagResource",
-          "logs:UntagLogGroup",
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:*",
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:*"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "kms:CreateKey",
-          "kms:CreateAlias",
-          "kms:DeleteAlias",
-          "kms:DescribeKey",
-          "kms:GetKeyPolicy",
-          "kms:GetKeyRotationStatus",
-          "kms:ListAliases",
-          "kms:ListKeys",
-          "kms:ListResourceTags",
-          "kms:PutKeyPolicy",
-          "kms:ScheduleKeyDeletion",
-          "kms:TagResource",
-          "kms:UntagResource",
-          "kms:EnableKeyRotation",
-          "kms:DisableKey",
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket",
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-        ]
-        Resource = [
-          "arn:aws:s3:::terraform-state-*",
-          "arn:aws:s3:::terraform-state-*/*",
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:DeleteItem",
-        ]
-        Resource = "arn:aws:dynamodb:*:*:table/terraform-state-lock*"
-      },
-      # STS (to get caller identity, useful for debugging)
-      {
-        Effect = "Allow"
-        Action = [
-          "sts:GetCallerIdentity",
-        ]
-        Resource = "*"
+        Resource  = "*"
+        Condition = local.eu_west_2_only
       },
     ]
   })
@@ -259,9 +276,201 @@ resource "aws_iam_policy" "github_actions" {
   }
 }
 
+# Policy 2: the supporting services the stack depends on.
+resource "aws_iam_policy" "github_actions_supporting" {
+  name        = "GitHubActions-InfraFleet-Supporting-Policy"
+  description = "IAM, logging, SSM, ECR, KMS and Terraform state permissions"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # IAM: cluster, node group and IRSA roles. Global service - no region
+      # condition applies.
+      {
+        Sid    = "Iam"
+        Effect = "Allow"
+        Action = [
+          "iam:AddRoleToInstanceProfile",
+          "iam:AttachRolePolicy",
+          "iam:CreateInstanceProfile",
+          "iam:CreateOpenIDConnectProvider",
+          "iam:CreatePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:CreateRole",
+          "iam:DeleteInstanceProfile",
+          "iam:DeleteOpenIDConnectProvider",
+          "iam:DeletePolicy",
+          "iam:DeletePolicyVersion",
+          "iam:DeleteRole",
+          "iam:DeleteRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:GetInstanceProfile",
+          "iam:GetOpenIDConnectProvider",
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfiles",
+          "iam:ListInstanceProfilesForRole",
+          "iam:ListPolicyVersions",
+          "iam:ListRolePolicies",
+          "iam:PassRole",
+          "iam:PutRolePolicy",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:TagInstanceProfile",
+          "iam:TagOpenIDConnectProvider",
+          "iam:TagPolicy",
+          "iam:TagRole",
+          "iam:UntagOpenIDConnectProvider",
+          "iam:UpdateOpenIDConnectProviderThumbprint",
+        ]
+        Resource = "*"
+      },
+      # EKS control plane log groups.
+      {
+        Sid    = "CloudWatchLogs"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:DeleteLogGroup",
+          "logs:DescribeLogGroups",
+          "logs:ListTagsForResource",
+          "logs:PutRetentionPolicy",
+          "logs:TagLogGroup",
+          "logs:TagResource",
+          "logs:UntagLogGroup",
+        ]
+        Resource  = "*"
+        Condition = local.eu_west_2_only
+      },
+      # SSM is used for one thing only: resolving EKS-optimised AMI IDs from
+      # AWS-published public parameters. Scoped to those paths.
+      {
+        Sid    = "SsmPublicAmiParameters"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath",
+        ]
+        Resource = [
+          "arn:aws:ssm:eu-west-2::parameter/aws/service/ami-amazon-linux-latest/*",
+          "arn:aws:ssm:eu-west-2::parameter/aws/service/bottlerocket/*",
+          "arn:aws:ssm:eu-west-2::parameter/aws/service/eks/*",
+        ]
+      },
+      # ECR: registry-wide token, then everything else scoped to repositories
+      # in this account and region.
+      {
+        Sid       = "EcrAuthToken"
+        Effect    = "Allow"
+        Action    = "ecr:GetAuthorizationToken"
+        Resource  = "*"
+        Condition = local.eu_west_2_only
+      },
+      {
+        Sid    = "EcrRepositories"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchDeleteImage",
+          "ecr:BatchGetImage",
+          "ecr:CompleteLayerUpload",
+          "ecr:CreateRepository",
+          "ecr:DeleteLifecyclePolicy",
+          "ecr:DeleteRepository",
+          "ecr:DeleteRepositoryPolicy",
+          "ecr:DescribeImages",
+          "ecr:DescribeRepositories",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:GetLifecyclePolicy",
+          "ecr:GetRepositoryPolicy",
+          "ecr:InitiateLayerUpload",
+          "ecr:ListImages",
+          "ecr:ListTagsForResource",
+          "ecr:PutImage",
+          "ecr:PutImageScanningConfiguration",
+          "ecr:PutImageTagMutability",
+          "ecr:PutLifecyclePolicy",
+          "ecr:SetRepositoryPolicy",
+          "ecr:TagResource",
+          "ecr:UntagResource",
+          "ecr:UploadLayerPart",
+        ]
+        Resource = "arn:aws:ecr:eu-west-2:${data.aws_caller_identity.current.account_id}:repository/*"
+      },
+      {
+        Sid    = "Kms"
+        Effect = "Allow"
+        Action = [
+          "kms:CreateAlias",
+          "kms:CreateKey",
+          "kms:DeleteAlias",
+          "kms:DescribeKey",
+          "kms:DisableKey",
+          "kms:EnableKeyRotation",
+          "kms:GetKeyPolicy",
+          "kms:GetKeyRotationStatus",
+          "kms:ListAliases",
+          "kms:ListKeys",
+          "kms:ListResourceTags",
+          "kms:PutKeyPolicy",
+          "kms:ScheduleKeyDeletion",
+          "kms:TagResource",
+          "kms:UntagResource",
+        ]
+        Resource  = "*"
+        Condition = local.eu_west_2_only
+      },
+      {
+        Sid    = "TerraformStateBucket"
+        Effect = "Allow"
+        Action = [
+          "s3:DeleteObject",
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:PutObject",
+        ]
+        Resource = [
+          "arn:aws:s3:::terraform-state-*",
+          "arn:aws:s3:::terraform-state-*/*",
+        ]
+      },
+      {
+        Sid    = "TerraformStateLock"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DeleteItem",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+        ]
+        Resource = "arn:aws:dynamodb:*:*:table/terraform-state-lock*"
+      },
+      {
+        Sid      = "StsIdentity"
+        Effect   = "Allow"
+        Action   = "sts:GetCallerIdentity"
+        Resource = "*"
+      },
+    ]
+  })
+
+  tags = {
+    Name        = "github-actions-supporting-policy"
+    Environment = "staging"
+    ManagedBy   = "terraform"
+  }
+}
+
 resource "aws_iam_role_policy_attachment" "github_actions" {
   role       = aws_iam_role.github_actions.name
   policy_arn = aws_iam_policy.github_actions.arn
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_supporting" {
+  role       = aws_iam_role.github_actions.name
+  policy_arn = aws_iam_policy.github_actions_supporting.arn
 }
 
 # Outputs for use in GitHub Actions and Terraform Cloud workflows

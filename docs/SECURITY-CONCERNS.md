@@ -246,9 +246,26 @@ htmlcov/
 
 ### H5: IAM Permission Scoping (High) - Issue #296
 
-**Finding:** Overly broad IAM wildcards (`eks:*`, `ec2:*`, `iam:*`).
+**Finding:** Overly broad IAM wildcards on the GitHub Actions role.
 
-**Status:** Deferred - requires careful scoping to avoid breaking CI/CD.
+The original wildcards were `eks:*`, `ec2:*`, `autoscaling:*`, `ssm:*` and
+`ecr:*`, all on `Resource = "*"`. (This entry previously listed `iam:*` — that
+was never granted; the IAM statement was enumerated from the start.)
+
+**Status:** Scoped in `infrastructure/permanent/github-oidc.tf`. Each service
+wildcard is replaced by an enumerated action list; SSM is narrowed to the
+public EKS AMI parameter paths and ECR to repositories in this account and
+region; regional statements are pinned to `eu-west-2` via
+`aws:RequestedRegion`. `ec2:Describe*` is deliberately retained - EC2 Describe
+calls are read-only and do not support resource-level permissions.
+
+The policy is split across two managed policies attached to the same role,
+because the enumerated form exceeds the 6,144-character managed policy limit
+as a single document.
+
+**Caveat:** the scoped policy has not yet completed a full apply/destroy cycle
+against AWS. If a run fails with an `AccessDenied` naming a specific action,
+add that action to the relevant statement rather than restoring a wildcard.
 
 ---
 
