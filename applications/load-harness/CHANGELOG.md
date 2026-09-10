@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.4](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.3...v1.6.4) (2026-09-10)
+
+
+### Bug Fixes
+
+* **local-dev:** make the documented first command work on a clean clone ([613b84e](https://github.com/ImranAdan/infra-fleet-public/commit/613b84e0b1cfd476724386bb40a71e6ac50c3eb6))
+* **local-dev:** make the documented first command work on a clean clone ([ab9dc37](https://github.com/ImranAdan/infra-fleet-public/commit/ab9dc37ac44e3db5fb561109fbb58e30fdfb7c1b))
+* **template:** make the documented configuration real ([08c15f2](https://github.com/ImranAdan/infra-fleet-public/commit/08c15f2880da24f0bf134df4e41e5644559ad085))
+* **template:** make the documented configuration real ([b615c79](https://github.com/ImranAdan/infra-fleet-public/commit/b615c797f1d18b3f0b61184dd6dae446ab3102f4))
+
 ## [1.6.3](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.2...v1.6.3) (2026-09-10)
 
 
