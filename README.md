@@ -1,18 +1,58 @@
 # Infrastructure Fleet
 
-[![Load Harness CI](https://github.com/ImranAdan/infra-fleet-public/actions/workflows/load-harness-ci.yml/badge.svg)](https://github.com/ImranAdan/infra-fleet-public/actions/workflows/load-harness-ci.yml)
-[![Infra Apply](https://github.com/ImranAdan/infra-fleet-public/actions/workflows/infra-apply.yml/badge.svg)](https://github.com/ImranAdan/infra-fleet-public/actions/workflows/infra-apply.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.32-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![Flux](https://img.shields.io/badge/Flux-v2.7.3-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
+[![Template](https://img.shields.io/badge/Use%20this-template-2ea44f?logo=github)](https://github.com/ImranAdan/infra-fleet-public/generate)
 
-A production-grade AWS EKS platform demonstrating modern cloud-native practices: GitOps, progressive delivery, comprehensive observability, and cost-optimized operations.
+**A template for an AWS EKS platform, with a sample application to run on it.**
 
-**Live at**: [https://app.example.com](https://app.example.com) (when cluster is running)
+Copy it, point it at your own AWS account and HCP Terraform organisation, and
+you get a GitOps-managed EKS cluster running a Python application with
+progressive delivery, observability and DORA metrics — plus the CI/CD to
+build, scan, release and deploy it.
+
+The sample application is **the Harness**: a Flask service that generates CPU
+and memory load on demand. It exists to give the platform something real to
+deploy, scale, canary and measure. Replace it with your own application once
+you have seen the machinery work.
 
 ---
 
-## Platform Capabilities
+## This repository cannot deploy anything
+
+It holds **no credentials, no secrets and no account identifiers**, and it is
+not named in any IAM trust policy. Its CI validates code — Terraform,
+manifests, policies, container images, workflows — and stops there.
+
+That is deliberate, and recorded in
+[docs/CREDENTIALS-FREE-TEMPLATE-DDR.md](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md).
+A public repository that can reach into a cloud account is a liability; one
+that cannot is safe to publish and safe to fork.
+
+So `terraform plan`, `terraform apply`, cluster verification and nightly
+destroy **do not run here, and are not expected to**. They run in your private
+copy, with your credentials.
+
+**To deploy it: [CONFIGURATION.md](CONFIGURATION.md).**
+
+---
+
+## Try it without an AWS account
+
+The sample application runs locally with no cloud account and no configuration:
+
+```bash
+cd applications/load-harness/local-dev
+./dev.sh up-full
+open http://localhost:8080/ui
+```
+
+Worth doing before you decide whether to deploy anything.
+
+---
+
+## What you get
 
 | Category | Technologies |
 |----------|-------------|
@@ -20,11 +60,10 @@ A production-grade AWS EKS platform demonstrating modern cloud-native practices:
 | **GitOps** | Flux v2.7.3, Image Automation, HelmReleases |
 | **Progressive Delivery** | Flagger, Canary Deployments, Automated Rollback |
 | **Observability** | Prometheus, Grafana, DORA Metrics Dashboard |
-| **Security** | OIDC Authentication, TLS/HTTPS, Trivy Scanning |
+| **Security** | OIDC Authentication, TLS/HTTPS, Trivy Scanning, Kyverno Policies |
 | **CI/CD** | GitHub Actions, release-please, Dependabot |
 
 ---
-
 ## Architecture
 
 ![Platform Architecture](docs/ARCHITECTURE.png)
@@ -75,7 +114,8 @@ Web-based interface for load testing and monitoring:
 - **Per-Pod Monitoring**: CPU/Memory per pod with HPA visibility
 - **Dark Mode**: Full dark theme support
 
-Access at: `https://app.example.com/ui`
+Access at `https://<your-subdomain>.<your-domain>/ui`, or by port-forwarding
+if you are running without a domain.
 
 ### DORA Metrics
 
@@ -99,43 +139,34 @@ Automated certificate management:
 
 ## Quick Start
 
-### For Developers
+### Locally, with no cloud account
 
 ```bash
-# Clone and run locally
 cd applications/load-harness/local-dev
-./dev.sh up-full
-
-# Access the dashboard
+./dev.sh up-full          # app + Prometheus + Grafana in Docker
 open http://localhost:8080/ui
-
-# Run tests
-./dev.sh test
+./dev.sh test             # run the test suite
 ```
 
-### For Platform Engineers
+### On a cluster, in your own copy
+
+These require the credentials set up in [CONFIGURATION.md](CONFIGURATION.md),
+and will not work in this repository:
 
 ```bash
-# Start the cluster
-gh workflow run rebuild-stack.yml
-
-# Access services
-kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
+gh workflow run rebuild-stack.yml       # provision the cluster
 kubectl port-forward -n applications svc/load-harness 8080:5000
-
-# Or use HTTPS (when DNS is configured)
-open https://app.example.com
-
-# Stop the cluster
+kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
 gh workflow run nightly-destroy.yml -f reason="End of session"
 ```
 
----
+A custom domain is optional. Without one, port-forwarding reaches everything.
 
+---
 ## Repository Structure
 
 ```
-infra-fleet/
+<your-repo>/
 ├── infrastructure/                 # Terraform IaC
 │   ├── permanent/                  # OIDC, ECR (never destroyed)
 │   └── staging/                    # EKS cluster (ephemeral)
@@ -231,19 +262,27 @@ infra-fleet/
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Daily Schedule
+### Scheduling
 
-| Time (UTC) | Workflow | Purpose |
-|------------|----------|---------|
-| 08:00 | rebuild-stack.yml | Start cluster for work day |
-| onWorkflow Triggers | dora-metrics.yml | Collect deployment metrics |
-| 20:00 | nightly-destroy.yml | Destroy cluster (cost control) |
+Both lifecycle workflows are **manual** (`workflow_dispatch`):
+
+| Workflow | Purpose |
+|----------|---------|
+| `rebuild-stack.yml` | Provision the cluster |
+| `nightly-destroy.yml` | Tear it down, to stop paying for it |
+| `dora-metrics.yml` | Runs automatically after deployment workflows complete |
+
+`nightly-destroy.yml` previously ran on a nightly cron. That trigger was
+removed — a scheduled `terraform destroy` in a template someone else has
+forked is a poor default. Re-enable it in your own copy by restoring the
+`schedule:` trigger, and expect to pay for the cluster until you do.
 
 ---
-
 ## Cost Optimization
 
-**Running production-grade Kubernetes for ~$40-50/month**
+Roughly **$40-50/month** for the full stack left running continuously, in
+`eu-west-2`. Your figures will differ by region and usage — treat the table as
+illustrative, not a quote.
 
 | Component | Monthly Cost |
 |-----------|-------------|
@@ -253,7 +292,7 @@ infra-fleet/
 | **Total** | **~$43/month** |
 
 ### Cost Controls
-- **Ephemeral staging** - Destroyed nightly at 8 PM UTC
+- **Ephemeral staging** - destroy it when you are not using it (`nightly-destroy.yml`)
 - **Spot instances** - 70% cheaper than on-demand
 - **EKS 1.32** - Avoided $138/month extended support fees
 - **nginx-ingress** - Free (vs ALB at $17/month)
@@ -263,25 +302,45 @@ infra-fleet/
 
 ## Documentation
 
-### Getting Started
-- [Platform Roadmap](docs/PLATFORM-BUILD-ROADMAP.md) - Vision and completed phases
-- [Release Engineering Roadmap](docs/RELEASE-ENGINEERING-ROADMAP.md) - CI/CD maturity
-- [EKS Access Guide](docs/EKS-ACCESS.md) - Cluster access methods
+### Adopting this template
+- **[CONFIGURATION.md](CONFIGURATION.md)** - every value you need to supply. Start here
+- [Credentials-Free Template (DDR)](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md) - why this repository holds no secrets
+- [GitHub OIDC Setup](docs/GITHUB-OIDC-SETUP.md) - AWS trust configuration
+- [Terraform Cloud Setup](docs/TERRAFORM-CLOUD-SETUP.md) - HCP Terraform workspaces
+- [SECURITY.md](SECURITY.md) - security policy and notes for forks
 
-### Operations
+### Operating the platform
+- [EKS Access Guide](docs/EKS-ACCESS.md) - reaching the cluster
 - [GitOps Setup](docs/GITOPS-SETUP.md) - Flux configuration and CRD ordering
 - [Progressive Delivery](docs/PROGRESSIVE-DELIVERY.md) - Flagger canary deployments
-- [DORA Metrics](docs/DORA-METRICS.md) - Metrics collection and dashboard
-- [TLS/SSL Setup](docs/TLS-SSL-SETUP.md) - Certificate management
-- [Stack Automation](docs/STACK-AUTOMATION.md) - Nightly destroy/rebuild
+- [Canary Deployments](docs/CANARY-DEPLOYMENTS.md) - canary configuration
+- [DORA Metrics](docs/DORA-METRICS.md) - metrics collection and dashboard
+- [Monitoring Setup](docs/MONITORING-SETUP.md) - Prometheus and Grafana
+- [TLS/SSL Setup](docs/TLS-SSL-SETUP.md) - certificate management
+- [Stack Automation](docs/STACK-AUTOMATION.md) - destroy and rebuild
+- [Cost Optimization](docs/COST-OPTIMIZATION-GUIDE.md) - what it costs and why
 
-### Development
+### Contributing to this template
 - [Versioning Strategy](docs/VERSIONING-STRATEGY.md) - SemVer and release-please
-- [Commit Messages](docs/COMMIT-MESSAGES.md) - Conventional commits
-- [Cost Optimization Guide](docs/COST-OPTIMIZATION-GUIDE.md) - Cost analysis
+- [Commit Messages](docs/COMMIT-MESSAGES.md) - conventional commits, enforced by CI
+- [Dependabot](docs/DEPENDABOT.md) - dependency update policy
+- [Local Workflow Testing](docs/ACT-LOCAL-TESTING.md) - running workflows with act
+
+### Design records and project history
+These document decisions and plans specific to the original project. They are
+kept for the reasoning, not as instructions for adopters.
+- [Terraform Cloud / EKS Access (DDR)](docs/TERRAFORM-CLOUD-EKS-DDR.md)
+- [Multi-Environment Design](docs/MULTI-ENVIRONMENT-DESIGN.md)
+- [Platform Build Roadmap](docs/PLATFORM-BUILD-ROADMAP.md)
+- [Release Engineering Roadmap](docs/RELEASE-ENGINEERING-ROADMAP.md)
+- [Security Concerns](docs/SECURITY-CONCERNS.md) - audit findings and their status
 
 ---
 
-**Maintained by**: Platform Engineering
-**Last Updated**: 2026-01-03
-**License**: MIT
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+The sample application, infrastructure code and documentation are all covered.
+You are free to use this as the basis for your own platform, commercial or
+otherwise.
