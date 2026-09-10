@@ -32,6 +32,8 @@ See [docs/COST-OPTIMIZATION-GUIDE.md](docs/COST-OPTIMIZATION-GUIDE.md).
 
 ## Step 1 — copy the template, privately
 
+Click **Use this template** on the repository page, or:
+
 ```bash
 gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
 ```
@@ -40,7 +42,6 @@ gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
 private repository.
 
 ---
-
 ## Step 2 — bootstrap the permanent stack, locally
 
 The permanent stack creates the OIDC provider and the IAM role your CI will

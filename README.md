@@ -1,67 +1,103 @@
+<div align="center">
+
 # Infrastructure Fleet
+
+**A complete, production-shaped Kubernetes platform you can fork — and a sample app that puts it through its paces.**
+
+EKS · GitOps · canary deployments with automatic rollback · Prometheus and Grafana · DORA metrics · one-command teardown to keep the bill honest
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.32-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
-[![Flux](https://img.shields.io/badge/Flux-v2.7.3-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
-[![Template](https://img.shields.io/badge/Use%20this-template-2ea44f?logo=github)](https://github.com/ImranAdan/infra-fleet-public/generate)
+[![Flux](https://img.shields.io/badge/GitOps-Flux%20v2.7.3-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)](https://developer.hashicorp.com/terraform)
+[![No credentials](https://img.shields.io/badge/secrets%20in%20this%20repo-none-2ea44f)](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md)
+[![Use this template](https://img.shields.io/badge/Use%20this-template-2ea44f?logo=github)](https://github.com/ImranAdan/infra-fleet-public/generate)
 
-**A template for an AWS EKS platform, with a sample application to run on it.**
+[Try it locally](#try-it-locally-first) · [What you get](#what-you-get) · [Make it yours](CONFIGURATION.md) · [Docs](docs/README.md)
 
-Copy it, point it at your own AWS account and HCP Terraform organisation, and
-you get a GitOps-managed EKS cluster running a Python application with
-progressive delivery, observability and DORA metrics — plus the CI/CD to
-build, scan, release and deploy it.
-
-The sample application is **the Harness**: a Flask service that generates CPU
-and memory load on demand. It exists to give the platform something real to
-deploy, scale, canary and measure. Replace it with your own application once
-you have seen the machinery work.
+</div>
 
 ---
 
-## This repository cannot deploy anything
+## Try it locally, first
 
-It holds **no credentials, no secrets and no account identifiers**, and it is
-not named in any IAM trust policy. Its CI validates code — Terraform,
-manifests, policies, container images, workflows — and stops there.
-
-That is deliberate, and recorded in
-[docs/CREDENTIALS-FREE-TEMPLATE-DDR.md](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md).
-A public repository that can reach into a cloud account is a liability; one
-that cannot is safe to publish and safe to fork.
-
-So `terraform plan`, `terraform apply`, cluster verification and nightly
-destroy **do not run here, and are not expected to**. They run in your private
-copy, with your credentials.
-
-**To deploy it: [CONFIGURATION.md](CONFIGURATION.md).**
-
----
-
-## Try it without an AWS account
-
-The sample application runs locally with no cloud account and no configuration:
+No AWS account. No credentials. No configuration.
 
 ```bash
-cd applications/load-harness/local-dev
-./dev.sh up-full          # creates .env from .env.example on first run
-open http://localhost:8080/ui
+git clone https://github.com/ImranAdan/infra-fleet-public.git
+cd infra-fleet-public/applications/load-harness/local-dev
+./dev.sh up-full
 ```
 
-Worth doing before you decide whether to deploy anything.
+First run builds the image, so give it a few minutes; after that it is seconds.
+
+Open **http://localhost:8080/ui** and press a button — the dashboard drives
+real CPU and memory load, and you watch Prometheus and Grafana react to it live.
+
+That is the same application the cluster runs, the same metrics the canary
+analysis judges, and the same dashboards. If you like what you see, the rest of
+this repository is how it gets to production.
 
 ---
 
 ## What you get
 
-| Category | Technologies |
-|----------|-------------|
-| **Infrastructure** | EKS 1.32, Terraform, Spot Instances |
-| **GitOps** | Flux v2.7.3, Image Automation, HelmReleases |
-| **Progressive Delivery** | Flagger, Canary Deployments, Automated Rollback |
-| **Observability** | Prometheus, Grafana, DORA Metrics Dashboard |
-| **Security** | OIDC Authentication, TLS/HTTPS, Trivy Scanning, Kyverno Policies |
-| **CI/CD** | GitHub Actions, release-please, Dependabot |
+Fork this and you have a platform that does the following, on day one:
+
+| | |
+|---|---|
+| **Ships safely** | A push to `main` builds, scans and publishes an image, Flux picks it up, and Flagger rolls it out as a canary — promoting on success rate and p99 latency, rolling back automatically when they slip |
+| **Tells you the truth** | Prometheus, Grafana and a DORA metrics pipeline: deployment frequency, lead time, change failure rate, time to restore |
+|  **Costs about $43/month** | Spot instances, a slim Flux install, nginx over ALB, and a one-command teardown for when you are not using it |
+| **Proves itself in CI** | Terraform validated and scanned, manifests schema-checked, Kyverno policies enforced, images scanned with Trivy, commit messages linted, releases cut by release-please |
+| **Is safe to fork** | This repository holds no credentials and appears in no IAM trust policy. There is nothing here to leak |
+
+---
+
+## Why this one
+
+Most "reference platform" repositories are a diagram and a `terraform apply`
+that stopped working eleven months ago. Three things make this different.
+
+**It is exercised, not just published.** Every claim in this README is checked
+in CI or was verified by running it. The sample application is not a
+placeholder — it generates real load so autoscaling, canary analysis and the
+dashboards have something true to measure.
+
+**It admits what it costs.** Kubernetes reference architectures are usually
+priced at zero because nobody ran them. This one is about $26 for the EKS
+control plane, $10 for a NAT gateway and $7 of spot capacity in `eu-west-2`, and
+it ships with a destroy workflow, because the honest answer to "how do I make
+it cheaper" is "turn it off when you are not using it".
+
+**It cannot hurt you.** The repository you are reading has no secrets and no
+cloud access by design — deliberately, and
+[written down](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md). Deployment happens in
+your own private copy, with your own credentials, after a bootstrap step you run
+yourself. Forking it grants nobody anything.
+
+---
+
+## Make it yours
+
+Click **Use this template** at the top of the repository, or:
+
+```bash
+gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
+```
+
+**Keep it private.** This template holds no secrets; your deployment will.
+
+Then follow **[CONFIGURATION.md](CONFIGURATION.md)** — every value you need to
+supply, where each one comes from, and what you can skip. You need an AWS
+account and an HCP Terraform organisation; a cluster build takes roughly 25
+minutes. A custom domain is optional; without one, port-forwarding reaches
+everything.
+
+The sample application is meant to be replaced. When you are ready, swap in your
+own — keep a `/health` and a `/metrics` endpoint and the probes, autoscaling and
+canary analysis carry on working. See
+[replacing the Harness](applications/load-harness/docs/APPLICATION-ROADMAP.md#extending-or-replacing-the-harness).
 
 ---
 ## Architecture
@@ -137,32 +173,6 @@ Automated certificate management:
 
 ---
 
-## Quick Start
-
-### Locally, with no cloud account
-
-```bash
-cd applications/load-harness/local-dev
-./dev.sh up-full          # app + Prometheus + Grafana in Docker
-open http://localhost:8080/ui
-./dev.sh test             # run the test suite
-```
-
-### On a cluster, in your own copy
-
-These require the credentials set up in [CONFIGURATION.md](CONFIGURATION.md),
-and will not work in this repository:
-
-```bash
-gh workflow run rebuild-stack.yml       # provision the cluster
-kubectl port-forward -n applications svc/load-harness 8080:5000
-kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
-gh workflow run nightly-destroy.yml -f reason="End of session"
-```
-
-A custom domain is optional. Without one, port-forwarding reaches everything.
-
----
 ## Repository Structure
 
 ```
