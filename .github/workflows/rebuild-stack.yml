@@ -214,9 +214,20 @@ jobs:
       # provider initialization issues when the cluster doesn't exist.
       # This is idempotent and safe to run on every rebuild.
       # -----------------------------------------------------------------------
+      # Same pin as .github/actions/cleanup-kubernetes-resources. Replaces
+      # `curl -s https://fluxcd.io/install.sh | sudo bash`, which fetched an
+      # unpinned remote script over the network and executed it as root on a
+      # runner holding this repository's AWS credentials.
+      #
+      # The version matters here more than anywhere else: the next step runs
+      # `flux bootstrap`, which regenerates
+      # k8s/flux-system/flux-system/gotk-components.yaml at whatever version
+      # the CLI is. Unpinned, a rebuild silently upgrades the cluster's Flux
+      # control plane and rewrites a committed manifest.
       - name: Install Flux CLI
-        run: |
-          curl -s https://fluxcd.io/install.sh | sudo bash
+        uses: fluxcd/flux2/action@f66fbf2ec0d3fe55f9daa1cd00f640505061148b # v2.7.3
+        with:
+          version: 2.7.3
 
       - name: Bootstrap Flux
         run: |

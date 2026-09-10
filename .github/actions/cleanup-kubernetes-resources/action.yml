@@ -27,10 +27,18 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    # Pinned to a commit, not a branch, and to an explicit CLI version.
+    #
+    # The action's `version` input defaults to "latest stable release", so
+    # pinning the ref alone still installs a floating binary. 2.7.3 matches
+    # the Flux version in k8s/flux-system/flux-system/gotk-components.yaml -
+    # `flux bootstrap` regenerates that file at whatever version the CLI is,
+    # so a newer CLI would silently upgrade the cluster's control plane
+    # during a rebuild. Move this pin and gotk-components.yaml together.
     - name: Install Flux CLI
-      uses: fluxcd/flux2/action@main
-      # Official Flux action - verified and secure installation
-      # See: https://github.com/fluxcd/flux2/tree/main/action
+      uses: fluxcd/flux2/action@f66fbf2ec0d3fe55f9daa1cd00f640505061148b # v2.7.3
+      with:
+        version: 2.7.3
 
     - name: Pre-cleanup verification
       if: inputs.run-verification == 'true'
