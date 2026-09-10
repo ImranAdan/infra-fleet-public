@@ -25,7 +25,7 @@ terraform {
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = "~> 4.0"
+      version = "~> 5.24"
     }
     # Note: Flux-related providers (flux, kubernetes, kubectl, github, tls) have been removed.
     # Flux is now bootstrapped outside of Terraform via the rebuild-stack.yml workflow.
