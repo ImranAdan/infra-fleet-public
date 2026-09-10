@@ -28,10 +28,10 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set image tag
         run: |
@@ -106,7 +106,7 @@ jobs:
           docker save $ECR_REPOSITORY:$IMAGE_TAG | gzip > /tmp/image.tar.gz
 
       - name: Upload image artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: docker-image
           path: /tmp/image.tar.gz
@@ -121,7 +121,7 @@ jobs:
         working-directory: .
     steps:
       - name: Download image artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: docker-image
           path: /tmp
@@ -163,7 +163,7 @@ jobs:
       id-token: write
     steps:
       - name: Download image artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: docker-image
           path: /tmp
@@ -174,7 +174,7 @@ jobs:
           echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
