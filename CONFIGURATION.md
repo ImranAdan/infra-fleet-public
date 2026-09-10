@@ -131,6 +131,38 @@ are tracked in the sequence in
 They are called out rather than hidden because a template that quietly needs a
 `.tf` edit is worse than one that says so.
 
+## Cluster secrets
+
+Two Kubernetes Secrets are referenced by
+`k8s/applications/load-harness/deployment.yaml`. Neither is in Git, correctly -
+`rebuild-stack.yml` creates both when it provisions the cluster:
+
+| Secret | Key | Source | Required |
+|--------|-----|--------|----------|
+| `load-harness-secret-key` | `secret-key` | Generated per rebuild with `openssl rand -hex 32` | **yes** |
+| `load-harness-api-key` | `api-key` | The `LOAD_HARNESS_API_KEY` repository secret | no - `optional: true`, auth is disabled without it |
+
+Two consequences worth knowing:
+
+**If you apply the manifests without running `rebuild-stack.yml`** - deploying
+through Flux alone, for instance - pods stay in `CreateContainerConfigError`,
+because `SECRET_KEY` is not optional. Create it by hand if you need to:
+
+```bash
+kubectl create secret generic load-harness-secret-key \
+  --namespace=applications \
+  --from-literal=secret-key="$(openssl rand -hex 32)"
+```
+
+**The session key is regenerated on every rebuild**, so anyone logged into the
+dashboard is signed out when the stack is rebuilt. That is a reasonable
+trade for an ephemeral environment; set a fixed value if it annoys you.
+
+The key must be identical across replicas. The HPA scales this deployment from
+1 to 8, and with per-pod keys a login would break as soon as a request landed
+on a different pod - which is why it comes from a Secret rather than being
+generated in the container.
+
 ## Step 6 — trust policy
 
 `infrastructure/permanent/github-oidc.tf` decides which repository may assume
