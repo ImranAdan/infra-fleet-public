@@ -207,7 +207,7 @@ A custom domain is optional. Without one, port-forwarding reaches everything.
 | Component | Version | Purpose |
 |-----------|---------|---------|
 | EKS | 1.32 | Kubernetes control plane |
-| Terraform | 1.12+ | Infrastructure as Code |
+| Terraform | >= 1.14.0, < 2.0.0 | Infrastructure as Code |
 | Flux | v2.7.3 | GitOps operator |
 | Spot Instances | t3.large | Cost-optimized compute |
 

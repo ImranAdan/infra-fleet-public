@@ -57,58 +57,80 @@ Components:
 
 ## Endpoints
 
+Verified against `src/load_harness/load_harness_service.py` and
+`src/load_harness/constants.py`.
+
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/` | GET | Application info |
-| `/health` | GET | Health check (liveness/readiness) |
-| `/metrics` | GET | Prometheus metrics |
-| `/load/cpu` | POST | Blocking CPU load |
-| `/load/memory` | POST | Memory allocation load |
-| `/load/cpu/sustained` | POST | Non-blocking background CPU load |
-| `/load/cpu/sustained/status` | GET | Check sustained load job status |
-| `/load/cpu/sustained/stop` | POST | Stop sustained load workers |
+| `/health` | GET | Health check - used by both probes in `deployment.yaml` |
+| `/ready` | GET | Readiness check |
+| `/version` | GET | Build version, injected as `APP_VERSION` |
+| `/system/info` | GET | Host CPU and memory as seen by the pod |
+| `/metrics` | GET | Prometheus metrics, via `prometheus-flask-exporter` |
+| `/load/cpu` | POST | Start CPU load in background workers. Returns immediately |
+| `/load/cpu/status` | GET | Status of the running CPU job |
+| `/load/cpu/stop` | POST | Stop CPU workers |
+| `/load/cpu/work` | POST | **Blocking** CPU work. Occupies a worker, so load balances across pods |
+| `/load/memory` | POST | Start memory load in a background worker. Returns immediately |
+| `/load/memory/status` | GET | Status of the running memory job |
+| `/load/memory/stop` | POST | Stop the memory worker |
+| `/load/memory/sync` | POST | Legacy blocking memory load |
 | `/apidocs` | GET | Interactive Swagger UI |
 | `/apispec.json` | GET | OpenAPI specification |
 
-### POST /load/cpu — Blocking CPU Load
+The dashboard adds `/login`, `/logout`, `/api/system-info` and several
+`/partials/*` routes used by HTMX.
+
+### POST /load/cpu — background CPU load
 
 ```json
 {
-  "duration_ms": 500,
-  "complexity": 5
-}
-```
-
-- `duration_ms`: 1-10000 (default: 100)
-- `complexity`: 1-10 (default: 5)
-
-### POST /load/memory — Memory Load
-
-```json
-{
-  "size_mb": 100,
-  "duration_ms": 2000
-}
-```
-
-- `size_mb`: 1-2048 (default: 50)
-- `duration_ms`: 1-120000 (default: 1000)
-
-### POST /load/cpu/sustained — Non-Blocking CPU Load
-
-```json
-{
-  "workers": 2,
+  "cores": 1,
   "duration_seconds": 60,
-  "complexity": 5
+  "intensity": 5
 }
 ```
 
-- `workers`: 1-4 (default: 1)
-- `duration_seconds`: 1-300 (default: 30)
-- `complexity`: 1-10 (default: 5)
+| Field | Range | Default |
+|-------|-------|---------|
+| `cores` | 1-16 | 1 |
+| `duration_seconds` | 10-900 | 60 |
+| `intensity` | 1-10 | 5 |
 
-Returns immediately with `job_id` for monitoring. Health probes remain responsive.
+Returns immediately with a job id. Health probes stay responsive, which is what
+makes this safe to run against a pod that Kubernetes is also monitoring.
+
+### POST /load/cpu/work — blocking CPU work
+
+```json
+{
+  "iterations": 100000
+}
+```
+
+`iterations`: 1,000-10,000,000, default 100,000.
+
+Unlike `/load/cpu`, this occupies the worker until it finishes. That is the
+point: it is what the dashboard's distributed test uses to spread load across
+pods rather than concentrating it in one.
+
+### POST /load/memory — background memory load
+
+```json
+{
+  "size_mb": 50,
+  "duration_seconds": 30
+}
+```
+
+| Field | Range | Default |
+|-------|-------|---------|
+| `size_mb` | 1-2048 | 50 |
+| `duration_seconds` | 5-300 | 30 |
+
+`/load/memory/sync` is the older blocking form, taking `size_mb` and
+`duration_ms` (1-120,000, default 1,000).
 
 ## Metrics Exposed
 
@@ -121,41 +143,21 @@ Via `prometheus-flask-exporter`:
 
 ## Dockerfile
 
-Multi-stage build with security best practices:
+Multi-stage build. Rather than reproduce it here and let the copy drift, see
+[`../Dockerfile`](../Dockerfile) - it is the source of truth. The properties
+worth knowing:
 
-```dockerfile
-# Multi-stage build for production optimization
-FROM python:3.11-slim AS builder
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-FROM python:3.11-slim AS runtime
-
-# Create non-root user for security
-RUN useradd --create-home --shell /bin/bash app
-
-WORKDIR /app
-
-# Copy Python packages from builder stage
-COPY --from=builder /root/.local /home/app/.local
-
-# Copy application code
-COPY src/ ./src/
-
-# Switch to non-root user
-USER app
-
-# Add local Python packages to PATH and set PYTHONPATH
-ENV PATH=/home/app/.local/bin:$PATH
-ENV PYTHONPATH=/app/src
-
-EXPOSE 8080
-
-# Use environment variable for port, defaulting to 8080
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 2 load_harness.wsgi:app"]
-```
+- **Two stages.** Dependencies are built in the builder and only
+  `/root/.local` is copied forward, so build tools never reach the runtime
+  image.
+- **No package installer at runtime.** `pip`, `setuptools` and `wheel` are
+  removed from the runtime stage. They are not needed to run gunicorn, and the
+  packages setuptools vendors were the source of two HIGH CVEs.
+- **Non-root.** The container runs as the `app` user, enforced again by
+  `securityContext` in `deployment.yaml`.
+- **Scanned in CI.** `load-harness-ci.yml` runs Trivy against the built image
+  with `severity: CRITICAL,HIGH` and `exit-code: 1`, so a vulnerable image
+  fails the build rather than shipping.
 
 ## Deployment on EKS
 

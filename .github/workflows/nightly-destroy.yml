@@ -239,6 +239,8 @@ jobs:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           session-name: GitHubActions-TerraformDestroy
+          tf-cloud-organization: ${{ secrets.TF_CLOUD_ORGANIZATION }}
+          tf-workspace: ${{ vars.TF_WORKSPACE_STAGING || 'infra-fleet-staging' }}
           tf-api-token: ${{ secrets.TF_API_TOKEN }}
 
       - name: Terraform Destroy

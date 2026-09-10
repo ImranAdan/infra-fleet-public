@@ -111,7 +111,7 @@ Dependabot PRs trigger the same CI workflows as regular PRs:
 | `load-harness-ci.yml` | ✅ Yes (if app files change) |
 | `infra-plan.yml` | ✅ Yes (if infra files change) |
 | `commit-message-lint.yml` | ✅ Yes |
-| `gitops-validate.yml` | ✅ Yes (if gitops files change) |
+| `k8s-manifest-validate.yml` | ✅ Yes (if gitops files change) |
 
 ### Required Secrets
 

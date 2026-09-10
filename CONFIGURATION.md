@@ -81,6 +81,7 @@ not strictly confidential, such as an account identifier.
 | `CLOUDFLARE_ZONE_ID` | only with a custom domain | Cloudflare dashboard, zone overview |
 | `FLUX_GITHUB_TOKEN` | yes | A GitHub PAT or App token with `repo` scope, for Flux bootstrap |
 | `LOAD_HARNESS_API_KEY` | no | Enables the sample application's authenticated endpoints |
+| `RELEASE_PLEASE_TOKEN` | no | Legacy alternative to the App below. A PAT reaches every repository your account can see; prefer the App |
 | `RELEASE_PLEASE_APP_CLIENT_ID` | no | See [release automation](#release-automation) |
 | `RELEASE_PLEASE_APP_PRIVATE_KEY` | no | See [release automation](#release-automation) |
 
@@ -109,14 +110,26 @@ Values Terraform needs that are specific to your deployment. Set them as
 workspace variables in HCP Terraform, or in a local `terraform.tfvars`
 (already covered by `.gitignore`).
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `github_repository` | yes | `owner/repo` of **your** repository. Scopes the OIDC trust policy |
-| `cluster_admin_principals` | no | Extra IAM users or roles granted EKS admin access |
-| `domain_name` | only with a custom domain | Root domain, e.g. `example.com` |
-| `app_subdomain` | no, defaults to `app` | Subdomain for the sample application |
+| Variable | Stack | Required | Purpose |
+|----------|-------|----------|---------|
+| `domain_name` | staging | only with a custom domain | Root domain, e.g. `example.com`. Defaults to a placeholder |
+| `app_subdomain` | staging | no | Subdomain for the sample application. Defaults to `app` |
+| `cloudflare_api_token` | staging | only with a custom domain | Also settable as the `CLOUDFLARE_API_TOKEN` secret |
+| `cloudflare_zone_id` | staging | only with a custom domain | Cloudflare zone for `domain_name` |
 
----
+### Not yet parameterised
+
+Two values are still hardcoded in Terraform and **do** need a file edit. Both
+are tracked in the sequence in
+[docs/CREDENTIALS-FREE-TEMPLATE-DDR.md](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md):
+
+| Value | Where | What to change |
+|-------|-------|----------------|
+| OIDC trust subject | `infrastructure/permanent/github-oidc.tf` | Replace the repository in `token.actions.githubusercontent.com:sub` with your own, pinned to a ref - see [step 6](#step-6--trust-policy) |
+| EKS admin principals | `infrastructure/staging/eks.tf` | `access_entries` names specific IAM principals. Replace them with your own |
+
+They are called out rather than hidden because a template that quietly needs a
+`.tf` edit is worse than one that says so.
 
 ## Step 6 — trust policy
 
