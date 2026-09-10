@@ -17,6 +17,12 @@ inputs:
     description: 'Terraform version to install'
     required: false
     default: '1.14.0'
+  tf-cloud-organization:
+    description: 'HCP Terraform organization. Sets TF_CLOUD_ORGANIZATION for the cloud block'
+    required: true
+  tf-workspace:
+    description: 'HCP Terraform workspace for this stack. Sets TF_WORKSPACE'
+    required: true
   tf-api-token:
     description: 'Terraform Cloud API token'
     required: true
@@ -24,6 +30,25 @@ inputs:
 runs:
   using: 'composite'
   steps:
+
+    - name: Configure HCP Terraform target
+      shell: bash
+      env:
+        TF_CLOUD_ORG: ${{ inputs.tf-cloud-organization }}
+        TF_WS: ${{ inputs.tf-workspace }}
+      run: |
+        # The cloud {} block in main.tf is intentionally empty; organization
+        # and workspace are supplied here so no .tf file names them.
+        if [ -z "$TF_CLOUD_ORG" ]; then
+          echo "::error::TF_CLOUD_ORGANIZATION is not set. Terraform cannot resolve the HCP Terraform organization. See CONFIGURATION.md."
+          exit 1
+        fi
+        if [ -z "$TF_WS" ]; then
+          echo "::error::No HCP Terraform workspace supplied for this stack. See CONFIGURATION.md."
+          exit 1
+        fi
+        echo "TF_CLOUD_ORGANIZATION=$TF_CLOUD_ORG" >> "$GITHUB_ENV"
+        echo "TF_WORKSPACE=$TF_WS" >> "$GITHUB_ENV"
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v4
       with:

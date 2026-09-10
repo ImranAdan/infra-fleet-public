@@ -224,7 +224,7 @@ This repository also includes these workflows not covered above:
 | Workflow | Purpose | Can Run Locally |
 |----------|---------|-----------------|
 | `commit-message-lint.yml` | Validates commit message format | ✅ Yes |
-| `gitops-validate.yml` | Validates GitOps manifests | ✅ Yes |
+| `k8s-manifest-validate.yml` | Validates GitOps manifests | ✅ Yes |
 | `release-please.yml` | Automated release management | ❌ No (GitHub API) |
 
 ## Troubleshooting

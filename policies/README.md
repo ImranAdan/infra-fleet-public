@@ -6,7 +6,7 @@ This directory contains Kyverno policies for validating Kubernetes manifests in 
 
 Policies are validated in two places:
 
-1. **CI (Shift-Left)**: The `gitops-validate` workflow runs `kyverno apply` against manifests in `k8s/applications/` before merge
+1. **CI (Shift-Left)**: The `k8s-manifest-validate` workflow runs `kyverno apply` against manifests in `k8s/` before merge
 2. **Cluster (Runtime)**: When Kyverno is deployed to the cluster, it acts as an admission controller enforcing policies on all resources
 
 ## Current Policies

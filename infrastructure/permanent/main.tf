@@ -10,11 +10,16 @@ terraform {
   # Terraform Cloud backend configuration
   # State is stored remotely and runs can execute on Terraform Cloud infrastructure
   cloud {
-    organization = "your-terraform-org"
-
-    workspaces {
-      name = "infra-fleet-permanent"
-    }
+    # organization and workspace come from TF_CLOUD_ORGANIZATION and
+    # TF_WORKSPACE, set by .github/actions/setup-aws-terraform.
+    #
+    # They cannot be Terraform variables - the cloud block is parsed before
+    # variables exist - so environment variables are the only supported way to
+    # externalise them. This keeps one organisation's name out of a public
+    # template and lets an adopter point the stack at their own HCP Terraform
+    # organisation without editing any .tf file.
+    #
+    # See CONFIGURATION.md.
   }
   required_providers {
     aws = {

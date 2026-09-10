@@ -59,6 +59,8 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           session-name: GitHubActions-Plan
           tf-api-token: ${{ secrets.TF_API_TOKEN }}
+          tf-cloud-organization: ${{ secrets.TF_CLOUD_ORGANIZATION }}
+          tf-workspace: ${{ vars.TF_WORKSPACE_STAGING || 'infra-fleet-staging' }}
 
       - name: Terraform fmt (check)
         run: terraform -chdir=infrastructure/staging fmt -check
@@ -99,6 +101,8 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           session-name: GitHubActions-Plan
           tf-api-token: ${{ secrets.TF_API_TOKEN }}
+          tf-cloud-organization: ${{ secrets.TF_CLOUD_ORGANIZATION }}
+          tf-workspace: ${{ vars.TF_WORKSPACE_PERMANENT || 'infra-fleet-permanent' }}
 
       - name: Terraform fmt (check)
         run: terraform -chdir=infrastructure/permanent fmt -check
