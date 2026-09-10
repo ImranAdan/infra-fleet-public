@@ -16,4 +16,13 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # Falls back to the job's own GITHUB_TOKEN, which is short-lived,
+          # scoped to this repository, and needs no manual rotation. The
+          # permissions block above grants it what release-please needs.
+          #
+          # Caveat: releases and tags created with GITHUB_TOKEN do not
+          # trigger other workflows, so the tag release-please pushes will
+          # not start Load Harness CI. Run that manually via workflow_dispatch
+          # after a release, or set RELEASE_PLEASE_TOKEN to a GitHub App
+          # installation token to restore the chain.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
