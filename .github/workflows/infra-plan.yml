@@ -21,7 +21,7 @@ jobs:
       staging: ${{ steps.detect.outputs.staging-changed }}
       permanent: ${{ steps.detect.outputs.permanent-changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -37,7 +37,7 @@ jobs:
     if: needs.detect.outputs.staging == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Security scan (Trivy)
         uses: aquasecurity/trivy-action@v0.36.0
@@ -78,7 +78,7 @@ jobs:
     if: needs.detect.outputs.permanent == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Security scan (Trivy)
         uses: aquasecurity/trivy-action@v0.36.0
