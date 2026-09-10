@@ -175,50 +175,23 @@ Currently deployed:
 - **Grafana** — Dashboards and visualization
 - **ServiceMonitor** — Auto-discovery of application metrics
 
-## Implementation Roadmap
+## Extending or replacing the Harness
 
-### Phase 1: Core Load Testing ✅ COMPLETE
+The Harness exists to give the platform something real to deploy, scale,
+canary and measure. It is meant to be replaced.
 
-- ✅ Flask application with factory pattern
-- ✅ `/load/cpu` endpoint with configurable duration and complexity
-- ✅ `/load/memory` endpoint for memory pressure testing
-- ✅ Prometheus metrics via `prometheus-flask-exporter`
-- ✅ Health check endpoint
-- ✅ Docker-first development workflow
-- ✅ Multi-stage Dockerfile with non-root user
-- ✅ CI/CD pipeline with GitHub Actions
-- ✅ FluxCD GitOps deployment
+To swap in your own application:
 
-### Phase 2: Advanced Load Patterns ✅ COMPLETE
+1. Replace `applications/load-harness/` with your service. Keep a `/health`
+   endpoint and a Prometheus `/metrics` endpoint - the deployment probes,
+   `ServiceMonitor` and Flagger canary analysis all depend on them.
+2. Update the image reference in
+   `k8s/applications/load-harness/deployment.yaml`, and the `ECR_REPOSITORY`
+   value in `.github/workflows/load-harness-ci.yml`.
+3. Adjust the Flagger metric thresholds in
+   `k8s/applications/load-harness/canary.yaml` to suit your service. The
+   defaults assume a request rate the Harness can generate on demand.
 
-- ✅ Non-blocking sustained CPU load (`/load/cpu/sustained`)
-- ✅ Multiprocessing workers for background load
-- ✅ Job management (start, status, stop)
-- ✅ Health probes remain responsive during sustained load
-
-### Phase 3: API Documentation ✅ COMPLETE
-
-- ✅ OpenAPI/Swagger documentation with Flasgger
-- ✅ Interactive Swagger UI at `/apidocs`
-- ✅ OpenAPI spec at `/apispec.json`
-- ✅ Request/response schemas for all endpoints
-
-### Phase 4: Observability Stack ✅ COMPLETE
-
-- ✅ Prometheus deployment (kube-prometheus-stack)
-- ✅ Grafana dashboards
-- ✅ ServiceMonitor for auto-discovery
-- ✅ HPA configuration
-
-### Phase 5: Future Enhancements (Planned)
-
-- 🔄 Network I/O load endpoints
-- 🔄 Disk I/O load endpoints
-- 🔄 Chaos engineering patterns
-- 🔄 Load test automation with scenarios
-- 🔄 Cost-per-request analysis dashboard
-
----
-
-**Status**: Phases 1-4 complete, Phase 5 planned
-**Last Updated**: 2025-12-23
+Keeping the Harness alongside your own workload is also reasonable - it is a
+useful way to generate load and confirm autoscaling still behaves after a
+change.

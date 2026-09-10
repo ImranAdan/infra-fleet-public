@@ -260,14 +260,24 @@ aws iam list-attached-role-policies --role-name GitHubActions-InfraFleet
 ## State Management
 
 ### Terraform State
-- **Backend**: Local state file (future: consider S3 + DynamoDB)
-- **Location**: `infrastructure/permanent/terraform.tfstate`
-- **Criticality**: Loss requires redeployment, but state can be recovered via `terraform import`
+- **Backend**: HCP Terraform, configured by the `cloud {}` block in `main.tf`.
+  Organisation and workspace come from `TF_CLOUD_ORGANIZATION` and
+  `TF_WORKSPACE` - see [../../CONFIGURATION.md](../../CONFIGURATION.md)
+- **Location**: remote. There is no local `terraform.tfstate`
+- **Locking**: handled by HCP Terraform; no DynamoDB table needed
+- **Criticality**: loss requires redeployment, though most resources here can
+  be recovered with `terraform import`
 
-### Backup Recommendations
-1. Commit `terraform.tfstate` to git (if not using remote backend)
-2. Or use S3 backend with versioning enabled
-3. State is easily reconstructible via Terraform import if lost
+### Never commit state to git
+
+Terraform state stores sensitive attribute values **in plaintext**, including
+generated passwords and keys. Committing `terraform.tfstate` publishes them to
+everyone with repository access, and to anyone who later clones a fork.
+
+`.gitignore` already excludes `*.tfstate`. Leave it that way. If you switch to
+a different backend, use one with encryption at rest and versioning - S3 with
+`server_side_encryption` and object versioning, for example - rather than the
+repository.
 
 ## Safeguards
 

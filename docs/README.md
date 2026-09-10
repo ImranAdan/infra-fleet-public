@@ -106,17 +106,6 @@ credentials and cannot deploy anything; see
 ---
 
 ## Documentation Index
-
-### Roadmaps
-
-Project history from the original deployment, kept for the reasoning behind
-the design. Not instructions for adopters.
-
-| Document | Description |
-|----------|-------------|
-| [Platform Build Roadmap](PLATFORM-BUILD-ROADMAP.md) | Infrastructure phases and status |
-| [Release Engineering Roadmap](RELEASE-ENGINEERING-ROADMAP.md) | CI/CD maturity and practices |
-
 ### Infrastructure
 | Document | Description |
 |----------|-------------|

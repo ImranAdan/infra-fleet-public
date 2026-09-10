@@ -332,8 +332,6 @@ These document decisions and plans specific to the original project. They are
 kept for the reasoning, not as instructions for adopters.
 - [Terraform Cloud / EKS Access (DDR)](docs/TERRAFORM-CLOUD-EKS-DDR.md)
 - [Multi-Environment Design](docs/MULTI-ENVIRONMENT-DESIGN.md)
-- [Platform Build Roadmap](docs/PLATFORM-BUILD-ROADMAP.md)
-- [Release Engineering Roadmap](docs/RELEASE-ENGINEERING-ROADMAP.md)
 - [Security Concerns](docs/SECURITY-CONCERNS.md) - audit findings and their status
 
 ---

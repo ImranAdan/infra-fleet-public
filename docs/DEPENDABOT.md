@@ -172,5 +172,4 @@ Or remove the ecosystem from `.github/dependabot.yml`.
 
 ## Related Documentation
 
-- [RELEASE-ENGINEERING-ROADMAP.md](RELEASE-ENGINEERING-ROADMAP.md) - Phase 3: Dependency Management
 - [GitHub Dependabot Documentation](https://docs.github.com/en/code-security/dependabot)
