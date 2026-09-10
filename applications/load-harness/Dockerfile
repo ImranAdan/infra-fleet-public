@@ -20,6 +20,22 @@ FROM python:3.11-slim AS runtime
 # Apply security patches for CVE-2025-15467 and CVE-2025-69419 (openssl)
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
+# Strip the package installer out of the runtime image.
+#
+# The builder stage upgrades pip/setuptools/wheel, but only /root/.local is
+# copied forward - this stage is a fresh FROM python:3.11-slim, so its system
+# site-packages still carried the setuptools that ships with the base image
+# and the jaraco.context 5.3.0 / wheel 0.45.1 it vendors (CVE-2026-23949,
+# CVE-2026-24049). Upgrading them here instead just swaps those for the
+# packages the newer pip vendors in turn.
+#
+# Nothing at runtime installs packages - gunicorn and the application
+# dependencies live in /home/app/.local - so remove the installer entirely
+# rather than chasing vendored advisories in something we do not use.
+RUN pip uninstall -y pip setuptools wheel \
+    && rm -rf /usr/local/lib/python3.11/site-packages/pkg_resources \
+    && find /usr/local/lib/python3.11/site-packages -maxdepth 1 -name 'setuptools-*' -o -maxdepth 1 -name 'wheel-*' -o -maxdepth 1 -name 'pip-*' | xargs -r rm -rf
+
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app
 
