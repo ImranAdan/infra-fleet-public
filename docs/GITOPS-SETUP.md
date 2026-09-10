@@ -32,7 +32,7 @@ When Flux was managed by Terraform via the `flux_bootstrap_git` resource, the st
 
 1. **Provider Initialization Issue**: The Flux and Kubernetes Terraform providers require a live EKS cluster to initialize. Terraform initializes ALL providers BEFORE evaluating any resources or conditionals.
 
-2. **Nightly Destroy Impact**: After the nightly destroy job runs at 8 PM UTC, the cluster is down. However, if Flux was in Terraform state, any subsequent `terraform plan` or `apply` would fail:
+2. **Destroy Impact**: After the destroy workflow runs, the cluster is down. However, if Flux was in Terraform state, any subsequent `terraform plan` or `apply` would fail:
 
    ```
    Error: Kubernetes Client
@@ -102,7 +102,7 @@ Flux is now bootstrapped via the `flux bootstrap github` CLI command in the rebu
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
-│                  Nightly: 8 PM UTC                              │
+│                  Destroy: on demand                             │
 │                          │                                      │
 │                          ▼                                      │
 │              ┌────────────────────────┐                         │

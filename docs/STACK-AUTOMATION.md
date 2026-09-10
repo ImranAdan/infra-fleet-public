@@ -25,7 +25,10 @@ This document describes the automated stack management system that destroys infr
 **File**: `.github/workflows/nightly-destroy.yml`
 
 **Version**: v3 Multi-Job Workflow (as of 2025-11-26)
-**Schedule**: Every night at 8 PM UTC (hard stop for work day)
+**Schedule**: Manual (`workflow_dispatch`). The nightly cron trigger was
+removed — a scheduled `terraform destroy` is a poor default for a template
+someone else has forked. Restore the `schedule:` trigger in your own copy if
+you want it.
 **Triggers**:
 - Automatic (scheduled)
 - Manual (workflow_dispatch via GitHub Actions UI or CLI)
@@ -468,7 +471,7 @@ All context is preserved in `ai/` directory:
 1. **Morning**: Trigger rebuild when ready to work
 2. **Development**: Full development experience as normal
 3. **Evening**: Commit all work, push to git
-4. **Automatic**: Stack destroys at 8 PM UTC (hard stop for work day)
+4. **Manual**: Destroy the stack with `nightly-destroy.yml` when you are done
 
 ### Cost Management
 

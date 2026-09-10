@@ -1,6 +1,12 @@
 # Infrastructure Fleet Documentation
 
-This is the root documentation for the infra-fleet platform - a production-grade AWS EKS environment demonstrating modern cloud-native practices.
+This is the documentation for **Infrastructure Fleet**, a template for an AWS
+EKS platform and the sample application — the Harness — that runs on it.
+
+If you are adopting the template, start with
+[../CONFIGURATION.md](../CONFIGURATION.md). This repository holds no
+credentials and cannot deploy anything; see
+[CREDENTIALS-FREE-TEMPLATE-DDR.md](CREDENTIALS-FREE-TEMPLATE-DDR.md).
 
 **Main README**: [../README.md](../README.md)
 
@@ -97,6 +103,10 @@ This is the root documentation for the infra-fleet platform - a production-grade
 ## Documentation Index
 
 ### Roadmaps
+
+Project history from the original deployment, kept for the reasoning behind
+the design. Not instructions for adopters.
+
 | Document | Description |
 |----------|-------------|
 | [Platform Build Roadmap](PLATFORM-BUILD-ROADMAP.md) | Infrastructure phases and status |
@@ -115,7 +125,8 @@ This is the root documentation for the infra-fleet platform - a production-grade
 |----------|-------------|
 | [GitOps Setup](GITOPS-SETUP.md) | Flux configuration, CRD ordering |
 | [Progressive Delivery](PROGRESSIVE-DELIVERY.md) | Flagger canary deployments |
-| [Stack Automation](STACK-AUTOMATION.md) | Nightly destroy/rebuild |
+| [Canary Deployments](CANARY-DEPLOYMENTS.md) | Canary configuration and rollout |
+| [Stack Automation](STACK-AUTOMATION.md) | Destroy and rebuild the ephemeral stack |
 | [TLS/SSL Setup](TLS-SSL-SETUP.md) | Certificate management |
 
 ### Observability
@@ -142,6 +153,7 @@ This is the root documentation for the infra-fleet platform - a production-grade
 ### Design Decisions
 | Document | Description |
 |----------|-------------|
+| [Credentials-Free Template DDR](CREDENTIALS-FREE-TEMPLATE-DDR.md) | Why this repository holds no secrets |
 | [Terraform Cloud EKS DDR](TERRAFORM-CLOUD-EKS-DDR.md) | Cluster access design |
 | [Multi-Environment Design](MULTI-ENVIRONMENT-DESIGN.md) | Future multi-env architecture |
 
