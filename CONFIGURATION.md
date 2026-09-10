@@ -194,7 +194,7 @@ configuration:
 
 ```bash
 cd applications/load-harness/local-dev
-./dev.sh up-full
+./dev.sh up-full          # creates .env from .env.example on first run
 open http://localhost:8080/ui
 ```
 

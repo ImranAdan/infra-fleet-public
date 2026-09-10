@@ -79,8 +79,10 @@ Verified against `src/load_harness/load_harness_service.py` and
 | `/apidocs` | GET | Interactive Swagger UI |
 | `/apispec.json` | GET | OpenAPI specification |
 
-The dashboard adds `/login`, `/logout`, `/api/system-info` and several
-`/partials/*` routes used by HTMX.
+The dashboard is mounted under `/ui` and adds `/ui/`, `/ui/login`,
+`/ui/logout`, `/ui/api/system-info` and several `/ui/partials/*` routes used by
+HTMX. The prefix comes from `url_prefix="/ui"` on the blueprint in
+`src/load_harness/dashboard/routes.py`.
 
 ### POST /load/cpu — background CPU load
 

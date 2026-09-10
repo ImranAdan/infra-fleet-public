@@ -116,17 +116,26 @@ In GitHub: **Settings → Actions → Runners**
 
 ## Workflows Using Self-Hosted
 
-These workflows are configured to use `runs-on: self-hosted`:
+**None, as shipped.** Every workflow in this template uses
+`runs-on: ubuntu-latest`, and no self-hosted runner is registered:
 
-| Workflow | Trigger | Purpose |
-|----------|---------|---------|
-| `release-please.yml` | Push to main | Version management |
-| `rebuild-stack.yml` | Manual dispatch | Build infrastructure |
-| `nightly-destroy.yml` | Schedule/Manual | Destroy infrastructure |
-| `infra-apply.yml` | Push to main | Apply Terraform |
-| `infra-plan.yml` | Pull requests | Plan Terraform |
+```console
+$ grep -rn "runs-on:" .github/workflows/ | grep -v ubuntu-latest
+$ gh api repos/OWNER/REPO/actions/runners --jq '.total_count'
+0
+```
 
-Other workflows still use `ubuntu-latest` (GitHub-hosted).
+This document describes an **optional** setup you can adopt in your own copy,
+not the current configuration. Nothing here is required to use the template.
+
+If you do move workflows to a self-hosted runner, the infrastructure ones are
+the candidates that benefit most - `rebuild-stack`, `nightly-destroy`,
+`infra-apply`, `infra-plan` - because they are long-running and consume the
+most GitHub-hosted minutes.
+
+**Read [Security Considerations](#security-considerations) first.** A
+self-hosted runner attached to a public repository executes code from pull
+requests on your own machine.
 
 ## Workflow Configuration
 
