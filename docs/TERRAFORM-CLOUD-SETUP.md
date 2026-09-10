@@ -21,13 +21,13 @@ This guide walks through configuring Terraform Cloud for remote state management
 ### 1. Create Terraform Cloud Workspace
 
 1. Log into [Terraform Cloud](https://app.terraform.io)
-2. Navigate to your organization: `your-terraform-org`
+2. Navigate to your own organization (its name becomes the `TF_CLOUD_ORGANIZATION` secret - see [../CONFIGURATION.md](../CONFIGURATION.md))
 3. Click **"New Workspace"**
 4. Choose workflow type:
    - **Option A (Recommended)**: **CLI-driven workflow** (we trigger from GitHub Actions)
    - **Option B**: VCS-driven workflow (Terraform Cloud monitors repo)
 5. Configure workspace:
-   - **Workspace Name**: `infra-fleet-staging` (for `clusters/staging`) and `infra-fleet-permanent` (for `infrastructure/permanent`)
+   - **Workspace Name**: `infra-fleet-staging` (for `infrastructure/staging`) and `infra-fleet-permanent` (for `infrastructure/permanent`)
    - **Project**: Default or create new
    - **Description**: e.g., "EKS staging cluster - destroyed nightly" / "Permanent shared infra (OIDC, ECR)"
 
@@ -43,7 +43,7 @@ After creating the workspace:
 
 #### Working Directory (if using VCS)
 - **Settings → General**
-- **Terraform Working Directory**: `clusters/staging`
+- **Terraform Working Directory**: `infrastructure/staging`
 
 #### Environment Variables - OIDC Authentication (Recommended)
 
@@ -85,7 +85,7 @@ Add the API token to GitHub repository secrets:
 gh secret set TF_API_TOKEN --body "your-terraform-cloud-token-here"
 
 # Or manually via GitHub UI:
-# 1. Go to: https://github.com/your-org/infra-fleet/settings/secrets/actions
+# 1. Go to: https://github.com/OWNER/REPO/settings/secrets/actions
 # 2. Click "New repository secret"
 # 3. Name: TF_API_TOKEN
 # 4. Value: <paste token>
@@ -113,7 +113,7 @@ In `.github/workflows/rebuild-stack.yml` and `.github/workflows/nightly-destroy.
 First time setup - migrate to Terraform Cloud (run separately per directory):
 
 ```bash
-cd clusters/staging   # or infrastructure/permanent
+cd infrastructure/staging   # or infrastructure/permanent
 terraform init -migrate-state   # include -migrate-state only if you have existing local state
 
 # Terraform will detect the cloud backend and ask to migrate
@@ -128,7 +128,7 @@ aws logs delete-log-group --log-group-name /aws/eks/staging/cluster --region eu-
 # ... etc
 
 # Then init fresh
-cd clusters/staging
+cd infrastructure/staging
 terraform init
 ```
 
@@ -176,7 +176,7 @@ The workflows need minor updates to work with Terraform Cloud:
 ```yaml
 - name: 🏗️ Terraform Infrastructure Build (Staging Only)
   run: |
-    cd clusters/staging
+    cd infrastructure/staging
 
     # Terraform Cloud handles init automatically
     # Just trigger the run via CLI

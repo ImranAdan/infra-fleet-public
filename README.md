@@ -308,6 +308,7 @@ illustrative, not a quote.
 - [GitHub OIDC Setup](docs/GITHUB-OIDC-SETUP.md) - AWS trust configuration
 - [Terraform Cloud Setup](docs/TERRAFORM-CLOUD-SETUP.md) - HCP Terraform workspaces
 - [SECURITY.md](SECURITY.md) - security policy and notes for forks
+- [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute to the template
 
 ### Operating the platform
 - [EKS Access Guide](docs/EKS-ACCESS.md) - reaching the cluster

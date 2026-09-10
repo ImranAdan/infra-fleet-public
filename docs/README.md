@@ -10,6 +10,11 @@ credentials and cannot deploy anything; see
 
 **Main README**: [../README.md](../README.md)
 
+> **On issue numbers.** Several documents cite issues and pull requests by
+> number (`Issue #30`, `PR #31`). Those refer to the original project's tracker,
+> not to this repository. They are kept as provenance for the reasoning; do not
+> expect them to resolve here.
+
 ---
 
 ## Architecture
