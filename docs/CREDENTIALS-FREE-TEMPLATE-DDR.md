@@ -76,9 +76,14 @@ Every failure found in the audit was in this set. None of them required AWS.
 **Option B.** `infra-fleet-public` is credentials-free.
 
 - No AWS credentials, no `TF_API_TOKEN`, no cloud provider tokens.
-- No entry in any OIDC trust policy.
+- `infra-fleet-public` is not named in any OIDC trust policy. Adopters name
+  **their own** repository in **their own** policy - see "What an adopter does".
 - CI validates code, manifests, containers and workflows only.
 - `plan`, `apply` and destroy do not run here, and are not expected to.
+
+HCP Terraform remains a hard requirement of this project. It is a declared
+prerequisite, not something to abstract behind a backend selector. Adopters
+wanting a different state backend can extend the template themselves.
 
 ---
 
@@ -184,8 +189,5 @@ Ordered so that broad trust and live credentials never coexist:
 
 - How the private repository consumes this template - fork and merge, subtree,
   reusable workflows, or a published module. That is a separate decision.
-- Whether HCP Terraform remains a hard requirement. It does: it is a declared
-  prerequisite of this project, not something to abstract. Adopters who want a
-  different backend can extend it.
 - Whether the removed workflows are deleted from this repository or retained in
   a disabled state. Depends on the skip-versus-fail decision above.
