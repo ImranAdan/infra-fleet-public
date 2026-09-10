@@ -225,8 +225,10 @@ resource "aws_iam_policy" "github_actions" {
           "ec2:DeleteSecurityGroup",
           "ec2:DeleteSubnet",
           "ec2:DeleteTags",
+          "ec2:DeleteVolume",
           "ec2:DeleteVpc",
           "ec2:DetachInternetGateway",
+          "ec2:DetachNetworkInterface",
           "ec2:DisassociateAddress",
           "ec2:DisassociateRouteTable",
           "ec2:ModifyLaunchTemplate",
@@ -266,26 +268,15 @@ resource "aws_iam_policy" "github_actions" {
         Resource  = "*"
         Condition = local.eu_west_2_only
       },
-    ]
-  })
-
-  tags = {
-    Name        = "github-actions-policy"
-    Environment = "staging"
-    ManagedBy   = "terraform"
-  }
-}
-
-# Policy 2: the supporting services the stack depends on.
-resource "aws_iam_policy" "github_actions_supporting" {
-  name        = "GitHubActions-InfraFleet-Supporting-Policy"
-  description = "IAM, logging, SSM, ECR, KMS and Terraform state permissions"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
       # IAM: cluster, node group and IRSA roles. Global service - no region
       # condition applies.
+      #
+      # This statement must stay in THIS policy - the one that already exists
+      # and is already attached. The permanent stack is applied by the very
+      # role it manages. If these permissions lived in the second policy,
+      # Terraform could narrow this one before the second was created and
+      # attached, leaving the role without iam:CreatePolicy or
+      # iam:AttachRolePolicy and unable to finish, or repair, its own apply.
       {
         Sid    = "Iam"
         Effect = "Allow"
@@ -327,6 +318,24 @@ resource "aws_iam_policy" "github_actions_supporting" {
         ]
         Resource = "*"
       },
+    ]
+  })
+
+  tags = {
+    Name        = "github-actions-policy"
+    Environment = "staging"
+    ManagedBy   = "terraform"
+  }
+}
+
+# Policy 2: the supporting services the stack depends on.
+resource "aws_iam_policy" "github_actions_supporting" {
+  name        = "GitHubActions-InfraFleet-Supporting-Policy"
+  description = "IAM, logging, SSM, ECR, KMS and Terraform state permissions"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
       # EKS control plane log groups.
       {
         Sid    = "CloudWatchLogs"
@@ -399,6 +408,22 @@ resource "aws_iam_policy" "github_actions_supporting" {
           "ecr:UploadLayerPart",
         ]
         Resource = "arn:aws:ecr:eu-west-2:${data.aws_caller_identity.current.account_id}:repository/*"
+      },
+      # Load balancers created in-cluster by the AWS Load Balancer Controller
+      # outlive the cluster, so scripts/cleanup-k8s-resources-v2.sh deletes
+      # them before Terraform destroy runs. The previous policy had no
+      # elasticloadbalancing permissions at all, so that cleanup could never
+      # have worked; adding it here rather than leaving a known gap.
+      {
+        Sid    = "LoadBalancerCleanup"
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeTags",
+        ]
+        Resource  = "*"
+        Condition = local.eu_west_2_only
       },
       {
         Sid    = "Kms"
