@@ -2,8 +2,15 @@
 ignore=body-is-missing,B1
 
 [title-max-length]
-line-length=72
+# 80 rather than the conventional 72: Dependabot's grouped-update titles
+# ("deps: Bump the python-dependencies group across 1 directory with 4
+# updates") run to 74 characters and are not configurable.
+line-length=80
 
 [title-match-regex]
-# Added 'deps' for Dependabot compatibility
-regex=^(feat|fix|docs|style|refactor|test|chore|ci|perf|revert|deps)(\([a-z0-9_-]+\))?(!)?: [a-z0-9].+
+# Added 'deps' for Dependabot compatibility.
+# The first character after the type is [a-zA-Z0-9] rather than [a-z0-9]
+# because Dependabot capitalises its verb ("deps: Bump ...") depending on the
+# casing it infers from recent commit history. Rejecting that blocked every
+# Dependabot pull request.
+regex=^(feat|fix|docs|style|refactor|test|chore|ci|perf|revert|deps)(\([a-z0-9_-]+\))?(!)?: [a-zA-Z0-9].+
