@@ -33,7 +33,10 @@ See [docs/COST-OPTIMIZATION-GUIDE.md](docs/COST-OPTIMIZATION-GUIDE.md).
 ## Step 1 — copy the template, privately
 
 ```bash
-gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
+git clone https://github.com/ImranAdan/infra-fleet-public.git my-infra-fleet
+cd my-infra-fleet
+rm -rf .git && git init && git add -A && git commit -m "chore: initial commit from infra-fleet template"
+gh repo create my-infra-fleet --private --source=. --push
 ```
 
 **Make it private before adding any secret.** Everything below assumes a
