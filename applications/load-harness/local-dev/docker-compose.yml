@@ -35,7 +35,10 @@ services:
       - ../.env
     environment:
       - PYTHONPATH=/app/src
-    command: ["pytest", "tests/", "-v"]
+    # -p no:cacheprovider: the image runs as non-root and /app is read-only to
+    # it, so pytest cannot write .pytest_cache. The cache is worthless in a
+    # throwaway container anyway, and without this every run emits a warning.
+    command: ["pytest", "tests/", "-v", "-p", "no:cacheprovider"]
     profiles:
       - test
 
