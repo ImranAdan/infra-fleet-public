@@ -208,6 +208,7 @@ resource "aws_iam_policy" "github_actions" {
           "ec2:CreateLaunchTemplate",
           "ec2:CreateLaunchTemplateVersion",
           "ec2:CreateNatGateway",
+          "ec2:CreateNetworkAclEntry",
           "ec2:CreateNetworkInterface",
           "ec2:CreateRoute",
           "ec2:CreateRouteTable",
@@ -219,6 +220,7 @@ resource "aws_iam_policy" "github_actions" {
           "ec2:DeleteLaunchTemplate",
           "ec2:DeleteLaunchTemplateVersions",
           "ec2:DeleteNatGateway",
+          "ec2:DeleteNetworkAclEntry",
           "ec2:DeleteNetworkInterface",
           "ec2:DeleteRoute",
           "ec2:DeleteRouteTable",
@@ -237,6 +239,7 @@ resource "aws_iam_policy" "github_actions" {
           "ec2:ModifySubnetAttribute",
           "ec2:ModifyVpcAttribute",
           "ec2:ReleaseAddress",
+          "ec2:ReplaceNetworkAclEntry",
           "ec2:RevokeSecurityGroupEgress",
           "ec2:RevokeSecurityGroupIngress",
           "ec2:RunInstances",
@@ -306,7 +309,6 @@ resource "aws_iam_policy" "github_actions" {
           "iam:ListInstanceProfilesForRole",
           "iam:ListPolicyVersions",
           "iam:ListRolePolicies",
-          "iam:PassRole",
           "iam:PutRolePolicy",
           "iam:RemoveRoleFromInstanceProfile",
           "iam:TagInstanceProfile",
@@ -318,6 +320,29 @@ resource "aws_iam_policy" "github_actions" {
         ]
         Resource = "*"
       },
+      # iam:PassRole is separated so it can carry a condition. Without one it
+      # is the strongest privilege in this role: an assumed principal could
+      # hand any existing role to any service. Constrained to the services
+      # this stack actually provisions - EKS control plane, EKS managed node
+      # groups, and the EC2 instances behind them.
+      #
+      # If an apply fails with AccessDenied on iam:PassRole, add the service
+      # principal named in the error here. Do not remove the condition.
+      {
+        Sid      = "IamPassRoleToStackServices"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = [
+              "ec2.amazonaws.com",
+              "eks-nodegroup.amazonaws.com",
+              "eks.amazonaws.com",
+            ]
+          }
+        }
+      },
     ]
   })
 
@@ -326,6 +351,20 @@ resource "aws_iam_policy" "github_actions" {
     Environment = "staging"
     ManagedBy   = "terraform"
   }
+
+  # Narrowing this policy must not happen before the supporting policy is
+  # attached. The permanent stack is applied by the role it manages, and
+  # Terraform treats the in-place update here and the creation of the second
+  # policy as independent - either order is valid to it. If this narrowed
+  # first, the role would lose SSM, ECR, CloudWatch Logs and KMS before
+  # regaining them, and any remaining call in the same apply - the ECR
+  # repository in this stack, for instance - would fail with AccessDenied
+  # partway through.
+  #
+  # The IAM statements above are kept in this policy for the same reason,
+  # belt and braces: ordering fixes this apply, keeping the permissions here
+  # means no ordering can take away the role's ability to repair itself.
+  depends_on = [aws_iam_role_policy_attachment.github_actions_supporting]
 }
 
 # Policy 2: the supporting services the stack depends on.
