@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.0...v1.6.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* apply security patches for Trivy scan vulnerabilities ([f03f7ad](https://github.com/ImranAdan/infra-fleet-public/commit/f03f7ad5ae968d80a02a5e9a748f8e19bcf2d840))
+
 ## [1.6.0](https://github.com/your-org/infra-fleet/compare/v1.5.3...v1.6.0) (2026-01-04)
 
 
