@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.1...v1.6.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **load-harness:** repair the container security scan and the image it scans ([256f2d9](https://github.com/ImranAdan/infra-fleet-public/commit/256f2d9e9d400e46cd6a562488d5837d4743c34c))
+
 ## [1.6.1](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.0...v1.6.1) (2026-09-10)
 
 
