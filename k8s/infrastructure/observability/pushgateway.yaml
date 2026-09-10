@@ -10,6 +10,13 @@ metadata:
     app.kubernetes.io/part-of: observability-stack
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never drop below declared capacity during a rollout; the replacement
+      # pod must pass its readiness probe before the old one is removed.
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: pushgateway
@@ -34,6 +41,22 @@ spec:
             - name: http
               containerPort: 9091
               protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             requests:
               cpu: "50m"
