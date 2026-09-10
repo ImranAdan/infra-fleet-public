@@ -23,18 +23,25 @@ RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 # Strip the package installer out of the runtime image.
 #
 # The builder stage upgrades pip/setuptools/wheel, but only /root/.local is
-# copied forward - this stage is a fresh FROM python:3.11-slim, so its system
-# site-packages still carried the setuptools that ships with the base image
-# and the jaraco.context 5.3.0 / wheel 0.45.1 it vendors (CVE-2026-23949,
-# CVE-2026-24049). Upgrading them here instead just swaps those for the
-# packages the newer pip vendors in turn.
+# copied forward - this stage starts from a fresh base image, so its system
+# site-packages carried the setuptools that image ships and the packages
+# setuptools vendors: jaraco.context 5.3.0 (CVE-2026-23949) and wheel 0.45.1
+# (CVE-2026-24049). Upgrading them here instead just swaps those for whatever
+# the newer pip vendors in turn.
 #
 # Nothing at runtime installs packages - gunicorn and the application
 # dependencies live in /home/app/.local - so remove the installer entirely
-# rather than chasing vendored advisories in something we do not use.
-RUN pip uninstall -y pip setuptools wheel \
-    && rm -rf /usr/local/lib/python3.11/site-packages/pkg_resources \
-    && find /usr/local/lib/python3.11/site-packages -maxdepth 1 -name 'setuptools-*' -o -maxdepth 1 -name 'wheel-*' -o -maxdepth 1 -name 'pip-*' | xargs -r rm -rf
+# rather than chasing vendored advisories in code that never executes.
+#
+# The site-packages path is derived, not hardcoded. It moves with the base
+# image's Python version, and -exec rather than a pipe to xargs so that a
+# path which no longer exists fails the build instead of silently skipping.
+RUN SITE_PACKAGES="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" \
+    && pip uninstall -y pip setuptools wheel \
+    && rm -rf "${SITE_PACKAGES}/pkg_resources" \
+    && find "${SITE_PACKAGES}" -maxdepth 1 \
+        \( -name 'setuptools-*' -o -name 'wheel-*' -o -name 'pip-*' \) \
+        -exec rm -rf {} +
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app
