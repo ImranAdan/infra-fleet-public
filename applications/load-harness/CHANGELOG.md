@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.2...v1.6.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* **load-harness:** derive site-packages path instead of hardcoding it ([1317367](https://github.com/ImranAdan/infra-fleet-public/commit/13173679b303493158455a09c43129e668b9231b))
+
 ## [1.6.2](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.1...v1.6.2) (2026-09-10)
 
 
