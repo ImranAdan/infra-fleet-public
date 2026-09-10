@@ -4,7 +4,8 @@
 
 A web-based dashboard for the LoadHarness API that provides a visual interface for triggering synthetic load tests and observing system behavior. Built as an extension to the existing Flask application using HTMX for dynamic interactions.
 
-**Goal**: Learn frontend development while building something useful for demonstrating Kubernetes autoscaling behavior.
+**Goal**: give the platform a visible way to demonstrate Kubernetes autoscaling
+behaviour on demand.
 
 ## Problem Statement
 
@@ -391,130 +392,6 @@ User clicks "Run Test"
 │ into #result div  │
 └───────────────────┘
 ```
-
----
-
-## Implementation Plan
-
-### Phase 1: Project Foundation ✅ COMPLETE
-**Goal**: Basic dashboard shell renders and serves from Flask
-
-**Deliverables**:
-- [x] Configure Jinja2 templates in Flask app factory
-- [x] Create `src/load_harness/templates/` directory structure
-- [x] Create `base.html` with Tailwind CSS, HTMX, Chart.js from CDN
-- [x] Create dashboard Blueprint with `/ui` route
-- [x] Create `dashboard.html` with placeholder sections (Load Tests, Jobs, Metrics)
-- [x] Register Blueprint in `app.py`
-- [x] Verify renders at `http://localhost:5000/ui`
-- [x] Update docker-compose for template hot-reload
-
-**Acceptance Criteria**: Dashboard shell loads with styled header showing "LoadHarness Dashboard" and environment name. ✅
-
----
-
-### Phase 2: Load Test Forms ✅ COMPLETE
-**Goal**: Users can trigger CPU, Memory, and Sustained load tests via the UI
-
-**Deliverables**:
-- [x] Create tabbed form component (CPU / Memory / Cluster Load tabs)
-- [x] Implement CPU load form with cores, duration, and intensity sliders
-- [x] Create `/ui/partials/cpu-result` route that calls internal API
-- [x] Create `partials/result.html` template (success/error/loading states)
-- [x] Wire HTMX form submission with result swap
-- [x] Implement Memory load form with size and duration sliders
-- [x] Implement Cluster Load form for distributed testing across pods
-- [x] Add loading spinner during test execution (hx-indicator)
-
-**Acceptance Criteria**: User can run all three test types and see formatted results without page reload. ✅
-
----
-
-### Phase 3: Job Management Panel ✅ COMPLETE
-**Goal**: Users can view and control sustained load jobs
-
-**Deliverables**:
-- [x] Create `/ui/partials/active-jobs` route calling `/load/cpu/status`
-- [x] Create `partials/active_jobs.html` template with job cards
-- [x] Display job_id, cores, intensity, status, time remaining
-- [x] Calculate and display countdown for running jobs with progress bar
-- [x] Implement auto-refresh polling (every 2s via hx-trigger)
-- [x] Handle empty state (no active jobs)
-
-**Note**: Stop button was not implemented as CPU jobs are fire-and-forget background tasks.
-
-**Acceptance Criteria**: Jobs panel shows running/completed jobs and updates automatically. ✅
-
----
-
-### Phase 4: Live Metrics ✅ COMPLETE
-**Goal**: Real-time visualization of system metrics from Prometheus
-
-**Deliverables**:
-- [x] Implement `_query_prometheus()` helper function in routes.py
-- [x] Implement error handling for Prometheus unavailable/timeout
-- [x] Create `/ui/partials/live-metrics` route returning HTML partial
-- [x] Define PromQL queries for: CPU usage, memory usage, request rate, pod count
-- [x] Display pod count with HPA scaling indicator
-- [x] Display CPU and memory usage as percentage bars
-- [x] Display request rate as requests/second
-- [x] Wire HTMX polling to update metrics every 5 seconds
-- [x] Environment-aware Prometheus URL (local vs in-cluster)
-- [x] Create error state UI when Prometheus unavailable ("Waiting for Prometheus connection...")
-
-**Note**: Decided against Chart.js rolling window charts in favor of simple metric cards with progress bars. This provides a cleaner UX and avoids complexity.
-
-**Acceptance Criteria**: Metrics display live values, update automatically, and gracefully handle Prometheus being down. ✅
-
----
-
-### Phase 4.5: Cluster Load (Distributed Testing) ✅ COMPLETE
-**Goal**: Demonstrate Kubernetes load distribution across multiple pods
-
-This feature was added beyond the original MVP scope to showcase how Kubernetes Service load balancing distributes requests across scaled pods.
-
-**Deliverables**:
-- [x] Create Cluster Load tab in the dashboard
-- [x] Implement `/ui/partials/cluster-result` route for distributed testing
-- [x] Create `_get_k8s_service_url()` helper for in-cluster vs local routing
-- [x] Use ThreadPoolExecutor for concurrent request distribution
-- [x] Display results showing which pods handled requests
-- [x] Show pod distribution breakdown with request counts per pod
-- [x] Add validation for concurrency (1-100) and iterations (1K-10M)
-- [x] Handle all-requests-failed error scenario with informative message
-
-**Form Fields**:
-| Field | Type | Range | Default |
-|-------|------|-------|---------|
-| Concurrency | Slider + input | 1-100 | 10 |
-| Iterations | Slider + input | 1,000-10,000,000 | 500,000 |
-
-**Result Display**:
-- Total requests sent
-- Successful vs failed count
-- Average duration per request
-- Number of unique pods used
-- Load distribution breakdown showing request count per pod
-
-**Acceptance Criteria**: User can send concurrent requests that distribute across all available pods, demonstrating Kubernetes load balancing. ✅
-
----
-
-### Phase 5: Polish & Error Handling
-**Goal**: Production-ready UI with comprehensive error handling
-
-**Deliverables**:
-- [ ] Add error boundaries for all HTMX requests (hx-on::error)
-- [ ] Implement timeout handling with "Taking longer than expected" message
-- [ ] Add responsive breakpoints for tablet/mobile
-- [ ] Ensure forms are usable on mobile devices
-- [ ] Add keyboard shortcuts for common actions (optional)
-- [ ] Implement dark mode toggle with Tailwind dark: classes (optional)
-- [ ] Add favicon and page title
-- [ ] Test all error scenarios (API down, Prometheus down, network timeout)
-- [ ] Update README with dashboard usage instructions
-
-**Acceptance Criteria**: Dashboard works on mobile, handles all error states gracefully, looks professional.
 
 ---
 

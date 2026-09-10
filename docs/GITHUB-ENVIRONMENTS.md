@@ -182,4 +182,3 @@ If a deployment is waiting for approval:
 |----------|-------------|
 | [GITHUB-OIDC-SETUP.md](GITHUB-OIDC-SETUP.md) | AWS authentication setup |
 | [MULTI-ENVIRONMENT-DESIGN.md](MULTI-ENVIRONMENT-DESIGN.md) | Future multi-environment architecture |
-| [RELEASE-ENGINEERING-ROADMAP.md](RELEASE-ENGINEERING-ROADMAP.md) | Release engineering phases |

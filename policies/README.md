@@ -124,5 +124,4 @@ docker run --rm -v "$(pwd)":/workspace -w /workspace \
 - [Kyverno Documentation](https://kyverno.io/docs/)
 - [Kyverno Policy Library](https://kyverno.io/policies/)
 - [Kyverno CLI](https://kyverno.io/docs/kyverno-cli/)
-- [Release Engineering Roadmap](../docs/RELEASE-ENGINEERING-ROADMAP.md) - Phase 2 context
 - [GitOps Setup Guide](../docs/GITOPS-SETUP.md) - How GitOps validation fits in

@@ -34,20 +34,13 @@ Enable measurement of platform performance characteristics, scaling behavior, re
 
 ---
 
-**Vision Owner**: Platform Engineering Team
-**Created**: 2025-11-23
-**Last Updated**: 2025-12-06
-**Status**: Phases 1-4 Complete
+## What the Harness provides
 
-## Implementation
+- CPU and memory load endpoints, blocking and sustained
+- Prometheus metrics and health endpoints
+- OpenAPI documentation at `/apidocs`
+- A dashboard for triggering load and watching the cluster respond
 
-See [APPLICATION-ROADMAP.md](./APPLICATION-ROADMAP.md) for detailed technical specifications and phased implementation plan.
-
-**Completed Phases**:
-
-- ✅ **Phase 1**: Core Load Testing — CPU/memory endpoints, Prometheus metrics, health checks
-- ✅ **Phase 2**: Advanced Load Patterns — Non-blocking sustained CPU load with multiprocessing
-- ✅ **Phase 3**: API Documentation — OpenAPI/Swagger UI at `/apidocs`
-- ✅ **Phase 4**: Observability Stack — Prometheus, Grafana, ServiceMonitor, HPA
-
-**Current Focus**: Phase 5 - Future Enhancements (Network I/O, Disk I/O, Chaos patterns)
+See [APPLICATION-ROADMAP.md](./APPLICATION-ROADMAP.md) for the endpoint
+reference, metrics, deployment notes, and how to replace the Harness with your
+own application.

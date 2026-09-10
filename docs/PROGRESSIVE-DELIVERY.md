@@ -381,7 +381,6 @@ kubectl get events -n applications --field-selector reason=Synced
 
 - [Flagger Official Docs](https://docs.flagger.app/)
 - [MONITORING-SETUP.md](MONITORING-SETUP.md) - Prometheus configuration
-- [RELEASE-ENGINEERING-ROADMAP.md](RELEASE-ENGINEERING-ROADMAP.md) - Phase 5 overview
 - [Load-Harness README](../applications/load-harness/README.md) - FAIL_RATE documentation
 
 ---
