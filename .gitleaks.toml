@@ -1,0 +1,17 @@
+# gitleaks configuration
+#
+# The repository has never contained a real credential. The only matches are
+# test fixtures in the application's test suite, which use a deliberately
+# obvious literal so that a scan result is easy to dismiss.
+#
+# Verified 2026-09-11: gitleaks over all 40 commits reports six hits, all of
+# them this value. See docs/SECURITY-CONCERNS.md.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+[rules.allowlist]
+regexes = ['''test-api-key-12345''']
+paths = ['''applications/load-harness/tests/.*''']
