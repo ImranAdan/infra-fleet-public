@@ -2,16 +2,25 @@
 #
 # The repository has never contained a real credential. The only matches are
 # test fixtures in the application's test suite, which use a deliberately
-# obvious literal so that a scan result is easy to dismiss.
+# obvious literal so a scan result is easy to dismiss.
 #
-# Verified 2026-09-11: gitleaks over all 40 commits reports six hits, all of
-# them this value. See docs/SECURITY-CONCERNS.md.
+# condition = "AND" is load-bearing. Gitleaks defaults an allowlist to "OR",
+# which would suppress *every* generic-api-key finding under tests/ regardless
+# of its value - so a real key committed to a test file would pass silently.
+# Requiring both the value and the path keeps the scan quiet without making it
+# blind. The regex is anchored for the same reason.
+#
+# Verified 2026-09-11: gitleaks over all commits reports no leaks, while a
+# different key value in a test file, and this value outside tests/, are both
+# still detected.
 
 [extend]
 useDefault = true
 
 [[rules]]
 id = "generic-api-key"
-[rules.allowlist]
-regexes = ['''test-api-key-12345''']
-paths = ['''applications/load-harness/tests/.*''']
+
+  [[rules.allowlists]]
+  condition = "AND"
+  regexes = ['''^test-api-key-12345$''']
+  paths = ['''applications/load-harness/tests/.*''']
