@@ -36,7 +36,7 @@ runs:
     # so a newer CLI would silently upgrade the cluster's control plane
     # during a rebuild. Move this pin and gotk-components.yaml together.
     - name: Install Flux CLI
-      uses: fluxcd/flux2/action@f66fbf2ec0d3fe55f9daa1cd00f640505061148b # v2.7.3
+      uses: fluxcd/flux2/action@b6e76ca2534f76dcb8dd94fb057cdfa923c3b641 # v2.7.3
       with:
         version: 2.7.3
 
