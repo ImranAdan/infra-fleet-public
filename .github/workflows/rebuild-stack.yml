@@ -35,7 +35,7 @@ jobs:
       healthy: ${{ steps.check.outputs.healthy }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Check main branch health
         id: check
@@ -88,7 +88,7 @@ jobs:
       AWS_REGION: eu-west-2
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Setup AWS and Terraform
         uses: ./.github/actions/setup-aws-terraform
@@ -227,7 +227,7 @@ jobs:
       # the CLI is. Unpinned, a rebuild silently upgrades the cluster's Flux
       # control plane and rewrites a committed manifest.
       - name: Install Flux CLI
-        uses: fluxcd/flux2/action@f66fbf2ec0d3fe55f9daa1cd00f640505061148b # v2.7.3
+        uses: fluxcd/flux2/action@b6e76ca2534f76dcb8dd94fb057cdfa923c3b641 # v2.7.3
         with:
           version: 2.7.3
 
