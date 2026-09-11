@@ -28,6 +28,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: load-harness
         securityContext:
@@ -35,7 +37,16 @@ spec:
           capabilities:
             drop:
             - ALL
+          # Verified: the app serves /health, /metrics, /ui and POST /load/cpu
+          # with a read-only root filesystem, provided gunicorn and tempfiles
+          # have somewhere to write. See volumeMounts below.
+          readOnlyRootFilesystem: true
         image: 123456789012.dkr.ecr.eu-west-2.amazonaws.com/load-harness:v1.5.3 # {"$imagepolicy": "flux-system:load-harness"}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: gunicorn-state
+          mountPath: /home/app/.gunicorn
         ports:
         - containerPort: 5000
           name: http
@@ -88,3 +99,10 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 10
           failureThreshold: 3
+      volumes:
+      # Writable paths required by readOnlyRootFilesystem. Both are ephemeral
+      # and per-pod; nothing here needs to survive a restart.
+      - name: tmp
+        emptyDir: {}
+      - name: gunicorn-state
+        emptyDir: {}
