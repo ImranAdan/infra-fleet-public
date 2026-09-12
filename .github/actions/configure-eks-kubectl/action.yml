@@ -22,13 +22,23 @@ runs:
     - name: Configure kubectl
       id: config
       shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
+        AWS_REGION_NAME: ${{ inputs.aws-region }}
       run: |
-        echo "Configuring kubectl for cluster: ${{ inputs.cluster-name }}"
-        aws eks update-kubeconfig --name ${{ inputs.cluster-name }} --region ${{ inputs.aws-region }}
+        set -euo pipefail
+        if [[ ! "$CLUSTER_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
+           [[ ! "$AWS_REGION_NAME" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]; then
+          echo "Invalid EKS cluster name or AWS region." >&2
+          exit 2
+        fi
+
+        echo "Configuring kubectl for cluster: $CLUSTER_NAME"
+        aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION_NAME"
 
         # Get cluster endpoint for output
-        ENDPOINT=$(aws eks describe-cluster --name ${{ inputs.cluster-name }} --region ${{ inputs.aws-region }} --query 'cluster.endpoint' --output text)
-        echo "cluster-endpoint=$ENDPOINT" >> $GITHUB_OUTPUT
+        ENDPOINT=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION_NAME" --query 'cluster.endpoint' --output text)
+        echo "cluster-endpoint=$ENDPOINT" >> "$GITHUB_OUTPUT"
 
         echo "kubectl configured successfully"
         kubectl cluster-info

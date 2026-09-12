@@ -22,36 +22,65 @@ runs:
     - name: Install Kyverno CLI
       shell: bash
       run: |
+        set -euo pipefail
         KYVERNO_VERSION="1.13.4"
-        curl -sSL "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz" | tar xz -C /tmp
-        chmod +x /tmp/kyverno
-        sudo mv /tmp/kyverno /usr/local/bin/
+        curl --fail --silent --show-error --location \
+          --output /tmp/kyverno.tar.gz \
+          "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+        echo "abd318dbb971ab6de2bbe3b7226f4a03230d5c9c651df8a29b6b5e085a55aeeb  /tmp/kyverno.tar.gz" | sha256sum --check
+        tar -xzf /tmp/kyverno.tar.gz -C /tmp kyverno
 
     - name: Check for policies
       shell: bash
       id: check-policies
+      env:
+        POLICY_PATH: ${{ inputs.policy-path }}
       run: |
-        if [ -d "${{ inputs.policy-path }}" ] && [ "$(ls -A ${{ inputs.policy-path }}/*.yaml 2>/dev/null)" ]; then
-          echo "policies_exist=true" >> $GITHUB_OUTPUT
-          echo "Found Kyverno policies in ${{ inputs.policy-path }}"
+        set -euo pipefail
+        if [[ "$POLICY_PATH" = /* ]] || [[ "$POLICY_PATH" == *..* ]]; then
+          echo "Invalid policy path: $POLICY_PATH" >&2
+          exit 2
+        fi
+        shopt -s nullglob
+        policy_files=("$POLICY_PATH"/*.yaml)
+        if [ -d "$POLICY_PATH" ] && [ "${#policy_files[@]}" -gt 0 ]; then
+          echo "policies_exist=true" >> "$GITHUB_OUTPUT"
+          echo "Found Kyverno policies in $POLICY_PATH"
         else
-          echo "policies_exist=false" >> $GITHUB_OUTPUT
-          echo "No Kyverno policies found in ${{ inputs.policy-path }}, skipping validation"
+          echo "policies_exist=false" >> "$GITHUB_OUTPUT"
+          echo "No Kyverno policies found in $POLICY_PATH, skipping validation"
         fi
 
     - name: Validate against policies
       shell: bash
       if: steps.check-policies.outputs.policies_exist == 'true'
+      env:
+        POLICY_PATH: ${{ inputs.policy-path }}
+        RESOURCE_PATH: ${{ inputs.resource-path }}
       run: |
+        set -euo pipefail
         echo "Validating manifests against Kyverno policies..."
 
-        # Find all YAML files and format as --resource flags (one per file)
-        RESOURCE_FLAGS=$(find ${{ inputs.resource-path }} -name "*.yaml" -o -name "*.yml" | sed 's/^/--resource /' | tr '\n' ' ')
+        rendered_path=$(mktemp -d)/k8s
+        ./scripts/render-k8s-for-validation.sh "$rendered_path"
 
-        if [ -n "$RESOURCE_FLAGS" ]; then
-          echo "Found resources in ${{ inputs.resource-path }}"
+        if [[ "$RESOURCE_PATH" != k8s/* ]] || [[ "$RESOURCE_PATH" == *..* ]]; then
+          echo "resource-path must be a repository-relative path below k8s/." >&2
+          exit 2
+        fi
+        rendered_resources="$rendered_path/${RESOURCE_PATH#k8s/}"
+        mapfile -d '' resource_files < <(
+          find "$rendered_resources" -type f \( -name '*.yaml' -o -name '*.yml' \) -print0
+        )
+
+        if [ "${#resource_files[@]}" -gt 0 ]; then
+          resource_args=()
+          for resource_file in "${resource_files[@]}"; do
+            resource_args+=(--resource "$resource_file")
+          done
+          echo "Found resources in $RESOURCE_PATH"
           echo ""
-          kyverno apply ${{ inputs.policy-path }} $RESOURCE_FLAGS --table
+          /tmp/kyverno apply "$POLICY_PATH" "${resource_args[@]}" --table
           echo ""
           echo "Kyverno policy validation passed"
         else

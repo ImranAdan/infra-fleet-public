@@ -58,7 +58,7 @@ echo ""
 # Run hey via Docker
 # --add-host allows Docker to reach host's localhost (for port-forward fallback)
 docker run --rm --add-host=host.docker.internal:host-gateway \
-    williamyeh/hey:latest \
+    williamyeh/hey@sha256:6e63ae9c5801204cf7abe22c9ddf82d1bcbc7140ffd206a9bd83a8a643dcd6f2 \
     -z "${DURATION}" \
     -c "${CONCURRENCY}" \
     -m POST \

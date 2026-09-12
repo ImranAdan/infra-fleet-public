@@ -1,5 +1,10 @@
 # Progressive Delivery with Flagger
 
+> **Deployment preview:** this implementation depends on retired community
+> `ingress-nginx`, which no longer receives security fixes. The behavior below
+> documents the current lab; do not treat it as a production rollout design.
+> See [../SECURITY.md](../SECURITY.md).
+
 **Status**: Implemented (2025-12-26)
 **Last Updated**: 2026-01-01
 
@@ -80,7 +85,7 @@ The Flagger controller runs in the `flux-system` namespace and watches for Canar
 
 | Setting | Value | Description |
 |---------|-------|-------------|
-| `meshProvider` | `kubernetes` | No service mesh required |
+| `meshProvider` | `nginx` | Weighted traffic through NGINX Ingress |
 | `metricsServer` | `http://kube-prometheus-stack-prometheus.observability:9090` | Prometheus endpoint |
 
 ### 2. Canary Resource
@@ -98,7 +103,7 @@ The Canary CRD tells Flagger how to manage the load-harness deployment.
 | `analysis.interval` | `30s` | Time between metric checks |
 | `analysis.stepWeight` | `10` | Traffic increment per step (%) |
 | `analysis.maxWeight` | `50` | Maximum canary traffic (%) |
-| `analysis.threshold` | `3` | Successful checks before promotion |
+| `analysis.threshold` | `3` | Failed checks tolerated before rollback |
 
 ### 3. Metrics
 
@@ -363,7 +368,7 @@ kubectl get events -n applications --field-selector reason=Synced
 | `autoscalerRef` | HPA for coordinated scaling | Optional |
 | `service.port` | Service port | Required |
 | `analysis.interval` | Time between checks | `1m` |
-| `analysis.threshold` | Successful checks before promotion | `1` |
+| `analysis.threshold` | Failed checks tolerated before rollback | `3` |
 | `analysis.maxWeight` | Max canary traffic % | `50` |
 | `analysis.stepWeight` | Traffic increment % | `10` |
 | `analysis.metrics` | Metric thresholds | Required |

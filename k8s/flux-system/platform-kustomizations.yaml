@@ -1,5 +1,5 @@
 # --------------------------------------------------------------------------------------------------
-# Flux Kustomizations
+# Platform Flux Kustomizations
 # These tell Flux what paths in the repository to monitor and apply to the cluster
 # --------------------------------------------------------------------------------------------------
 
@@ -21,7 +21,7 @@ spec:
     kind: GitRepository
     name: flux-system
   wait: true
-  timeout: 3m
+  timeout: 10m
   # Variable substitution from ConfigMap created by Terraform
   # Replaces ${VAR_NAME} placeholders in manifests with actual values
   postBuild:
@@ -48,9 +48,13 @@ spec:
     kind: GitRepository
     name: flux-system
   wait: true
-  timeout: 2m
+  timeout: 5m
   dependsOn:
     - name: infrastructure
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: terraform-outputs
 
 # --------------------------------------------------------------------------------------------------
 # Applications Kustomization
@@ -76,7 +80,7 @@ spec:
     - name: infrastructure
     - name: cert-manager-issuer
   # Variable substitution from ConfigMap created by rebuild-stack.yml
-  # Replaces ${SSLIP_HOST} in ingress with actual sslip.io hostname
+  # Replaces deployment-specific registry and hostname values.
   postBuild:
     substituteFrom:
       - kind: ConfigMap

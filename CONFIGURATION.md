@@ -1,235 +1,232 @@
-# Configuration
+# Configure a private fleet
 
-Every value this template needs from you, in one place. Nothing in
-`infrastructure/`, `k8s/` or `.github/` should need editing — if you find
-yourself changing a `.tf` file to insert your own account details, that is a
-gap in this document. Please raise it.
+This is the shortest supported path from the public template to a working
+staging fleet. The public repository is deliberately credentials-free and
+never deploys to AWS. These steps apply to a private repository created from
+the template.
 
-> **This repository cannot deploy anything.** It holds no credentials by
-> design (see
-> [docs/CREDENTIALS-FREE-TEMPLATE-DDR.md](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md)).
-> The steps below apply to **your own private copy**.
+The supported deployment is one `eu-west-2` staging cluster. A production
+environment is not included.
 
----
+> **Before deploying publicly:** the canary implementation currently uses the
+> retired community `ingress-nginx` controller. It receives no further security
+> fixes. Treat cloud deployment as a private learning environment until the
+> Gateway API migration is complete and live-cycle tested.
 
-## Before you start
+## Prerequisites
 
-You will need:
+You need:
 
-| Requirement | Why | Cost |
-|-------------|-----|------|
-| An AWS account with admin access | The first bootstrap creates the OIDC provider and CI role | Pay-as-you-go |
-| An HCP Terraform organisation | State backend. A declared requirement of this project, not optional | Free tier is sufficient |
-| A GitHub repository, **private** | Deployment credentials live here | — |
-| A registered domain *(optional)* | TLS and public ingress. Skip it and use port-forwarding | — |
+- an AWS account and local administrator credentials for the one-time bootstrap;
+- Terraform 1.14, the AWS CLI, and Git;
+- an HCP Terraform organisation on a plan that supports two workspaces;
+- a private GitHub repository created from this template; and
+- optionally, a hostname managed in Cloudflare for public TLS ingress.
 
-Running the full stack costs roughly **$40-50/month** if left up
-continuously, dominated by the EKS control plane at about $26 and a NAT
-gateway at about $10. Figures are for `eu-west-2` and will differ by region.
-See [docs/COST-OPTIMIZATION-GUIDE.md](docs/COST-OPTIMIZATION-GUIDE.md).
+The stack is not free. Read the illustrative estimate in
+[README.md](README.md#cost-optimization) before applying it.
 
----
+## 1. Create a private repository
 
-## Step 1 — copy the template, privately
-
-Click **Use this template** on the repository page, or:
+Use **Use this template** on GitHub, or run:
 
 ```bash
 gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
+git clone git@github.com:YOUR_OWNER/my-infra-fleet.git
+cd my-infra-fleet
 ```
 
-**Make it private before adding any secret.** Everything below assumes a
-private repository.
+Keep the deployment repository private before adding credentials.
 
----
-## Step 2 — bootstrap the permanent stack, locally
+## 2. Create the HCP Terraform workspaces
 
-The permanent stack creates the OIDC provider and the IAM role your CI will
-later assume. It cannot be created by CI, because CI has no credentials until
-it exists.
+Create these two CLI-driven workspaces in your HCP Terraform organisation:
 
-Run it **once**, from your own machine, with admin credentials:
+- `infra-fleet-permanent`
+- `infra-fleet-staging`
+
+Set **Execution Mode** to **Local** for both. HCP Terraform stores and locks
+state; Terraform commands and AWS calls run on your machine during bootstrap
+and on GitHub-hosted runners afterward. Remote execution is not supported by
+the supplied authentication path.
+
+Authenticate the local Terraform CLI:
 
 ```bash
-cd infrastructure/permanent
-export TF_CLOUD_ORGANIZATION="your-hcp-org"
-export TF_WORKSPACE="infra-fleet-permanent"
-terraform init
-terraform apply
-terraform output github_actions_role_arn
+terraform login
 ```
 
-This manual step is deliberate. It is what stops a public template from being
-able to reach into anyone's cloud account.
-
----
-
-## Step 3 — repository secrets
-
-Settings → Secrets and variables → Actions → **Secrets**.
-
-Secrets are masked in workflow logs. Use a secret, not a variable, for
-anything you would not want appearing in a log — including values that are
-not strictly confidential, such as an account identifier.
-
-| Secret | Required | Where it comes from |
-|--------|----------|---------------------|
-| `AWS_GITHUB_ACTIONS_ROLE_ARN` | yes | `github_actions_role_arn` output from step 2 |
-| `TF_API_TOKEN` | yes | HCP Terraform → User settings → Tokens |
-| `TF_CLOUD_ORGANIZATION` | yes | Your HCP Terraform organisation name |
-| `GRAFANA_ADMIN_PASSWORD` | yes | Choose one |
-| `CLOUDFLARE_API_TOKEN` | only with a custom domain | Cloudflare → API token, `Zone:DNS:Edit` |
-| `CLOUDFLARE_ZONE_ID` | only with a custom domain | Cloudflare dashboard, zone overview |
-| `FLUX_GITHUB_TOKEN` | yes | A GitHub PAT or App token with `repo` scope, for Flux bootstrap |
-| `LOAD_HARNESS_API_KEY` | no | Enables the sample application's authenticated endpoints |
-| `RELEASE_PLEASE_TOKEN` | no | Legacy alternative to the App below. A PAT reaches every repository your account can see; prefer the App |
-| `RELEASE_PLEASE_APP_CLIENT_ID` | no | See [release automation](#release-automation) |
-| `RELEASE_PLEASE_APP_PRIVATE_KEY` | no | See [release automation](#release-automation) |
-
----
-
-## Step 4 — repository variables
-
-Settings → Secrets and variables → Actions → **Variables**.
-
-Variables are **not** masked in logs. Only put values here that you are happy
-to see in plain text.
-
-| Variable | Default if unset | Purpose |
-|----------|------------------|---------|
-| `TF_WORKSPACE_PERMANENT` | `infra-fleet-permanent` | HCP Terraform workspace for the permanent stack |
-| `TF_WORKSPACE_STAGING` | `infra-fleet-staging` | HCP Terraform workspace for the ephemeral stack |
-
-Most adopters need neither. They exist so you are not forced to name your
-workspaces the way this template does.
-
----
-
-## Step 5 — Terraform inputs
-
-Values Terraform needs that are specific to your deployment. Set them as
-workspace variables in HCP Terraform, or in a local `terraform.tfvars`
-(already covered by `.gitignore`).
-
-| Variable | Stack | Required | Purpose |
-|----------|-------|----------|---------|
-| `domain_name` | staging | only with a custom domain | Root domain, e.g. `example.com`. Defaults to a placeholder |
-| `app_subdomain` | staging | no | Subdomain for the sample application. Defaults to `app` |
-| `cloudflare_api_token` | staging | only with a custom domain | Also settable as the `CLOUDFLARE_API_TOKEN` secret |
-| `cloudflare_zone_id` | staging | only with a custom domain | Cloudflare zone for `domain_name` |
-
-### Not yet parameterised
-
-Two values are still hardcoded in Terraform and **do** need a file edit. Both
-are tracked in the sequence in
-[docs/CREDENTIALS-FREE-TEMPLATE-DDR.md](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md):
-
-| Value | Where | What to change |
-|-------|-------|----------------|
-| OIDC trust subject | `infrastructure/permanent/github-oidc.tf` | Replace the repository in `token.actions.githubusercontent.com:sub` with your own, pinned to a ref - see [step 6](#step-6--trust-policy) |
-| EKS admin principals | `infrastructure/staging/eks.tf` | `access_entries` names specific IAM principals. Replace them with your own |
-
-They are called out rather than hidden because a template that quietly needs a
-`.tf` edit is worse than one that says so.
-
-## Cluster secrets
-
-Two Kubernetes Secrets are referenced by
-`k8s/applications/load-harness/deployment.yaml`. Neither is in Git, correctly -
-`rebuild-stack.yml` creates both when it provisions the cluster:
-
-| Secret | Key | Source | Required |
-|--------|-----|--------|----------|
-| `load-harness-secret-key` | `secret-key` | Generated per rebuild with `openssl rand -hex 32` | **yes** |
-| `load-harness-api-key` | `api-key` | The `LOAD_HARNESS_API_KEY` repository secret | no - `optional: true`, auth is disabled without it |
-
-Two consequences worth knowing:
-
-**If you apply the manifests without running `rebuild-stack.yml`** - deploying
-through Flux alone, for instance - pods stay in `CreateContainerConfigError`,
-because `SECRET_KEY` is not optional. Create it by hand if you need to:
+## 3. Fill in the identifier file
 
 ```bash
-kubectl create secret generic load-harness-secret-key \
-  --namespace=applications \
-  --from-literal=secret-key="$(openssl rand -hex 32)"
+cp config.example.env config.env
 ```
 
-**The session key is regenerated on every rebuild**, so anyone logged into the
-dashboard is signed out when the stack is rebuilt. That is a reasonable
-trade for an ephemeral environment; set a fixed value if it annoys you.
+Edit `config.env`. It is ignored by Git and contains identifiers, not
+credentials:
 
-The key must be identical across replicas. The HPA scales this deployment from
-1 to 8, and with per-pod keys a login would break as soon as a request landed
-on a different pod - which is why it comes from a Secret rather than being
-generated in the container.
-
-## Step 6 — trust policy
-
-`infrastructure/permanent/github-oidc.tf` decides which repository may assume
-your CI role. It must name **your** repository, and it should not use a
-wildcard:
-
-```hcl
-"token.actions.githubusercontent.com:sub" = [
-  "repo:${var.github_repository}:ref:refs/heads/main",
-]
+```dotenv
+GITHUB_REPOSITORY=YOUR_OWNER/my-infra-fleet
+GITHUB_DEPLOYMENT_BRANCH=main
+GITHUB_DEPLOYMENT_ENVIRONMENT=staging
+TF_CLOUD_ORGANIZATION=YOUR_HCP_ORGANISATION
+TF_WORKSPACE_PERMANENT=infra-fleet-permanent
+TF_WORKSPACE_STAGING=infra-fleet-staging
+EKS_ADMIN_PRINCIPAL_ARNS_JSON='[]'
 ```
 
-`repo:OWNER/REPO:*` matches every ref context including pull requests. On a
-public repository that is the difference between "only `main` can deploy" and
-"anything that opens a pull request can deploy". Keep it pinned even in a
-private repository — it costs nothing.
+`EKS_ADMIN_PRINCIPAL_ARNS_JSON` is optional. Leave it as `[]` unless a local
+IAM role or user also needs `cluster-admin`. Prefer an IAM Identity Center role
+to a long-lived IAM user.
 
----
+## 4. Bootstrap permanent AWS resources
 
-## Release automation
+The permanent stack creates ECR and the narrowly trusted GitHub Actions OIDC
+role. CI cannot create its own initial identity, so this one apply runs on your
+machine with your current AWS credentials.
 
-`release-please` opens release pull requests. With the default `GITHUB_TOKEN`
-it works, with two caveats: the release pull request needs a manual "Approve
-and run" click before its checks execute, and the tag it pushes does **not**
-trigger downstream workflows, so no image is published on release.
-
-Setting `RELEASE_PLEASE_APP_CLIENT_ID` and `RELEASE_PLEASE_APP_PRIVATE_KEY`
-from a GitHub App removes both limitations. App installation tokens are
-short-lived and scoped to a single repository, unlike a personal access token,
-which reaches every repository your account can see.
-
-Create an App with **Contents: Read & write** and **Pull requests: Read &
-write**, install it on your repository only, and add the client ID and private
-key as secrets.
-
-You will also need Settings → Actions → General → Workflow permissions →
-**Allow GitHub Actions to create and approve pull requests**, or release pull
-requests cannot be opened at all.
-
----
-
-## Running without a domain
-
-TLS, Cloudflare and public ingress are optional. Without a domain, skip
-`CLOUDFLARE_*` and `domain_name` and reach services by port-forwarding:
+Review a plan first, then opt in to the apply:
 
 ```bash
+./scripts/bootstrap-permanent.sh
+./scripts/bootstrap-permanent.sh --apply
+```
+
+The script prints `github_actions_role_arn` after a successful apply. It does
+not configure GitHub or persist AWS credentials.
+
+If the AWS account already has GitHub's account-wide OIDC provider, the script
+stops before planning and prints the exact import command. Run that import,
+review the next plan carefully, and then rerun the script.
+
+## 5. Configure GitHub Actions
+
+Under **Settings → Secrets and variables → Actions**, add these secrets:
+
+| Secret | Required | Source |
+|---|---:|---|
+| `AWS_GITHUB_ACTIONS_ROLE_ARN` | yes | `github_actions_role_arn` from bootstrap |
+| `TF_API_TOKEN` | yes | HCP Terraform user or team token |
+| `TF_CLOUD_ORGANIZATION` | yes | your HCP Terraform organisation name |
+| `FLUX_GITHUB_TOKEN` | yes | fine-grained token scoped to this repository with Contents read/write |
+| `GRAFANA_ADMIN_PASSWORD` | yes | a unique password; it is written to a Kubernetes Secret |
+| `LOAD_HARNESS_API_KEY` | no | enables API-key protection for the sample app |
+| `CLOUDFLARE_API_TOKEN` | with automated DNS | Cloudflare token with Zone DNS edit |
+| `CLOUDFLARE_ZONE_ID` | with automated DNS | Cloudflare zone overview |
+| `RELEASE_PLEASE_APP_CLIENT_ID` | no | optional release GitHub App client ID |
+| `RELEASE_PLEASE_APP_PRIVATE_KEY` | no | matching private key |
+
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` must be present together.
+Do not use repository variables for secrets.
+
+Add these repository variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TF_WORKSPACE_PERMANENT` | `infra-fleet-permanent` | permanent HCP workspace |
+| `TF_WORKSPACE_STAGING` | `infra-fleet-staging` | staging HCP workspace |
+| `EKS_ADMIN_PRINCIPAL_ARNS_JSON` | `[]` | JSON array passed to Terraform |
+| `APP_HOSTNAME` | `app.example.invalid` | optional real hostname for TLS ingress |
+| `ACME_EMAIL` | `nobody@example.invalid` | Let's Encrypt contact; set with `APP_HOSTNAME` |
+
+Set `APP_HOSTNAME` and `ACME_EMAIL` together. If they are omitted, the sample
+application and Grafana remain available by port-forwarding, while public TLS
+ingress intentionally uses the non-routable `.invalid` hostname. If the two
+Cloudflare secrets are also present, the rebuild workflow creates or updates
+the hostname's CNAME automatically. You may manage the same DNS record outside
+Cloudflare instead.
+
+Create a GitHub Environment named `staging` and restrict deployments to `main`
+and release tags matching `v*`. The OIDC role trusts that exact environment and
+the configured deployment branch; it does not trust pull request subjects or
+arbitrary refs.
+
+## 6. Build the fleet
+
+Run **Actions → Rebuild Stack → Run workflow** from `main`.
+
+The workflow:
+
+1. checks every required setting before making an AWS call;
+2. tests, builds, scans, and publishes the current sample image to your ECR;
+3. applies the staging Terraform workspace;
+4. creates runtime-only application and Grafana secrets;
+5. bootstraps Flux against your repository; and
+6. verifies the cluster and Flux reconciliation.
+
+Expect the first run to take roughly 25–40 minutes. It is intentionally manual
+because it creates billable resources.
+
+## 7. Connect
+
+Without a domain:
+
+```bash
+aws eks update-kubeconfig --name staging --region eu-west-2
 kubectl port-forward -n applications svc/load-harness 8080:5000
 kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
 ```
 
-The sample application, metrics, dashboards, canary deployments and DORA
-collection all work this way.
+Open `http://localhost:8080/ui` and `http://localhost:3000`. The Grafana user is
+`admin`; its password is the `GRAFANA_ADMIN_PASSWORD` secret you supplied.
 
----
+With a configured domain, use `https://APP_HOSTNAME/ui` after DNS and
+certificate issuance complete.
 
-## Local development needs none of this
+## Day-two behavior
 
-The sample application runs with no cloud account, no credentials and no
-configuration:
+- Infrastructure pull requests run formatting, validation, and Trivy without
+  cloud credentials. They never assume the deployment role.
+- Infrastructure changes merged to `main` apply only when all three deployment
+  secrets are configured. With none, deployment skips successfully; a partial
+  configuration fails clearly.
+- Release tags, and rebuilds, test and scan the sample image before publishing
+  it to ECR. The public template performs the same checks but skips publishing.
+- `nightly-destroy.yml` is manual. Run it when you want to remove the staging
+  stack; type `destroy staging` when prompted. The permanent OIDC role and ECR
+  repository remain.
+
+## Runtime secrets
+
+No Kubernetes Secret is committed. `rebuild-stack.yml` creates:
+
+| Secret | Purpose |
+|---|---|
+| `applications/load-harness-secret-key` | shared Flask session key, regenerated each rebuild |
+| `applications/load-harness-api-key` | optional sample API authentication |
+| `observability/grafana-admin-credentials` | Grafana administrator credentials |
+
+Applying `k8s/` without the rebuild workflow is not a supported bootstrap path,
+because those runtime secrets and the Flux substitution ConfigMap would be
+missing.
+
+Each rebuild also changes a non-secret runtime configuration revision in that
+ConfigMap. Flux then rolls the application pods so rotated Flask/API keys take
+effect; an existing Grafana deployment is restarted after its administrator
+Secret is updated.
+
+Removing `LOAD_HARNESS_API_KEY` and running a rebuild removes the
+workflow-owned Kubernetes Secret so authentication is actually disabled; an
+old key is not left active.
+
+## Release automation
+
+Release Please can open a release PR with the default `GITHUB_TOKEN`, but events
+created by that token do not trigger the normal pull-request or tag workflows.
+Run those checks manually, or, for an automated chain, create a
+repository-scoped GitHub App with **Contents: read/write** and **Pull requests:
+read/write**, then set
+`RELEASE_PLEASE_APP_CLIENT_ID` and `RELEASE_PLEASE_APP_PRIVATE_KEY`.
+
+Also enable **Settings → Actions → General → Allow GitHub Actions to create and
+approve pull requests** if you want the release workflow to open PRs.
+
+## Local application development
+
+The sample application needs none of the cloud configuration:
 
 ```bash
 cd applications/load-harness/local-dev
-./dev.sh up-full          # creates .env from .env.example on first run
+./dev.sh up-full
 open http://localhost:8080/ui
 ```
-
-That path is worth using first, to see what the platform deploys before
-deciding whether to deploy it.

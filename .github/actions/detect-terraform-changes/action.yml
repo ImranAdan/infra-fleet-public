@@ -30,11 +30,20 @@ runs:
     - name: Detect changed stacks
       id: detect
       shell: bash
+      env:
+        BASE_REF: ${{ inputs.base-ref }}
+        HEAD_REF: ${{ inputs.head-ref }}
       run: |
-        echo "Comparing ${{ inputs.base-ref }} to ${{ inputs.head-ref }}"
+        set -euo pipefail
+        echo "Comparing $BASE_REF to $HEAD_REF"
 
-        # Get list of changed files
-        CHANGED_FILES=$(git diff --name-only ${{ inputs.base-ref }} ${{ inputs.head-ref }} | grep '^infrastructure/' || true)
+        # A repository created from a template has an all-zero before SHA.
+        # Treat that as every tracked infrastructure file being new.
+        if [[ "$BASE_REF" =~ ^0+$ ]] || ! git cat-file -e "$BASE_REF^{commit}" 2>/dev/null; then
+          CHANGED_FILES=$(git ls-files 'infrastructure/**')
+        else
+          CHANGED_FILES=$(git diff --name-only "$BASE_REF" "$HEAD_REF" -- infrastructure/)
+        fi
 
         echo "Changed infrastructure files:"
         echo "$CHANGED_FILES"

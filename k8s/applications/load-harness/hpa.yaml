@@ -1,7 +1,6 @@
 # --------------------------------------------------------------------------------------------------
 # Horizontal Pod Autoscaler for load-harness
 # Automatically scales pods based on CPU utilization
-# See: https://github.com/your-org/infra-fleet/issues/163
 # --------------------------------------------------------------------------------------------------
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

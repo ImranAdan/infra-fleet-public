@@ -21,6 +21,9 @@ on:
       - 'k8s/**'
       - 'policies/**'
 
+permissions:
+  contents: read
+
 jobs:
   # ---------------------------------------------------------------------------
   # Step 1: YAML Syntax Validation
@@ -55,7 +58,7 @@ jobs:
         uses: ./.github/actions/k8s-schema-validate
         with:
           path: k8s/
-          kubernetes-version: '1.32.0'
+          kubernetes-version: '1.35.0'
 
   # ---------------------------------------------------------------------------
   # Step 3: Kyverno Policy Validation

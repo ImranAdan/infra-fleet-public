@@ -2,6 +2,11 @@
 
 This document describes how DORA metrics are collected and visualized in infra-fleet.
 
+These are ephemeral proxy signals for a learning stack, not a validated DORA
+measurement program. Workflow completion is not necessarily a production
+deployment, commit timestamps are not cycle-time boundaries, and the stack has
+no durable incident system of record.
+
 ## Goals
 
 - Track deployment frequency, lead time, change failure rate, and MTTR.
@@ -87,7 +92,8 @@ Measure time between a failure signal and the next success of the same source:
 `dora-metrics.yml` has two jobs:
 
 - **workflow-metrics**: runs on `workflow_run` for rebuild/infra/app workflows.
-- **cluster-metrics**: runs on `schedule` and manual dispatch; queries Flux/Flagger.
+- **cluster-metrics**: runs on manual dispatch; queries Flux/Flagger. A sample
+  schedule remains commented out in the workflow.
 
 Both jobs:
 

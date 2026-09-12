@@ -16,7 +16,7 @@
 #   ❌ Admission webhooks: Known timeout issues
 #
 # Storage Strategy:
-#   - EPHEMERAL: All data lost on pod restart/nightly rebuild
+#   - EPHEMERAL: All data is lost on pod restart or stack rebuild
 #   - No persistent volumes (acceptable for dev/testing)
 #
 # Access:
@@ -35,7 +35,6 @@ metadata:
 spec:
   # dependsOn ensures kube-prometheus-stack waits for ALB controller webhook to be ready
   # Without this, Helm install fails with "no endpoints available for service aws-load-balancer-webhook-service"
-  # See: https://github.com/your-org/infra-fleet/issues/154
   dependsOn:
     - name: aws-load-balancer-controller
       namespace: kube-system
@@ -62,11 +61,11 @@ spec:
         # Ephemeral storage - no persistence
         storageSpec: {}
 
-        # Minimal retention for t3.small constraints
+        # Minimal retention for the single-node learning stack
         retention: 2d
         retentionSize: "1GB"
 
-        # Resource limits for t3.small node
+        # Resource limits for the single t3.large node
         resources:
           requests:
             cpu: 100m
@@ -87,6 +86,11 @@ spec:
     grafana:
       enabled: true  # ← PHASE 2: Enable Grafana for dashboards
 
+      admin:
+        existingSecret: grafana-admin-credentials
+        userKey: admin-user
+        passwordKey: admin-password
+
       # Ephemeral storage - no persistent volumes
       # Dashboards will need to be re-imported after pod restarts
       persistence:
@@ -101,11 +105,7 @@ spec:
           cpu: 200m
           memory: 256Mi
 
-      # Admin credentials
-      # Note: kube-prometheus-stack chart automatically creates admin credentials
-      # Default username: admin
-      # Default password: prom-operator (should be changed in production)
-      # For now, using default credentials with port-forward access only
+      # Admin credentials are created by rebuild-stack.yml and never stored in Git.
 
       # Prometheus datasource auto-configured by kube-prometheus-stack chart
       # No additional datasource configuration needed

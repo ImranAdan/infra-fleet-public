@@ -1,12 +1,18 @@
 # Application Roadmap — Load Harness
 
-A Python Flask-based synthetic workload service designed to **stress test the EKS cluster**, exercise **HPA**, validate **ALB ingress**, and provide **observable CPU/memory load** for cost/performance analysis.
+A Python Flask synthetic workload service designed to stress the EKS cluster,
+exercise HPA, validate the current NGINX/NLB ingress path, and provide observable
+CPU and memory load.
+
+> The community NGINX ingress controller is retired. This application remains
+> useful locally and by port-forward; treat the cluster ingress as a private
+> preview until the Gateway API migration is live-cycle tested.
 
 ## Purpose
 
-This application provides a repeatable, deterministic workload to validate:
+This application provides a repeatable, controlled workload to validate:
 
-- ALB → EKS ingress behavior
+- NLB → NGINX ingress → EKS behavior
 - Application performance under load
 - Resource limits and pod behavior
 - Horizontal Pod Autoscaler (HPA) capabilities
@@ -35,12 +41,13 @@ Notes:
 - With `min=1`, `max=2`, autoscaling is possible but limited.
 - Real autoscaling tests require Cluster Autoscaler or Karpenter.
 - The cluster already runs core system pods (kube-system, flux, observability).
-- An ALB ingress is provisioned via AWS Load Balancer Controller.
+- The NGINX ingress Service provisions an AWS NLB through AWS Load Balancer
+  Controller.
 
 ## High-Level Architecture
 
 ```
-User → ALB → Ingress → Service → Pods (Flask/Gunicorn)
+User → NLB → NGINX Ingress → Service → Pods (Flask/Gunicorn)
                          |
                          └── /metrics → Prometheus → Grafana
 ```
@@ -63,7 +70,7 @@ Verified against `src/load_harness/load_harness_service.py` and
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/` | GET | Application info |
-| `/health` | GET | Health check - used by both probes in `deployment.yaml` |
+| `/health` | GET | Liveness check |
 | `/ready` | GET | Readiness check |
 | `/version` | GET | Build version, injected as `APP_VERSION` |
 | `/system/info` | GET | Host CPU and memory as seen by the pod |
@@ -157,6 +164,8 @@ worth knowing:
   packages setuptools vendors were the source of two HIGH CVEs.
 - **Non-root.** The container runs as the `app` user, enforced again by
   `securityContext` in `deployment.yaml`.
+- **Safe worker creation.** Background CPU and memory workers use the `spawn`
+  multiprocessing context instead of forking the multithreaded web process.
 - **Scanned in CI.** `load-harness-ci.yml` runs Trivy against the built image
   with `severity: CRITICAL,HIGH` and `exit-code: 1`, so a vulnerable image
   fails the build rather than shipping.
@@ -184,17 +193,26 @@ Currently deployed:
 The Harness exists to give the platform something real to deploy, scale,
 canary and measure. It is meant to be replaced.
 
-To swap in your own application:
+Replacing it is a small migration, not an image-only toggle. Preserve or
+deliberately update this contract:
 
-1. Replace `applications/load-harness/` with your service. Keep a `/health`
-   endpoint and a Prometheus `/metrics` endpoint - the deployment probes,
-   `ServiceMonitor` and Flagger canary analysis all depend on them.
-2. Update the image reference in
-   `k8s/applications/load-harness/deployment.yaml`, and the `ECR_REPOSITORY`
-   value in `.github/workflows/load-harness-ci.yml`.
-3. Adjust the Flagger metric thresholds in
-   `k8s/applications/load-harness/canary.yaml` to suit your service. The
-   defaults assume a request rate the Harness can generate on demand.
+1. The Deployment must expose the Service's named HTTP port, provide distinct
+   liveness and readiness endpoints, keep resource requests for HPA, and expose
+   Prometheus metrics compatible with the `ServiceMonitor`.
+2. The image repository, immutable bootstrap tag, release-please package name,
+   Flux `ImageRepository`/`ImagePolicy`, and CI `ECR_REPOSITORY` must move
+   together. `scripts/validate-template-contract.sh` currently enforces the
+   Harness version/tag pair.
+3. Flagger's `targetRef`, `autoscalerRef`, Service port, ingress reference,
+   webhook routes, and MetricTemplates must match the replacement. The current
+   analysis relies specifically on NGINX ingress metrics and public `/health`
+   and `/ready` endpoints.
+4. Update the Kubernetes Secret contract if the replacement does not use the
+   Harness's optional API key and required Flask session key.
+
+Validate the replacement through build, schema and policy checks first. Canary
+promotion, rollback, HPA behavior, and teardown still require an approved live
+cycle in a configured private copy.
 
 Keeping the Harness alongside your own workload is also reasonable - it is a
 useful way to generate load and confirm autoscaling still behaves after a

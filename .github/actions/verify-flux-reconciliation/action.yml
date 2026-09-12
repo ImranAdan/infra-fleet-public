@@ -36,36 +36,60 @@ runs:
     - name: Check cluster availability
       id: cluster-check
       shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster_name }}
+        AWS_REGION_NAME: ${{ inputs.aws_region }}
       run: |
+        set -euo pipefail
+        if [[ ! "$CLUSTER_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
+           [[ ! "$AWS_REGION_NAME" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]; then
+          echo "Invalid EKS cluster name or AWS region." >&2
+          exit 2
+        fi
         echo "Checking cluster availability..."
-        if ! aws eks describe-cluster --name ${{ inputs.cluster_name }} --region ${{ inputs.aws_region }} &>/dev/null; then
-          echo "cluster_available=false" >> $GITHUB_OUTPUT
-          echo "::warning::Cluster ${{ inputs.cluster_name }} not available (may be destroyed)"
+        if ! aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION_NAME" &>/dev/null; then
+          echo "cluster_available=false" >> "$GITHUB_OUTPUT"
+          echo "::warning::Cluster $CLUSTER_NAME not available (may be destroyed)"
         else
-          echo "cluster_available=true" >> $GITHUB_OUTPUT
-          echo "Cluster ${{ inputs.cluster_name }} is available"
+          echo "cluster_available=true" >> "$GITHUB_OUTPUT"
+          echo "Cluster $CLUSTER_NAME is available"
         fi
 
     - name: Configure kubectl
       if: steps.cluster-check.outputs.cluster_available == 'true'
       shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster_name }}
+        AWS_REGION_NAME: ${{ inputs.aws_region }}
       run: |
-        echo "Configuring kubectl for cluster: ${{ inputs.cluster_name }}"
-        aws eks update-kubeconfig --name ${{ inputs.cluster_name }} --region ${{ inputs.aws_region }}
+        set -euo pipefail
+        echo "Configuring kubectl for cluster: $CLUSTER_NAME"
+        aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION_NAME"
 
     - name: Bake time for Flux reconciliation
       if: steps.cluster-check.outputs.cluster_available == 'true'
       shell: bash
+      env:
+        BAKE_TIME_SECONDS: ${{ inputs.bake_time_seconds }}
       run: |
-        echo "Waiting ${{ inputs.bake_time_seconds }}s for Flux to reconcile..."
-        sleep ${{ inputs.bake_time_seconds }}
+        set -euo pipefail
+        if [[ ! "$BAKE_TIME_SECONDS" =~ ^[0-9]+$ ]] || [ "$BAKE_TIME_SECONDS" -gt 600 ]; then
+          echo "bake_time_seconds must be an integer from 0 to 600." >&2
+          exit 2
+        fi
+        echo "Waiting ${BAKE_TIME_SECONDS}s for Flux to reconcile..."
+        sleep "$BAKE_TIME_SECONDS"
 
     - name: Verify Flux reconciliation
       id: verify
       shell: bash
+      env:
+        EXPECTED_REVISION: ${{ inputs.expected_revision }}
+        CLUSTER_AVAILABLE: ${{ steps.cluster-check.outputs.cluster_available }}
       run: |
+        set -euo pipefail
         # Handle cluster unavailable
-        if [ "${{ steps.cluster-check.outputs.cluster_available }}" != "true" ]; then
+        if [ "$CLUSTER_AVAILABLE" != "true" ]; then
           echo "status=cluster_unavailable" >> $GITHUB_OUTPUT
           echo "kustomizations_ready=0" >> $GITHUB_OUTPUT
           echo "git_revision=" >> $GITHUB_OUTPUT
@@ -122,8 +146,12 @@ runs:
         echo "git_revision=$GIT_REV" >> $GITHUB_OUTPUT
         echo "Current GitRepository revision: $GIT_REV (full: $GIT_REV_FULL)"
 
-        EXPECTED="${{ inputs.expected_revision }}"
+        EXPECTED="$EXPECTED_REVISION"
         if [ -n "$EXPECTED" ]; then
+          if [[ ! "$EXPECTED" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+            echo "Expected revision must be a 7-40 character hexadecimal Git SHA." >&2
+            exit 2
+          fi
           SHORT_EXPECTED=$(echo "$EXPECTED" | cut -c1-7)
           if [ "$GIT_REV" != "$SHORT_EXPECTED" ]; then
             echo ""

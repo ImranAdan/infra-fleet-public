@@ -1,0 +1,39 @@
+name: Template Contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/**'
+      - 'infrastructure/**'
+      - 'k8s/**'
+      - 'scripts/**'
+      - 'CONFIGURATION.md'
+      - 'config.example.env'
+      - '.release-please-manifest.json'
+      - 'applications/load-harness/local-dev/**'
+      - 'ops/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/**'
+      - 'infrastructure/**'
+      - 'k8s/**'
+      - 'scripts/**'
+      - 'CONFIGURATION.md'
+      - 'config.example.env'
+      - '.release-please-manifest.json'
+      - 'applications/load-harness/local-dev/**'
+      - 'ops/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Validate template invariants
+        run: ./scripts/validate-template-contract.sh

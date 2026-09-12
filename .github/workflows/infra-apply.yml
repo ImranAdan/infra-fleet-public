@@ -11,10 +11,67 @@ env:
   AWS_REGION: eu-west-2
 
 permissions:
-  contents: write  # Flux needs write access to commit sync manifests
-  id-token: write
+  contents: read
 
 jobs:
+  preflight:
+    name: Deployment configuration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check deployment settings
+        id: check
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          TF_CLOUD_ORGANIZATION: ${{ secrets.TF_CLOUD_ORGANIZATION }}
+        run: |
+          set -euo pipefail
+
+          present=0
+          missing=""
+          for name in AWS_ROLE_ARN TF_API_TOKEN TF_CLOUD_ORGANIZATION; do
+            if [ -n "${!name}" ]; then
+              present=$((present + 1))
+            else
+              missing="$missing $name"
+            fi
+          done
+
+          if [ "$present" -eq 0 ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Deployment skipped"
+              echo ""
+              echo "This is the expected state for the credentials-free public template."
+              echo "Static Terraform validation runs in \`infra-plan.yml\`."
+              echo "See \`CONFIGURATION.md\` before enabling deployment in a private copy."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$present" -ne 3 ]; then
+            echo "::error::Deployment configuration is partial. See CONFIGURATION.md."
+            {
+              echo "### Deployment configuration is incomplete"
+              echo ""
+              echo "Some deployment secrets are present, but these are missing:"
+              for name in $missing; do
+                case "$name" in
+                  AWS_ROLE_ARN) echo "- \`AWS_GITHUB_ACTIONS_ROLE_ARN\`" ;;
+                  *) echo "- \`$name\`" ;;
+                esac
+              done
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "### Deployment configuration is complete" >> "$GITHUB_STEP_SUMMARY"
+
   detect:
     runs-on: ubuntu-latest
     outputs:
@@ -34,11 +91,19 @@ jobs:
 
   apply-staging:
     name: Deploy Infrastructure
-    needs: detect
-    if: needs.detect.outputs.staging == 'true'
+    needs: [preflight, detect, apply-permanent]
+    if: >-
+      always() &&
+      needs.preflight.outputs.configured == 'true' &&
+      needs.detect.outputs.staging == 'true' &&
+      (needs.apply-permanent.result == 'success' ||
+       needs.apply-permanent.result == 'skipped')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     environment:
-      name: ${{ vars.ENVIRONMENT || 'staging' }}
+      name: staging
       url: https://github.com/${{ github.repository }}/deployments
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -69,21 +134,20 @@ jobs:
       - name: Terraform plan (staging)
         run: terraform -chdir=infrastructure/staging plan -input=false
         env:
-          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_eks_admin_principal_arns: ${{ vars.EKS_ADMIN_PRINCIPAL_ARNS_JSON || '[]' }}
 
       - name: Terraform apply (staging)
         run: terraform -chdir=infrastructure/staging apply -input=false -auto-approve
         env:
-          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_eks_admin_principal_arns: ${{ vars.EKS_ADMIN_PRINCIPAL_ARNS_JSON || '[]' }}
 
   apply-permanent:
-    needs: detect
-    if: needs.detect.outputs.permanent == 'true'
+    needs: [preflight, detect]
+    if: needs.preflight.outputs.configured == 'true' && needs.detect.outputs.permanent == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -112,6 +176,10 @@ jobs:
 
       - name: Terraform plan (permanent)
         run: terraform -chdir=infrastructure/permanent plan -input=false
+        env:
+          TF_VAR_github_repository: ${{ github.repository }}
 
       - name: Terraform apply (permanent)
         run: terraform -chdir=infrastructure/permanent apply -input=false -auto-approve
+        env:
+          TF_VAR_github_repository: ${{ github.repository }}

@@ -231,9 +231,16 @@ class JobManager:
 
             # Ensure all processes are terminated
             for process in job.get("processes", []):
-                if process and process.is_alive():
+                if not process:
+                    continue
+                if process.is_alive():
                     process.terminate()
+                process.join(timeout=PROCESS_TERMINATE_TIMEOUT)
+                if process.is_alive():
+                    process.kill()
                     process.join(timeout=PROCESS_TERMINATE_TIMEOUT)
+                if not process.is_alive():
+                    process.close()
 
             # Update status if still running
             if job.get("status") == "running":

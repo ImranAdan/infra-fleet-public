@@ -21,7 +21,7 @@
 #   Step 3: Prometheus metrics analyzed every 30s
 #   Step 4: If healthy, increase canary traffic by 10%
 #   Step 5: Repeat until maxWeight (50%) reached
-#   Step 6: After 3 successful iterations at max → promote canary to primary
+#   Step 6: A successful check at max weight allows promotion to primary
 #
 # Timeline example (happy path):
 #   t=0:00  canary 10% ← analyze
@@ -29,9 +29,7 @@
 #   t=1:00  canary 30% ← analyze
 #   t=1:30  canary 40% ← analyze
 #   t=2:00  canary 50% ← analyze (max weight)
-#   t=2:30  canary 50% ← iteration 1 of 3
-#   t=3:00  canary 50% ← iteration 2 of 3
-#   t=3:30  canary 50% ← iteration 3 of 3 → PROMOTED
+#   t=2:30  successful max-weight analysis → PROMOTED
 #
 # =============================================================================
 # AUTOMATIC ROLLBACK
@@ -136,9 +134,8 @@ spec:
     #   10% → 20% → 30% → 40% → 50% (5 steps to reach max)
     stepWeight: 10
 
-    # Number of successful metric checks required at maxWeight before promotion.
-    # Higher threshold = more confidence but longer rollout time.
-    # With interval=30s and threshold=3: 90s of validation at max weight.
+    # Maximum number of failed checks tolerated before rollback.
+    # This does not request extra successful iterations at maxWeight.
     threshold: 3
 
     # ---------------------------------------------------------------------------
@@ -190,7 +187,8 @@ spec:
     # The flagger-loadtester service runs `hey` (HTTP load generator) commands.
     # Traffic flows: hey -> load-harness-canary service -> canary pods
     #
-    # API Key: Mounted at /etc/loadtester/secrets/api-key from load-harness-api-key secret
+    # The rollout checks use public probe endpoints so enabling optional API
+    # authentication cannot make every canary fail with 401 responses.
     webhooks:
       # Pre-rollout: Smoke test before any traffic shift
       # Runs once at the start of canary analysis
@@ -212,23 +210,20 @@ spec:
       # to be captured. Direct service calls bypass NGINX and won't populate
       # nginx_ingress_controller_requests metrics used by Flagger for analysis.
 
-      # Load test 1: GET /version (lightweight, JSON response)
-      # Tests basic request handling and serialization
+      # Load test 1: GET /health (lightweight, public probe)
       - name: "load-test-version"
         type: rollout
         url: http://flagger-loadtester.applications/
         timeout: 15s
         metadata:
           type: cmd
-          cmd: "hey -z 10s -q 10 -c 5 -H 'Host: app.example.com' -H 'X-API-Key: '$(cat /etc/loadtester/secrets/api-key) http://nginx-ingress-controller-ingress-nginx-controller.ingress-nginx/version"
+          cmd: "hey -z 10s -q 10 -c 5 -H 'Host: ${APP_HOSTNAME}' http://nginx-ingress-controller-ingress-nginx-controller.ingress-nginx/health"
 
-      # Load test 2: POST /load/cpu/work (CPU-intensive, synchronous)
-      # Tests compute-heavy requests - designed for distributed load testing
-      # Each request performs 50k math iterations (~50-100ms response time)
+      # Load test 2: GET /ready at a lower request rate
       - name: "load-test-cpu"
         type: rollout
         url: http://flagger-loadtester.applications/
         timeout: 15s
         metadata:
           type: cmd
-          cmd: "hey -z 10s -q 5 -c 3 -m POST -T 'application/json' -d '{\"iterations\": 50000}' -H 'Host: app.example.com' -H 'X-API-Key: '$(cat /etc/loadtester/secrets/api-key) http://nginx-ingress-controller-ingress-nginx-controller.ingress-nginx/load/cpu/work"
+          cmd: "hey -z 10s -q 5 -c 3 -H 'Host: ${APP_HOSTNAME}' http://nginx-ingress-controller-ingress-nginx-controller.ingress-nginx/ready"

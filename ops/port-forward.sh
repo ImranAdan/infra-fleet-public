@@ -30,7 +30,7 @@ show_usage() {
 show_grafana_info() {
     echo "  Grafana UI: http://localhost:3000"
     echo "  Username: admin"
-    echo "  Password: Run 'kubectl get secret -n observability kube-prometheus-stack-grafana -o jsonpath=\"{.data.admin-password}\" | base64 -d'"
+    echo "  Password: Run 'kubectl get secret -n observability grafana-admin-credentials -o jsonpath=\"{.data.admin-password}\" | base64 -d'"
 }
 
 show_prometheus_info() {

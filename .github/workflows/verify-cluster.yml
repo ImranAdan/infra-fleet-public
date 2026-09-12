@@ -2,19 +2,10 @@ name: Verify Cluster Health
 
 on:
   workflow_dispatch:
-    inputs:
-      cluster_name:
-        description: 'EKS cluster name to verify'
-        required: false
-        default: 'staging'
-        type: string
   workflow_call:
-    inputs:
-      cluster_name:
-        description: 'EKS cluster name to verify'
-        required: false
-        default: 'staging'
-        type: string
+
+permissions:
+  contents: read
 
 env:
   AWS_REGION: eu-west-2
@@ -26,6 +17,21 @@ jobs:
       id-token: write
       contents: read
     steps:
+      - name: Verify workflow configuration
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          REQUEST_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REQUEST_REF" != "refs/heads/main" ]; then
+            echo "::error::Cluster verification must run from main."
+            exit 1
+          fi
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "::error::AWS_GITHUB_ACTIONS_ROLE_ARN is not configured. See CONFIGURATION.md."
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -39,7 +45,7 @@ jobs:
       - name: Configure kubectl
         uses: ./.github/actions/configure-eks-kubectl
         with:
-          cluster-name: ${{ inputs.cluster_name || 'staging' }}
+          cluster-name: staging
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Check cluster nodes
@@ -241,6 +247,13 @@ jobs:
 
       - name: Cluster Health Summary
         if: always()
+        env:
+          NODES: ${{ steps.nodes.outputs.nodes_status || 'unknown' }}
+          COREDNS: ${{ steps.coredns.outputs.coredns_status || 'unknown' }}
+          FLUX: ${{ steps.flux.outputs.flux_status || 'unknown' }}
+          ALB: ${{ steps.alb.outputs.alb_status || 'unknown' }}
+          INGRESS: ${{ steps.ingress.outputs.ingress_status || 'unknown' }}
+          APPLICATIONS: ${{ steps.apps.outputs.apps_status || 'unknown' }}
         run: |
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -248,18 +261,15 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           echo "Component Status:"
-          echo "  🖥️  Nodes:        ${{ steps.nodes.outputs.nodes_status || 'unknown' }}"
-          echo "  🌐 CoreDNS:      ${{ steps.coredns.outputs.coredns_status || 'unknown' }}"
-          echo "  🔄 Flux:         ${{ steps.flux.outputs.flux_status || 'unknown' }}"
-          echo "  🔀 ALB Controller: ${{ steps.alb.outputs.alb_status || 'unknown' }}"
-          echo "  🌐 Ingress:      ${{ steps.ingress.outputs.ingress_status || 'unknown' }}"
-          echo "  📦 Applications: ${{ steps.apps.outputs.apps_status || 'unknown' }}"
+          echo "  🖥️  Nodes:        $NODES"
+          echo "  🌐 CoreDNS:      $COREDNS"
+          echo "  🔄 Flux:         $FLUX"
+          echo "  🔀 AWS LB Controller: $ALB"
+          echo "  🌐 Ingress:      $INGRESS"
+          echo "  📦 Applications: $APPLICATIONS"
           echo ""
 
           # Determine overall health
-          NODES="${{ steps.nodes.outputs.nodes_status }}"
-          COREDNS="${{ steps.coredns.outputs.coredns_status }}"
-
           if [ "$NODES" = "healthy" ] && [ "$COREDNS" = "healthy" ]; then
             echo "✅ CLUSTER IS HEALTHY"
             echo ""

@@ -40,16 +40,13 @@ PID_LOADHARNESS=$!
 # Wait for port-forwards to establish
 sleep 3
 
-# Get Grafana password
-GRAFANA_PASSWORD=$(kubectl get secret -n observability kube-prometheus-stack-grafana -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "prom-operator")
-
 # Print service table
 echo -e "${GREEN}All services are now accessible:${NC}"
 echo ""
 echo "  +--------------+-----------------------+-------------------------+"
 echo "  | Service      | URL                   | Credentials             |"
 echo "  +--------------+-----------------------+-------------------------+"
-echo "  | Grafana      | http://localhost:3000 | admin / $GRAFANA_PASSWORD"
+echo "  | Grafana      | http://localhost:3000 | admin / configured secret |"
 echo "  | Prometheus   | http://localhost:9090 | -                       |"
 echo "  | Load Harness | http://localhost:8080 | -                       |"
 echo "  +--------------+-----------------------+-------------------------+"

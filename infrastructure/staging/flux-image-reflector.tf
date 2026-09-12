@@ -47,7 +47,6 @@ resource "aws_iam_policy" "flux_image_reflector" {
 # Only depends on Pod Identity agent - NOT on flux_bootstrap_git
 # This allows the association to be created BEFORE Flux bootstrap,
 # so the pod starts with credentials already available.
-# See: https://github.com/your-org/infra-fleet/issues/159
 module "flux_image_reflector_role" {
   source = "./modules/eks-pod-identity-role"
 

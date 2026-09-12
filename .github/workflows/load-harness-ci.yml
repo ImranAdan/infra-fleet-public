@@ -13,7 +13,23 @@ on:
       - 'applications/load-harness/Dockerfile'
       - 'applications/load-harness/requirements.txt'
       - '.github/workflows/load-harness-ci.yml'
-  workflow_dispatch:  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      publish_to_ecr:
+        description: 'Publish the validated image to the configured ECR repository'
+        required: false
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      publish_to_ecr:
+        description: 'Publish the validated image to the configured ECR repository'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
 
 defaults:
   run:
@@ -33,11 +49,11 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: '3.11'
+          python-version: '3.13'
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
       - name: Set PYTHONPATH
         run: |
@@ -45,45 +61,93 @@ jobs:
 
       - name: Run unit tests
         run: |
-          pytest tests/ -v
+          pytest tests/ -v -W error::DeprecationWarning
 
   docker-build:
     name: Build & Test Container
     runs-on: ubuntu-latest
     needs: test
+    outputs:
+      image_tag: ${{ steps.image.outputs.image_tag }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set image tag
+        id: image
         run: |
+          set -euo pipefail
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-            echo "Building release image: ${GITHUB_REF_NAME}"
+            image_tag="${GITHUB_REF_NAME}"
+            if [[ ! "$image_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Release tags must use vMAJOR.MINOR.PATCH format." >&2
+              exit 1
+            fi
+          elif [ "${PUBLISH_TO_ECR}" = "true" ]; then
+            version=$(jq -er '.\"applications/load-harness\"' ../../.release-please-manifest.json)
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Invalid load-harness version in .release-please-manifest.json" >&2
+              exit 1
+            fi
+            image_tag="v$version"
           else
-            echo "IMAGE_TAG=pr-${GITHUB_SHA:0:8}" >> $GITHUB_ENV
-            echo "Building PR validation image"
+            image_tag="pr-${GITHUB_SHA:0:8}"
           fi
+
+          if [[ ! "$image_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Generated image tag is not valid for a container registry." >&2
+            exit 1
+          fi
+
+          echo "IMAGE_TAG=$image_tag" >> "$GITHUB_ENV"
+          echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
+          echo "Building image: $image_tag"
+        env:
+          PUBLISH_TO_ECR: ${{ inputs.publish_to_ecr || false }}
 
       - name: Build Docker image
         run: |
+          set -euo pipefail
           docker build \
-            --build-arg APP_VERSION=$IMAGE_TAG \
-            -t $ECR_REPOSITORY:$IMAGE_TAG .
+            --build-arg "APP_VERSION=$IMAGE_TAG" \
+            -t "$ECR_REPOSITORY:$IMAGE_TAG" .
           echo "✅ Image built: $ECR_REPOSITORY:$IMAGE_TAG (version: $IMAGE_TAG)"
 
       - name: Test Docker container
         run: |
-          # Start container in background
-          docker run -d --name test-container \
+          set -euo pipefail
+          container_name="load-harness-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d --name "$container_name" \
             -p 8080:8080 \
             -e PORT=8080 \
             -e ENVIRONMENT=ci \
-            -e APP_VERSION=$IMAGE_TAG \
-            $ECR_REPOSITORY:$IMAGE_TAG
+            -e "APP_VERSION=$IMAGE_TAG" \
+            "$ECR_REPOSITORY:$IMAGE_TAG"
 
-          # Wait for container to start
-          echo "Waiting for container to be ready..."
-          sleep 15
+          ready=false
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://localhost:8080/ready >/dev/null; then
+              ready=true
+              break
+            fi
+            if ! docker inspect --format '{{.State.Running}}' "$container_name" | grep -qx true; then
+              echo "Container exited before becoming ready." >&2
+              docker logs "$container_name"
+              exit 1
+            fi
+            echo "Waiting for readiness (attempt $attempt/30)..."
+            sleep 2
+          done
+
+          if [ "$ready" != true ]; then
+            echo "Container did not become ready within 60 seconds." >&2
+            docker logs "$container_name"
+            exit 1
+          fi
 
           # Test endpoints
           echo "Testing /health endpoint..."
@@ -97,13 +161,10 @@ jobs:
 
           echo "✅ All endpoints responding"
 
-          # Cleanup
-          docker stop test-container
-          docker rm test-container
-
       - name: Save image artifact
         run: |
-          docker save $ECR_REPOSITORY:$IMAGE_TAG | gzip > /tmp/image.tar.gz
+          set -euo pipefail
+          docker save "$ECR_REPOSITORY:$IMAGE_TAG" | gzip > /tmp/image.tar.gz
 
       - name: Upload image artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -119,6 +180,8 @@ jobs:
     defaults:
       run:
         working-directory: .
+    env:
+      IMAGE_TAG: ${{ needs.docker-build.outputs.image_tag }}
     steps:
       - name: Download image artifact
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -130,30 +193,61 @@ jobs:
         run: |
           docker load < /tmp/image.tar.gz
 
-      - name: Get image tag
-        run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-          else
-            echo "IMAGE_TAG=pr-${GITHUB_SHA:0:8}" >> $GITHUB_ENV
-          fi
-
       - name: Security scan (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: 'v0.74.0'
           image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           severity: CRITICAL,HIGH
           exit-code: 1
           format: table
           ignore-unfixed: true
 
+  publish-configuration:
+    name: ECR configuration
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish_to_ecr == true
+    permissions:
+      contents: read
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check AWS role
+        id: check
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          PUBLISH_TO_ECR: ${{ inputs.publish_to_ecr || false }}
+          SOURCE_REF: ${{ github.ref }}
+        run: |
+          if [ "$PUBLISH_TO_ECR" = "true" ] &&
+             [[ "$SOURCE_REF" != refs/tags/v* ]] &&
+             [ "$SOURCE_REF" != "refs/heads/main" ]; then
+            echo "::error::Manual ECR publishing is allowed only from main."
+            exit 1
+          fi
+
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### ECR publish skipped"
+              echo ""
+              echo "The image was built and scanned, but this credentials-free template has no AWS role."
+              echo "A configured private copy publishes release tags to ECR."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
   push-to-ecr:
     name: Push to ECR
     runs-on: ubuntu-latest
-    needs: security-scan
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [docker-build, security-scan, publish-configuration]
+    if: >-
+      (startsWith(github.ref, 'refs/tags/v') || inputs.publish_to_ecr == true) &&
+      needs.publish-configuration.outputs.configured == 'true'
     environment:
-      name: ${{ vars.ENVIRONMENT || 'staging' }}
+      name: staging
       url: https://github.com/${{ github.repository }}/deployments
     defaults:
       run:
@@ -161,6 +255,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      IMAGE_TAG: ${{ needs.docker-build.outputs.image_tag }}
     steps:
       - name: Download image artifact
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -171,7 +267,6 @@ jobs:
       - name: Load Docker image
         run: |
           docker load < /tmp/image.tar.gz
-          echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
@@ -187,21 +282,29 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          IMAGE_URI=$ECR_REGISTRY/${ECR_REPOSITORY}
+          set -euo pipefail
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY"
+
+          if aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "Image already exists and ECR tags are immutable: $IMAGE_URI:$IMAGE_TAG"
+            exit 0
+          fi
 
           echo "Tagging and pushing release image..."
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG $IMAGE_URI:$IMAGE_TAG
-          docker push $IMAGE_URI:$IMAGE_TAG
+          docker tag "$ECR_REPOSITORY:$IMAGE_TAG" "$IMAGE_URI:$IMAGE_TAG"
+          docker push "$IMAGE_URI:$IMAGE_TAG"
 
           echo "✅ Pushed $IMAGE_URI:$IMAGE_TAG"
 
-          echo "image_uri=$IMAGE_URI:$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image_uri=$IMAGE_URI:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
 # NOTE: Manifest updates are now handled by Flux Image Automation
 # The image-automation-controller detects new ECR images and commits
 # manifest updates automatically, eliminating CI race conditions.
-# See: https://github.com/your-org/infra-fleet/issues/145
 #
 # Old update-manifest job removed - CI now only builds and pushes images.
 # Flux handles: ECR scan -> ImagePolicy selection -> Git commit -> Cluster sync

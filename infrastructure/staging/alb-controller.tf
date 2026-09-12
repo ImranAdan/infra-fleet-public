@@ -8,10 +8,10 @@
 # See docs/Platform-Build-Roadmap.md for architectural guidance.
 # --------------------------------------------------------------------------------------------------
 
-# Data source for AWS Load Balancer Controller IAM policy
-# Using main branch for latest policy (includes ec2:GetSecurityGroupsForVpc required for controller v2.7+)
+# Match the IAM policy to the controller version shipped by Helm chart 3.5.0.
+# Never fetch this policy from a moving main branch during Terraform plan.
 data "http" "alb_controller_policy" {
-  url = "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json"
+  url = "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v3.5.0/docs/install/iam_policy.json"
 }
 
 resource "aws_iam_policy" "alb_controller" {

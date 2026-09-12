@@ -63,6 +63,12 @@ from load_harness.workers.cpu_worker import cpu_worker_target
 from load_harness.workers.memory_worker import memory_worker_target
 
 
+# Request handlers run inside an already multithreaded web process. Forking at
+# that point can inherit locked runtime state and is deprecated by Python 3.13.
+# Spawn gives each synthetic worker a clean interpreter instead.
+_PROCESS_CONTEXT = multiprocessing.get_context("spawn")
+
+
 def _get_available_cpu_cores() -> int:
     """
     Get the number of CPU cores available, respecting cgroup limits (K8s).
@@ -241,10 +247,10 @@ class LoadHarnessService:
         )
 
         # Create stop event for graceful termination
-        stop_event = multiprocessing.Event()
+        stop_event = _PROCESS_CONTEXT.Event()
 
         # Start memory worker process using the extracted worker target
-        process = multiprocessing.Process(
+        process = _PROCESS_CONTEXT.Process(
             target=memory_worker_target,
             args=(job_id, int(size_mb), duration_seconds, stop_event),
             name=job_id,
@@ -419,13 +425,13 @@ class LoadHarnessService:
         )
 
         # Create stop event for graceful termination
-        stop_event = multiprocessing.Event()
+        stop_event = _PROCESS_CONTEXT.Event()
 
         # Start worker processes (one per core) using the extracted worker target
         processes = []
         for i in range(cores):
             worker_id = f"{job_id}_worker_{i}"
-            p = multiprocessing.Process(
+            p = _PROCESS_CONTEXT.Process(
                 target=cpu_worker_target,
                 args=(worker_id, duration_seconds, intensity, stop_event),
                 name=worker_id,

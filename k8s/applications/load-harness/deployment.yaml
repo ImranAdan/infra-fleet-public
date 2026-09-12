@@ -21,6 +21,10 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "5000"
         prometheus.io/path: "/metrics"
+        # Runtime Secrets are created outside Git. A new rebuild revision makes
+        # key rotation produce a real pod rollout instead of leaving old values
+        # in existing processes.
+        infra-fleet.io/runtime-config-revision: "${RUNTIME_CONFIG_REVISION}"
     spec:
       # Defense in depth: Dockerfile already runs as non-root (USER app),
       # but K8s securityContext enforces it and adds additional controls
@@ -41,7 +45,7 @@ spec:
           # with a read-only root filesystem, provided gunicorn and tempfiles
           # have somewhere to write. See volumeMounts below.
           readOnlyRootFilesystem: true
-        image: 123456789012.dkr.ecr.eu-west-2.amazonaws.com/load-harness:v1.5.3 # {"$imagepolicy": "flux-system:load-harness"}
+        image: ${ECR_REGISTRY}/load-harness:v1.6.4 # {"$imagepolicy": "flux-system:load-harness"}
         volumeMounts:
         - name: tmp
           mountPath: /tmp
@@ -93,7 +97,7 @@ spec:
           failureThreshold: 5
         readinessProbe:
           httpGet:
-            path: /health
+            path: /ready
             port: 5000
           initialDelaySeconds: 5
           periodSeconds: 10

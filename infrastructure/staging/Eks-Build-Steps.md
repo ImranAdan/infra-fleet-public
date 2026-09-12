@@ -1,5 +1,9 @@
 # EKS Cluster Build Guide
 
+> Historical source-fleet runbook. Do not use it to bootstrap a repository.
+> The current supported path is `CONFIGURATION.md` and
+> `scripts/bootstrap-permanent.sh`.
+
 This guide provides step-by-step instructions for deploying an EKS cluster with public endpoint access and GitOps integration.
 
 **Important Notes**:
