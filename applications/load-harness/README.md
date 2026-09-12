@@ -9,7 +9,7 @@ A **synthetic workload generator** for Kubernetes platforms with a web-based das
 - **Web Dashboard** - Interactive UI for triggering and monitoring load tests
 - **Three Load Types** - CPU (single-pod), Cluster (distributed), Memory
 - **Real-time Metrics** - Live CPU, memory, pod count, and request rate
-- **Kubernetes-native** - HPA integration, Prometheus metrics, ALB ingress
+- **Kubernetes-native** - HPA integration, Prometheus metrics, and NGINX ingress through an AWS NLB
 - **Local & Cluster Modes** - Automatic behavior adaptation based on environment
 
 ---
@@ -33,7 +33,8 @@ LoadHarness supports optional API key authentication to protect endpoints.
 | `/apidocs`, `/apispec.json` | No (Swagger docs) |
 | `/ui/login` | No (login page) |
 | `/ui/*` | **Session required** (redirects to login) |
-| `/`, `/load/*`, `/metrics` | **API key required** |
+| `/`, `/load/*` | **API key required** |
+| `/metrics` | No (Prometheus scraping) |
 
 ### Enabling Authentication
 
@@ -73,7 +74,7 @@ curl -H "X-API-Key: your-key" http://localhost:8080/load/cpu/status
 
 ```bash
 cd applications/load-harness/local-dev
-docker compose up --build
+./dev.sh up
 ```
 
 **Access:**
@@ -87,11 +88,11 @@ docker compose up --build
 ### With Observability Stack
 
 ```bash
-docker compose --profile observability up --build
+./dev.sh up-full
 ```
 
 - Prometheus: http://localhost:9090
-- Grafana: http://localhost:3000 (admin/admin)
+- Grafana: http://localhost:3000 (`admin` / `admin`, local development only)
 
 ---
 
@@ -152,7 +153,9 @@ Distribute work across all pods via Kubernetes Service to trigger HPA scaling.
 - **Stable (25/1M):** Triggers HPA scaling, all pods remain healthy, no 503 errors
 - **Chaos (50/2M):** Saturates all pods, causes liveness probe failures, pods killed, 503 errors
 
-> ⚠️ **Note:** Max parameters (50 concurrent / 2M iterations) will overwhelm pods to the point where health probes timeout, causing Kubernetes to kill pods and ALB to return 503. Use for chaos/resilience testing only.
+> ⚠️ **Note:** Max parameters (50 concurrent / 2M iterations) can overwhelm
+> pods to the point where health probes time out, causing Kubernetes to restart
+> pods and the ingress endpoint to return 503. Use for resilience testing only.
 
 ---
 
@@ -384,13 +387,17 @@ resources:
 | Probe | Path | Initial Delay | Period |
 |-------|------|---------------|--------|
 | Liveness | `/health` | 30s | 10s |
-| Readiness | `/health` | 5s | 10s |
+| Readiness | `/ready` | 5s | 10s |
 
 ### Ingress
 
-- Type: AWS ALB (Application Load Balancer)
+- Type: community NGINX ingress exposed through an AWS NLB
 - Scheme: internet-facing
 - Path: `/` (all traffic routed to load-harness)
+
+The community ingress controller is retired and receives no security fixes.
+Treat this cluster route as a private preview until the planned Gateway API
+migration is live-cycle tested; local development is unaffected.
 
 ---
 
@@ -469,7 +476,7 @@ docker run -p 8080:8080 -e ENVIRONMENT=production load-harness:local
 
 1. **HPA Validation** - Trigger CPU load to test horizontal pod autoscaling
 2. **Observability Testing** - Verify Prometheus scraping and Grafana dashboards
-3. **Resource Tuning** - Find optimal CPU/memory requests and limits
+3. **Resource Tuning** - Compare CPU/memory request and limit trade-offs
 4. **Chaos Engineering** - Controlled stress scenarios for resilience testing
 5. **Load Distribution** - Verify Kubernetes Service load balancing
 

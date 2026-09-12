@@ -18,7 +18,10 @@ NC='\033[0m' # No Color
 # Configuration
 GRAFANA_URL="${GRAFANA_URL:-http://localhost:3000}"
 GRAFANA_USER="${GRAFANA_USER:-admin}"
-GRAFANA_PASSWORD="${GRAFANA_PASSWORD:-prom-operator}"
+if [ -z "${GRAFANA_PASSWORD:-}" ]; then
+    GRAFANA_PASSWORD=$(kubectl get secret -n observability grafana-admin-credentials \
+        -o jsonpath='{.data.admin-password}' | base64 -d)
+fi
 
 # Dashboard files to import
 DASHBOARDS=(

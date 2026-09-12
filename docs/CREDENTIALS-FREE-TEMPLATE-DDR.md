@@ -3,7 +3,7 @@
 
 **Date:** 2026-09-10
 **Author:** Imran Adan
-**Status:** Proposed
+**Status:** Accepted
 **Decision Type:** Architecture / Security / CI-CD Execution Model
 
 ---
@@ -124,7 +124,7 @@ Accepted, deliberately:
 
 Gained:
 
-- No secret in this repository can leak, because there is none.
+- No deployment credential is stored in the public checkout.
 - Public workflow logs cannot expose account identifiers.
 - `pull_request` workflows carry no privilege worth escalating to.
 - Adopters inherit a template that grants no trust by default.
@@ -144,7 +144,7 @@ into any account, which is the property that makes it safe to publish.
 
 ---
 
-## Open decision - how credential-dependent workflows behave here
+## Credential-dependent workflow behavior
 
 The workflows that need credentials must not silently appear to work. Two ways
 to achieve that:
@@ -159,29 +159,27 @@ a pointer to the setup documentation. When the configuration is *partially*
 present, it fails loudly - that is a genuine misconfiguration, not a template
 running as designed.
 
-**Recommendation: skip when absent, fail when partial.** It preserves the safety
+**Decision: skip when absent, fail when partial.** It preserves the safety
 property - nothing provisions without explicit credentials - while keeping a red
-check meaningful. The preflight job added in #13 already implements the
-"fail when partial" half.
-
-This needs a decision before implementation.
+check meaningful. Static validation still runs without credentials. Manually
+dispatched destructive or provisioning workflows fail preflight when required
+configuration is absent because the dispatch itself is an explicit request to
+perform the operation.
 
 ---
 
-## Implementation sequence
+## Implementation status
 
-Ordered so that broad trust and live credentials never coexist:
+Implemented in this order so broad trust and live credentials never coexist:
 
-1. **Remove `repo:...:*` from the OIDC trust subject.** Worth doing regardless
-   of everything else, and safe to do now while this repository holds no
-   secrets.
-2. **Decide the skip-versus-fail behaviour above.**
-3. **Parameterise identifying values.** `cloud {}` driven by
-   `TF_CLOUD_ORGANIZATION` and `TF_WORKSPACE`; organisation, repository,
-   domain and admin principals as variables with no defaults.
-4. **Add `config.example.env`, a bootstrap script and a config doctor**, so
-   adoption is one file and one command rather than a checklist.
-5. **Document the local bootstrap** as the first step of adoption.
+1. `repo:...:*` was replaced by exact branch and GitHub Environment subjects.
+2. Automatic workflows now skip only when deployment configuration is wholly
+   absent and reject partial configuration.
+3. Repository identity and optional EKS administrators are Terraform inputs;
+   registry, hostname and ACME values reach Flux through a ConfigMap.
+4. `config.example.env` and a guarded bootstrap script make the initial plan
+   and apply repeatable.
+5. `CONFIGURATION.md` is the authoritative adoption path.
 
 ---
 
@@ -189,5 +187,6 @@ Ordered so that broad trust and live credentials never coexist:
 
 - How the private repository consumes this template - fork and merge, subtree,
   reusable workflows, or a published module. That is a separate decision.
-- Whether the removed workflows are deleted from this repository or retained in
-  a disabled state. Depends on the skip-versus-fail decision above.
+- Whether a future, separately scoped read-only role should allow cloud-backed
+  plans on pull requests. The deployment role deliberately does not trust pull
+  request OIDC subjects.

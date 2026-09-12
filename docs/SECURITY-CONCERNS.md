@@ -2,6 +2,11 @@
 
 This document tracks security findings, implemented mitigations, and outstanding concerns for the infra-fleet platform.
 
+> This is a point-in-time audit trail, not setup guidance. Findings below keep
+> their original wording for provenance, with current dispositions added where
+> later changes superseded them. Use [SECURITY.md](../SECURITY.md) and
+> [CONFIGURATION.md](../CONFIGURATION.md) for the supported deployment boundary.
+
 ## Static Code Security Audit
 
 Completed: December 2025
@@ -211,7 +216,9 @@ htmlcov/
 
 **Finding:** Traffic unencrypted between client and NLB.
 
-**Status:** Deferred - requires cert-manager setup and domain configuration.
+**Current disposition:** Optional TLS is implemented with cert-manager and a
+configured hostname. The remaining blocker is the retired ingress controller;
+do not expose it as a new public deployment.
 
 **Options:**
 - Deploy cert-manager with Let's Encrypt
@@ -224,7 +231,9 @@ htmlcov/
 
 **Finding:** No approval gates on destructive workflows (nightly-destroy).
 
-**Status:** Accepted risk - stack is ephemeral and can be rebuilt via `rebuild-stack.yml`.
+**Current disposition:** Resolved. Cleanup and Terraform destroy use the
+protected `staging` environment, and manual dispatch requires the exact target
+confirmation `destroy staging`.
 
 ---
 
@@ -260,7 +269,7 @@ htmlcov/
 | M3 | imagePullPolicy not Always | Backlog |
 | M4 | API_KEY secret optional | By design (dev mode) |
 | M5 | EKS public API | Accepted risk |
-| M8 | Grafana password in plan | Backlog |
+| M8 | Grafana password in plan | Resolved: runtime Secret outside Terraform |
 
 ---
 
@@ -307,7 +316,7 @@ mounts for `/tmp` and `/home/app/.gunicorn`. Without them gunicorn logs
 **H2 — No seccomp profile** (`AVD-KSV-0104`). Fixed: `RuntimeDefault` at pod
 level.
 
-**M1 — Third-party actions are pinned to mutable tags**
+**M1 — Third-party actions were pinned to mutable tags (resolved)**
 
 Ten of twelve are pinned by tag, two by commit. A tag can be moved to point at
 new code, which then runs with whatever credentials the job holds. This is not
@@ -317,24 +326,23 @@ outage; the same mechanism is available for a compromise.
 
 `sha_pinning_required` is `false` at repository level.
 
-Recommendation: pin by commit with the version in a trailing comment, as
-`create-github-app-token` and `fluxcd/flux2/action` already are, and enable the
-repository setting.
+Current disposition: all third-party action references are pinned by full
+commit SHA with a version comment. `scripts/validate-template-contract.sh`
+rejects newly introduced version-tag references.
 
 **M2 — `iam:PassRole` without a condition** (`AVD-AWS-0342`)
 
-Present on `main`. Already fixed in an open pull request, which adds an
-`iam:PassedToService` condition limiting it to the services this stack
-provisions. Not yet merged at the time of this audit.
+Present in the current stack. A narrower proposal exists, but it has not been
+validated through a complete AWS apply/destroy cycle and should not be treated
+as approved merely because it is open. IAM scoping remains follow-up work.
 
-**L1 — Dependabot security updates disabled.** Version updates are configured
-in `.github/dependabot.yml`, but security updates are a separate setting and
-are off.
+**L1 — Dependabot security updates are repository state.** Version updates are
+configured in `.github/dependabot.yml`, but alerts and security-update pull
+requests are separate GitHub settings that every adopter must verify.
 
-**L2 — Nine of thirteen workflows declare no top-level `permissions`.** They
-inherit the repository default, which is `read`, so the effective posture is
-correct. Declaring it per workflow makes it explicit and survives a change to
-the repository default.
+**L2 — Workflows lacked a top-level permission baseline (resolved).** Each
+workflow now declares its baseline explicitly; jobs add only the capabilities
+they require. The template contract rejects workflows that omit the baseline.
 
 **L3 — No `.gitleaks.toml`.** An adopter running a secret scan gets six false
 positives from the test fixtures with nothing recording that they are expected.

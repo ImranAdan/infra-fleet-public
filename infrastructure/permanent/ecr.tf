@@ -1,6 +1,6 @@
 # ECR repository for application images (long-lived)
 #
-# This lives in the permanent stack so that nightly destroy/rebuild cycles
+# This lives in the permanent stack so that staging destroy/rebuild cycles
 # in staging do not remove published images.
 
 removed {

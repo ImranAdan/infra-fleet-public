@@ -1,5 +1,5 @@
 # Permanent Infrastructure - Never Destroyed
-# This configuration contains resources that persist across nightly destroy cycles
+# This configuration contains resources that persist across staging destroy cycles
 
 terraform {
   # Require Terraform 1.14.x or higher (but less than 2.0)
@@ -8,7 +8,8 @@ terraform {
   required_version = ">= 1.14.0, < 2.0.0"
 
   # Terraform Cloud backend configuration
-  # State is stored remotely and runs can execute on Terraform Cloud infrastructure
+  # State is stored remotely. Workspaces use Local execution so AWS calls run
+  # either on the operator's machine during bootstrap or on a GitHub runner.
   cloud {
     # organization and workspace come from TF_CLOUD_ORGANIZATION and
     # TF_WORKSPACE, set by .github/actions/setup-aws-terraform.

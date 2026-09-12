@@ -1,5 +1,9 @@
 # EKS Cluster Design Considerations
 
+> Historical source-fleet analysis. Version, cost, and lifecycle figures below
+> are not current template guarantees; see `CONFIGURATION.md` and the active
+> Terraform for the supported deployment.
+
 This document covers the architectural decisions, cost optimization strategies, and lessons learned during the development of our private EKS cluster infrastructure.
 
 ## Architecture Evolution

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch, Mock
 
 import pytest
 
+from load_harness.constants import PROCESS_TERMINATE_TIMEOUT
 from load_harness.services import (
     JobManager,
     PrometheusClient,
@@ -144,6 +145,20 @@ class TestJobManager:
         assert manager.get_active_count() == 1
         assert manager.get_active_count(job_type="cpu") == 1
         assert manager.get_active_count(job_type="memory") == 0
+
+    @patch("load_harness.services.job_manager.time.sleep", return_value=None)
+    def test_cleanup_reaps_completed_process(self, _mock_sleep):
+        """Natural worker completion is joined and its process handle closed."""
+        manager = JobManager()
+        process = MagicMock()
+        process.is_alive.return_value = False
+
+        manager.register_job("job-1", "cpu", {}, [process], Event())
+        manager._cleanup_job("job-1", 0, None)
+
+        process.join.assert_called_once_with(timeout=PROCESS_TERMINATE_TIMEOUT)
+        process.close.assert_called_once_with()
+        assert manager.get_job("job-1")["status"] == "completed"
 
 
 # =============================================================================

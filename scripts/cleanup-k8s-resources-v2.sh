@@ -21,6 +21,21 @@ CLUSTER_NAME="${1:-staging}"
 AWS_REGION="${2:-eu-west-2}"
 DRY_RUN="${3:-false}"
 
+if [[ ! "$CLUSTER_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
+   [[ ! "$AWS_REGION" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]; then
+    echo "Invalid EKS cluster name or AWS region." >&2
+    exit 2
+fi
+
+case "$DRY_RUN" in
+    false|live) DRY_RUN=false ;;
+    dry-run) ;;
+    *)
+        echo "Mode must be dry-run or live." >&2
+        exit 2
+        ;;
+esac
+
 echo "🧹 Hybrid Kubernetes Resource Cleanup Script (v2)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Cluster: $CLUSTER_NAME"

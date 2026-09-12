@@ -5,7 +5,7 @@
 #
 # This architectural change was made because:
 # 1. The Flux provider requires a live EKS cluster to initialize
-# 2. When the cluster is down (after nightly destroy), terraform plan/apply would fail
+# 2. When the cluster is down (after a manual destroy), terraform plan/apply would fail
 # 3. Moving Flux to the rebuild workflow eliminates provider initialization issues
 # 4. This matches Flux's GitOps philosophy - its state belongs in Git, not Terraform
 #

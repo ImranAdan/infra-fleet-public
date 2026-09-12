@@ -30,7 +30,9 @@ spec:
   chart:
     spec:
       chart: ingress-nginx
-      version: "4.x"
+      # Final release line is pinned because this upstream is retired. This
+      # controller must be removed by the Gateway API migration, not floated.
+      version: "4.15.1"
       sourceRef:
         kind: HelmRepository
         name: ingress-nginx
