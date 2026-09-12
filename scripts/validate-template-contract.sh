@@ -27,7 +27,8 @@ if git grep -n -E '^[[:space:]]*(- )?uses: [^./][^ ]*@v?[0-9]+(\.[0-9]+)*([[:spa
 fi
 
 if git grep -n -E 'https://raw\.githubusercontent\.com/[^/]+/[^/]+/(main|master)/|/releases/latest/' \
-  -- .github infrastructure k8s ops scripts; then
+  -- .github infrastructure k8s ops scripts \
+  ':(exclude)scripts/validate-template-contract.sh'; then
   echo "Executable template files must not fetch from moving branches or latest-release URLs." >&2
   failed=true
 fi
