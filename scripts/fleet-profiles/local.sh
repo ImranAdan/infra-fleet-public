@@ -9,7 +9,7 @@ FLEET_STATE="$(git rev-parse --path-format=absolute --git-common-dir)/fleet/loca
 FLEET_OWNER=$(printf '%s' "$(git rev-parse --path-format=absolute --git-common-dir)" | git hash-object --stdin)
 FLEET_NODE_IMAGE='kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f'
 FLEET_REGISTRY_IMAGE='registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e'
-FLEET_GIT_IMAGE='alpine/git:2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26'
+FLEET_GIT_IMAGE=infra-fleet-local-git:2.49.1
 
 kctl() { kubectl --kubeconfig "$FLEET_STATE/kubeconfig" --context "$FLEET_CONTEXT" "$@"; }
 fctl() { flux --kubeconfig "$FLEET_STATE/kubeconfig" --context "$FLEET_CONTEXT" "$@"; }
@@ -127,6 +127,7 @@ local_calico() {
 
 local_start_services() {
   local node git_ip
+  docker build -t "$FLEET_GIT_IMAGE" "$fleet_root/platform/local/git-server"
   if docker inspect "$FLEET_REGISTRY" >/dev/null 2>&1; then
     local_owned_container "$FLEET_REGISTRY"
     docker start "$FLEET_REGISTRY" >/dev/null
@@ -146,6 +147,11 @@ EOF
   done
   if docker inspect "$FLEET_GIT" >/dev/null 2>&1; then
     local_owned_container "$FLEET_GIT"
+    if [ "$(docker inspect --format '{{.Image}}' "$FLEET_GIT")" != "$(docker image inspect --format '{{.Id}}' "$FLEET_GIT_IMAGE")" ]; then
+      docker rm -f "$FLEET_GIT" >/dev/null
+    fi
+  fi
+  if docker inspect "$FLEET_GIT" >/dev/null 2>&1; then
     docker start "$FLEET_GIT" >/dev/null
   else
     docker run -d --name "$FLEET_GIT" --network kind \
@@ -155,6 +161,7 @@ EOF
       -v "$FLEET_STATE/source:/srv:ro" --entrypoint git "$FLEET_GIT_IMAGE" \
       daemon --reuseaddr --export-all --base-path=/srv --listen=0.0.0.0 --port=9418 >/dev/null
   fi
+  sleep 1
   git_ip=$(docker inspect --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "$FLEET_GIT")
   [[ "$git_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Missing local Git service address.' || return 1
   kctl apply -f - <<EOF

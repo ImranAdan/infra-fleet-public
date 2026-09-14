@@ -1,0 +1,63 @@
+name: Local Kubernetes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'fleet'
+      - 'platform/**'
+      - 'k8s/**'
+      - 'policies/**'
+      - 'scripts/fleet-profiles/**'
+      - 'scripts/render-profile.sh'
+      - 'scripts/install-profile-tools.sh'
+      - 'tests/profiles/**'
+      - 'applications/load-harness/**'
+      - '.github/workflows/local-kubernetes.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fleet'
+      - 'platform/**'
+      - 'k8s/**'
+      - 'policies/**'
+      - 'scripts/fleet-profiles/**'
+      - 'scripts/render-profile.sh'
+      - 'scripts/install-profile-tools.sh'
+      - 'tests/profiles/**'
+      - 'applications/load-harness/**'
+      - '.github/workflows/local-kubernetes.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Flux, Kyverno and canary acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install pinned tools
+        run: |
+          ./scripts/install-profile-tools.sh "$RUNNER_TEMP/fleet-bin" --local
+          echo "$RUNNER_TEMP/fleet-bin" >> "$GITHUB_PATH"
+
+      - name: Start the local profile
+        run: ./fleet up --profile local
+
+      - name: Verify local Kubernetes behaviour
+        run: ./fleet test --profile local
+
+      - name: Diagnose failure
+        if: failure()
+        run: |
+          ./fleet status --profile local || true
+          kubectl --kubeconfig .git/fleet/local/kubeconfig --context kind-infra-fleet-local get pods -A || true
+          kubectl --kubeconfig .git/fleet/local/kubeconfig --context kind-infra-fleet-local describe canary load-harness -n applications || true
+
+      - name: Stop the local profile
+        if: always()
+        run: ./fleet down --profile local

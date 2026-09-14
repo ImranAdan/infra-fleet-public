@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-test-bad-rollout
+  namespace: applications
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: fleet-test-bad-rollout}
+  template:
+    metadata:
+      labels: {app: fleet-test-bad-rollout}
+    spec:
+      containers:
+        - name: app
+          image: fleet-local-registry:5000/load-harness:git-fixture
+          readinessProbe:
+            httpGet: {path: /ready, port: 5000}

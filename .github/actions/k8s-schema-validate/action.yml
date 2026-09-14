@@ -19,6 +19,12 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Install pinned profile renderer
+      shell: bash
+      run: |
+        ./scripts/install-profile-tools.sh "$RUNNER_TEMP/fleet-bin"
+        echo "$RUNNER_TEMP/fleet-bin" >> "$GITHUB_PATH"
+
     - name: Install kubeconform
       shell: bash
       run: |

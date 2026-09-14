@@ -49,15 +49,16 @@ fi
 # Flux advances the deployment only after ECR contains the release. These tags
 # legitimately differ while a release is being built or deployed.
 if ! grep -Eq \
-  '^[[:space:]]+image: \$\{ECR_REGISTRY\}/load-harness:v[0-9]+\.[0-9]+\.[0-9]+[[:space:]]+# \{"\$imagepolicy": "flux-system:load-harness:tag"\}[[:space:]]*$' \
-  k8s/applications/load-harness/deployment.yaml; then
-  echo "The deployment must retain the ECR substitution, a release tag, and the Flux tag setter." >&2
+  '^[[:space:]]+newTag: v[0-9]+\.[0-9]+\.[0-9]+[[:space:]]+# \{"\$imagepolicy": "flux-system:load-harness:tag"\}[[:space:]]*$' \
+  k8s/profiles/aws-staging/applications/kustomization.yaml; then
+  echo "The AWS profile must retain a release tag and the Flux tag setter." >&2
   failed=true
 fi
 
 rendered_root=$(mktemp -d)
 trap 'rm -rf "$rendered_root"' EXIT
 ./scripts/render-k8s-for-validation.sh "$rendered_root/k8s"
+./tests/profiles/facade.sh
 
 while IFS= read -r -d '' shell_file; do
   bash -n "$shell_file"

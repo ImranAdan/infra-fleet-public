@@ -4,7 +4,7 @@
 
 **A staging Kubernetes platform template, with GitOps delivery, observable workloads, and an intent-driven advisor.**
 
-EKS · GitOps · canary deployments with automatic rollback · Prometheus and Grafana · DORA metrics · one-command teardown to keep the bill honest
+Local Kubernetes or EKS · Flux GitOps · Kyverno admission policies · canary deployments with automatic rollback · Prometheus and Grafana
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.35-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
@@ -27,18 +27,30 @@ See [connecting the advisor](docs/ADVISOR-INTEGRATION.md).
 
 ---
 
-> **Deployment preview:** the current canary path still depends on the retired
+> **AWS deployment preview:** the AWS canary path still depends on the retired
 > community `ingress-nginx` controller. Existing artifacts remain available,
 > but upstream no longer ships bug or security fixes. Use the local path freely;
 > do not expose a new public deployment until the planned Gateway API migration
 > has been completed and validated through an apply, rollout, rollback, and
-> destroy cycle.
+> destroy cycle. Local Kubernetes uses Envoy Gateway and Gateway API.
 
 ---
 
 ## Try it locally, first
 
-Start with the Load Harness and monitoring stack in Docker Compose.
+Choose a [deployment profile](docs/DEPLOYMENT-PROFILES.md). Local Kubernetes runs
+Flux, Kyverno, Flagger, Envoy Gateway and monitoring on kind, sharing application
+resources and delivery controls with AWS staging.
+
+```bash
+git clone https://github.com/ImranAdan/infra-fleet-public.git
+cd infra-fleet-public
+./fleet up --profile local
+./fleet access --profile local --service app
+```
+
+See the guide for prerequisites, login credentials, acceptance checks and
+teardown. For faster application-only development, use Docker Compose:
 
 ```bash
 git clone https://github.com/ImranAdan/infra-fleet-public.git
@@ -64,10 +76,10 @@ Fork this and you have a platform that does the following, on day one:
 
 | | |
 |---|---|
-| **Models staged delivery** | A release or rebuild tests, scans and publishes an image, Flux picks it up, and Flagger evaluates a canary; the current ingress path remains a non-public preview |
+| **Models staged delivery** | Choose local Kubernetes or AWS staging; Flux reconciles the selected profile and Flagger evaluates a canary. AWS routing remains a non-public preview |
 | **Exposes useful signals** | Prometheus, Grafana and an explicitly heuristic DORA-signal pipeline for deployment events, lead time and failures |
 | **Makes cost visible** | Spot instances, a slim Flux install, nginx ingress, and a manual teardown workflow for when you are not using it |
-| **Proves itself in CI** | Terraform validated and scanned, manifests schema-checked, Kyverno policies enforced, images scanned with Trivy, commit messages linted, releases cut by release-please |
+| **Proves itself in CI** | Both profiles rendered and checked, local Flux/Kyverno/canary behaviour exercised, Terraform and images scanned, commits linted |
 | **Connects intent to improvement** | Infra Fleet Advisor evaluates declared positions against versioned repository evidence and proposes work for review |
 
 ---

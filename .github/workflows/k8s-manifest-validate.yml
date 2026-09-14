@@ -16,12 +16,16 @@ on:
       - 'k8s/**'
       - 'policies/**'
       - 'tests/policies/**'
+      - 'scripts/render-profile.sh'
+      - 'scripts/render-k8s-for-validation.sh'
   push:
     branches: [main]
     paths:
       - 'k8s/**'
       - 'policies/**'
       - 'tests/policies/**'
+      - 'scripts/render-profile.sh'
+      - 'scripts/render-k8s-for-validation.sh'
 
 permissions:
   contents: read
@@ -57,6 +61,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Validate Kubernetes schemas
+        # Render effective profiles rather than validating unresolved bases.
         uses: ./.github/actions/k8s-schema-validate
         with:
           path: k8s/
@@ -71,6 +76,9 @@ jobs:
     name: Kyverno Policies
     needs: k8s-schema
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [local, aws-staging]
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -78,8 +86,7 @@ jobs:
       - name: Validate against Kyverno policies
         uses: ./.github/actions/kyverno-validate
         with:
-          policy-path: policies/
-          resource-path: k8s/applications/
+          profile: ${{ matrix.profile }}
 
       - name: Test rollout policy regression cases
         run: |

@@ -1,5 +1,9 @@
 # Infra Fleet Documentation
 
+Choose [local Kubernetes or AWS staging](DEPLOYMENT-PROFILES.md). The profiles
+share application resources and delivery controls; their provisioning,
+networking and registry restrictions are explicit.
+
 This is the documentation for **Infra Fleet**, a template for an AWS
 EKS platform and the sample application — the Harness — that runs on it.
 
