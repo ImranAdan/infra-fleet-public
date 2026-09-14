@@ -13,11 +13,23 @@ echo ""
 
 # Wait for Grafana to be ready
 echo "⏳ Waiting for Grafana to be ready..."
-until curl -s -f -o /dev/null "${GRAFANA_URL}/api/health"; do
+grafana_ready=false
+for _ in {1..60}; do
+  if curl -s -f -o /dev/null "${GRAFANA_URL}/api/health"; then
+    grafana_ready=true
+    break
+  fi
     printf '.'
     sleep 2
 done
 echo ""
+
+if [ "$grafana_ready" != "true" ]; then
+  echo "❌ Grafana did not become ready within two minutes."
+  echo "   Inspect it with: ./local-dev/dev.sh logs grafana"
+  exit 1
+fi
+
 echo "✅ Grafana is ready!"
 echo ""
 

@@ -18,8 +18,8 @@ jobs:
     steps:
       # A GitHub App installation token, unlike GITHUB_TOKEN, triggers other
       # workflows. Without it the tag release-please pushes does not start
-      # Load Harness CI, and the release pull request it opens sits at
-      # "action_required" until someone approves the run by hand.
+      # Load Harness CI, and the release pull request does not trigger the
+      # normal pull_request checks.
       #
       # Optional on purpose: if the App secrets are absent this step is
       # skipped and the job falls back to GITHUB_TOKEN, which works for
@@ -37,6 +37,6 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          # Preference order: App installation token, then a PAT if one was
-          # ever configured, then the job's own GITHUB_TOKEN.
-          token: ${{ steps.app-token.outputs.token || secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # Prefer the short-lived App installation token, then fall back to
+          # the job's own GITHUB_TOKEN for a manual release path.
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}

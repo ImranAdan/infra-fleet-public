@@ -1,37 +1,58 @@
-name: Test Destroy Cleanup (Safe)
+name: Inspect or Clean Staging Resources (Manual)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Test mode'
+        description: 'Dry-run reports resources; live deletes staging Kubernetes-managed resources'
         required: true
         default: 'dry-run'
         type: choice
         options:
           - dry-run
-          - live-cleanup-only
-      cluster_name:
-        description: 'Cluster name'
+          - live
+      confirm_live_cleanup:
+        description: 'Required confirmation when mode is live'
         required: false
-        default: 'staging'
-        type: string
-      aws_region:
-        description: 'AWS region'
-        required: false
-        default: 'eu-west-2'
-        type: string
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
 
 jobs:
   test-cleanup:
     runs-on: ubuntu-latest
+    environment: staging
     permissions:
       id-token: write   # Required for OIDC authentication
       contents: read    # Required to checkout code
     env:
-      AWS_REGION: ${{ inputs.aws_region }}
+      AWS_REGION: eu-west-2
+      CLUSTER_NAME: staging
 
     steps:
+      - name: Verify cleanup request
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          MODE: ${{ inputs.mode }}
+          CONFIRMED: ${{ inputs.confirm_live_cleanup }}
+          REQUEST_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REQUEST_REF" != "refs/heads/main" ]; then
+            echo "::error::Cleanup must be dispatched from main."
+            exit 1
+          fi
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "::error::AWS_GITHUB_ACTIONS_ROLE_ARN is not configured. See CONFIGURATION.md."
+            exit 1
+          fi
+          if [ "$MODE" = "live" ] && [ "$CONFIRMED" != "true" ]; then
+            echo "::error::Live cleanup requires confirm_live_cleanup."
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -45,13 +66,15 @@ jobs:
       - name: Run Kubernetes cleanup
         uses: ./.github/actions/cleanup-kubernetes-resources
         with:
-          cluster-name: ${{ inputs.cluster_name }}
-          aws-region: ${{ inputs.aws_region }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          aws-region: ${{ env.AWS_REGION }}
           mode: ${{ inputs.mode }}
           run-verification: 'true'
 
       - name: Important Notice
         if: always()
+        env:
+          MODE: ${{ inputs.mode }}
         run: |
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -59,10 +82,10 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
 
-          if [ "${{ inputs.mode }}" == "dry-run" ]; then
+          if [ "$MODE" = "dry-run" ]; then
             echo "   DRY RUN mode - No actual changes were made"
             echo ""
-            echo "   To actually delete resources, run again with mode: live-cleanup-only"
+            echo "   To delete staging resources, run again with mode: live and confirm the cleanup"
           else
             echo "   LIVE CLEANUP completed"
             echo ""

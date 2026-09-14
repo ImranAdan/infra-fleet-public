@@ -33,12 +33,12 @@ spec:
     - name: flagger
       namespace: flux-system
   interval: 1h
-  # Deploy to applications namespace where the API key secret exists
+  # Deploy alongside the sample application.
   targetNamespace: applications
   chart:
     spec:
       chart: loadtester
-      version: "0.x"
+      version: "0.39.0"
       sourceRef:
         kind: HelmRepository
         name: flagger
@@ -59,15 +59,3 @@ spec:
     # Command timeout - allows longer load tests
     cmd:
       timeout: 5m
-
-    # Mount API key secret for authenticated load tests
-    # Note: Chart uses 'volumes' not 'extraVolumes'
-    volumes:
-      - name: api-key
-        secret:
-          secretName: load-harness-api-key
-
-    volumeMounts:
-      - name: api-key
-        mountPath: /etc/loadtester/secrets
-        readOnly: true

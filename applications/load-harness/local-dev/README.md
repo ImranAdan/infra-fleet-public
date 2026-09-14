@@ -7,13 +7,10 @@ This directory contains everything needed for local development of the Load Harn
 ```bash
 # From load-harness/ directory:
 
-# 1. Start the full stack (app + Prometheus + Grafana)
+# 1. Start the full stack and import the Grafana dashboards
 ./local-dev/dev.sh up-full
 
-# 2. Setup Grafana (imports dashboard automatically)
-./local-dev/dev.sh setup
-
-# 3. Open Grafana and view metrics
+# 2. Open Grafana and view metrics
 open http://localhost:3000
 # Login: admin / admin
 ```
@@ -60,7 +57,8 @@ local-dev/
 
 ### Setup Grafana
 
-After starting with `up-full`, run:
+`up-full` runs this setup automatically. To repeat it after changing a
+dashboard, run:
 
 ```bash
 ./local-dev/dev.sh setup

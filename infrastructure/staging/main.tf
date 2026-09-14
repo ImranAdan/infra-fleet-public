@@ -5,7 +5,8 @@ terraform {
   required_version = ">= 1.14.0, < 2.0.0"
 
   # Terraform Cloud backend configuration
-  # State is stored remotely and runs can execute on Terraform Cloud infrastructure
+  # State is stored remotely. The workspace uses Local execution so AWS calls
+  # run on the GitHub runner after it assumes the repository's OIDC role.
   cloud {
     # organization and workspace come from TF_CLOUD_ORGANIZATION and
     # TF_WORKSPACE, set by .github/actions/setup-aws-terraform.
@@ -27,10 +28,6 @@ terraform {
     random = {
       source  = "hashicorp/random"
       version = "~> 3.1"
-    }
-    cloudflare = {
-      source  = "cloudflare/cloudflare"
-      version = "~> 4.0"
     }
     # Note: Flux-related providers (flux, kubernetes, kubectl, github, tls) have been removed.
     # Flux is now bootstrapped outside of Terraform via the rebuild-stack.yml workflow.

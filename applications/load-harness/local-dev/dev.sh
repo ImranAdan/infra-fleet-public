@@ -55,10 +55,7 @@ case "${1:-help}" in
     echo "📊 Prometheus: http://localhost:9090"
     echo "📈 Grafana: http://localhost:3000"
     echo ""
-    echo "⏳ Waiting for services to be ready..."
-    sleep 5
-    echo ""
-    echo "💡 Run './local-dev/dev.sh setup' to configure Grafana"
+    (cd "$SCRIPT_DIR" && ./setup-grafana.sh)
     ;;
 
   down)
@@ -98,8 +95,7 @@ case "${1:-help}" in
     echo "  help        Show this help"
     echo ""
     echo "Quick Start:"
-    echo "  1. ./local-dev/dev.sh up-full   # Start everything"
-    echo "  2. ./local-dev/dev.sh setup     # Configure Grafana"
-    echo "  3. Open http://localhost:3000    # View dashboards"
+    echo "  1. ./local-dev/dev.sh up-full   # Start and configure everything"
+    echo "  2. Open http://localhost:3000    # View dashboards"
     ;;
 esac

@@ -135,6 +135,7 @@ ENV/
 .env.local
 .env.*.local
 .secrets
+/config.env
 
 # Testing
 .pytest_cache/

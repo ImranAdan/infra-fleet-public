@@ -43,13 +43,17 @@ runs:
     - name: Pre-cleanup verification
       if: inputs.run-verification == 'true'
       shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
+        AWS_REGION_NAME: ${{ inputs.aws-region }}
       run: |
+        set -euo pipefail
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "PRE-CLEANUP STATE"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         if [ -f scripts/verify-cleanup-resources.sh ]; then
           chmod +x scripts/verify-cleanup-resources.sh
-          ./scripts/verify-cleanup-resources.sh ${{ inputs.cluster-name }} ${{ inputs.aws-region }} || true
+          ./scripts/verify-cleanup-resources.sh "$CLUSTER_NAME" "$AWS_REGION_NAME" || true
         else
           echo "Verification script not found, skipping..."
         fi
@@ -57,9 +61,19 @@ runs:
     - name: Run cleanup script
       id: cleanup
       shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
+        AWS_REGION_NAME: ${{ inputs.aws-region }}
+        CLEANUP_MODE: ${{ inputs.mode }}
       run: |
+        set -euo pipefail
+        if [[ ! "$CLUSTER_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
+           [[ ! "$AWS_REGION_NAME" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]; then
+          echo "Invalid EKS cluster name or AWS region." >&2
+          exit 2
+        fi
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "RUNNING CLEANUP (mode: ${{ inputs.mode }})"
+        echo "RUNNING CLEANUP (mode: $CLEANUP_MODE)"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         if [ ! -f scripts/cleanup-k8s-resources-v2.sh ]; then
@@ -70,26 +84,33 @@ runs:
 
         chmod +x scripts/cleanup-k8s-resources-v2.sh
 
-        if [ "${{ inputs.mode }}" == "dry-run" ]; then
-          ./scripts/cleanup-k8s-resources-v2.sh ${{ inputs.cluster-name }} ${{ inputs.aws-region }} dry-run
-        else
-          ./scripts/cleanup-k8s-resources-v2.sh ${{ inputs.cluster-name }} ${{ inputs.aws-region }}
-        fi
-
-        if [ $? -eq 0 ]; then
-          echo "status=success" >> $GITHUB_OUTPUT
-        else
-          echo "status=failed" >> $GITHUB_OUTPUT
-        fi
+        case "$CLEANUP_MODE" in
+          dry-run)
+            ./scripts/cleanup-k8s-resources-v2.sh "$CLUSTER_NAME" "$AWS_REGION_NAME" dry-run
+            ;;
+          live)
+            ./scripts/cleanup-k8s-resources-v2.sh "$CLUSTER_NAME" "$AWS_REGION_NAME"
+            ;;
+          *)
+            echo "Unsupported cleanup mode: $CLEANUP_MODE" >&2
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            exit 2
+            ;;
+        esac
+        echo "status=success" >> "$GITHUB_OUTPUT"
 
     - name: Post-cleanup verification
       if: inputs.run-verification == 'true'
       shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
+        AWS_REGION_NAME: ${{ inputs.aws-region }}
       run: |
+        set -euo pipefail
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "POST-CLEANUP STATE"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         if [ -f scripts/verify-cleanup-resources.sh ]; then
           chmod +x scripts/verify-cleanup-resources.sh
-          ./scripts/verify-cleanup-resources.sh ${{ inputs.cluster-name }} ${{ inputs.aws-region }} || true
+          ./scripts/verify-cleanup-resources.sh "$CLUSTER_NAME" "$AWS_REGION_NAME" || true
         fi

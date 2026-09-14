@@ -10,8 +10,8 @@
 #   3. cert-manager (via NGINX ingress) responds with expected token
 #   4. Certificate issued if challenge passes
 #
-# This works with example.com because:
-#   - Cloudflare DNS provides managed DNS: app.example.com -> NLB hostname
+# With a custom hostname:
+#   - Cloudflare DNS points the hostname at the NLB
 #   - Let's Encrypt can reach the NLB via the Cloudflare-managed hostname
 #   - DNS configuration automated via Terraform and GitHub workflow
 #
@@ -26,7 +26,7 @@ spec:
     server: https://acme-v02.api.letsencrypt.org/directory
 
     # Email for expiry notifications (required by Let's Encrypt)
-    email: admin@example.com
+    email: ${ACME_EMAIL}
 
     # Secret to store the ACME account private key
     privateKeySecretRef:

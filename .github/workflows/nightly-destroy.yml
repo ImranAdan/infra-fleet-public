@@ -1,18 +1,20 @@
-name: Nightly Stack Destruction
+name: Destroy Staging Stack (Manual)
 
 on:
   workflow_dispatch:
     inputs:
-      reason:
-        description: 'Reason for manual destroy (optional)'
-        required: false
-        default: 'On-demand stack destruction'
+      confirm_destroy:
+        description: 'Type "destroy staging" to confirm the target'
+        required: true
         type: string
       force:
         description: 'Force destroy even if cleanup fails'
         required: false
         default: false
         type: boolean
+
+permissions:
+  contents: read
 
 # Global environment variables
 env:
@@ -38,7 +40,22 @@ jobs:
         env:
           AWS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          TF_CLOUD_ORGANIZATION: ${{ secrets.TF_CLOUD_ORGANIZATION }}
+          DEPLOYMENT_REF: ${{ github.ref }}
+          DESTROY_CONFIRMATION: ${{ inputs.confirm_destroy }}
         run: |
+          set -euo pipefail
+
+          if [ "$DEPLOYMENT_REF" != "refs/heads/main" ]; then
+            echo "::error::Destroy must be dispatched from the main branch."
+            exit 1
+          fi
+
+          if [ "$DESTROY_CONFIRMATION" != "destroy staging" ]; then
+            echo "::error::Confirmation must exactly match: destroy staging"
+            exit 1
+          fi
+
           missing=""
 
           if [ -z "$AWS_ROLE_ARN" ]; then
@@ -47,6 +64,10 @@ jobs:
 
           if [ -z "$TF_API_TOKEN" ]; then
             missing="$missing TF_API_TOKEN"
+          fi
+
+          if [ -z "$TF_CLOUD_ORGANIZATION" ]; then
+            missing="$missing TF_CLOUD_ORGANIZATION"
           fi
 
           if [ -n "$missing" ]; then
@@ -123,6 +144,7 @@ jobs:
     needs: [preflight, pre-verification]
     # Run even if cluster doesn't exist (to clean orphaned AWS resources)
     if: always() && needs.preflight.result == 'success'
+    environment: staging
     permissions:
       id-token: write
       contents: read
@@ -225,6 +247,7 @@ jobs:
       needs.preflight.result == 'success' &&
       (needs.post-verification.outputs.cleanup_successful == 'true' ||
        github.event.inputs.force == 'true')
+    environment: staging
     permissions:
       id-token: write
       contents: read
@@ -254,9 +277,9 @@ jobs:
           echo ""
 
           terraform init -input=false
-          terraform destroy -auto-approve -lock=false
-        env:
-          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          # Keep HCP Terraform's state lock enabled. Concurrent lifecycle runs
+          # must fail safely instead of writing the same state at once.
+          terraform destroy -auto-approve
 
   # ===========================================================================
   # Job 5: Final Verification & Reporting
@@ -269,7 +292,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      issues: write
 
     steps:
       - name: Checkout code
@@ -306,7 +328,7 @@ jobs:
             echo "  - Terraform infrastructure destroyed"
             echo "  - Permanent infrastructure (OIDC, IAM) preserved"
             echo ""
-            echo "Next scheduled run: Tomorrow at 8 PM UTC"
+            echo "Run this manual workflow again when the stack next needs destroying."
           else
             echo "❌ DESTROY FAILED"
             echo ""
@@ -346,43 +368,3 @@ jobs:
 
           echo ""
           echo "✅ Idempotency verified - all resources destroyed"
-
-      - name: Create issue on failure
-        if: failure() && github.event_name == 'schedule'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        with:
-          script: |
-            const title = `Nightly Destroy Failed - ${new Date().toISOString().split('T')[0]}`;
-            const body = `## Nightly Destroy Failure Report
-
-            **Date**: ${new Date().toISOString()}
-            **Run ID**: ${{ github.run_id }}
-            **Workflow**: [View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-            ### Job Results
-
-            | Job | Status |
-            |-----|--------|
-            | Preflight | ${{ needs.preflight.result }} |
-            | Pre-Verification | ${{ needs.pre-verification.result }} |
-            | Cleanup | ${{ needs.cleanup-kubernetes.result }} |
-            | Post-Verification | ${{ needs.post-verification.result }} |
-            | Terraform Destroy | ${{ needs.terraform-destroy.result }} |
-
-            ### Next Steps
-
-            1. Review individual job logs
-            2. Check for orphaned AWS resources
-            3. Manually clean up if needed
-            4. Re-run workflow
-
-            **Labels**: bug, infrastructure, destroy-failure
-            `;
-
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: title,
-              body: body,
-              labels: ['bug', 'infrastructure', 'destroy-failure']
-            });

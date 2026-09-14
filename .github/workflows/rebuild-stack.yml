@@ -3,30 +3,121 @@ name: Rebuild Stack (Manual)
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Target environment'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
-      reason:
-        description: 'Reason for rebuild (optional)'
-        required: false
-        default: 'On-demand stack rebuild'
-        type: string
       force_rebuild:
         description: 'Skip health gate (infra-apply) and force rebuild'
         required: false
         default: false
         type: boolean
 
+permissions:
+  contents: read
+
 jobs:
+  preflight:
+    name: Configuration preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      app_hostname: ${{ steps.check.outputs.app_hostname }}
+      acme_email: ${{ steps.check.outputs.acme_email }}
+      cloudflare_configured: ${{ steps.check.outputs.cloudflare_configured }}
+    steps:
+      - name: Verify rebuild configuration
+        id: check
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          TF_CLOUD_ORGANIZATION: ${{ secrets.TF_CLOUD_ORGANIZATION }}
+          FLUX_GITHUB_TOKEN: ${{ secrets.FLUX_GITHUB_TOKEN }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          APP_HOSTNAME: ${{ vars.APP_HOSTNAME }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          DEPLOYMENT_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$DEPLOYMENT_REF" != "refs/heads/main" ]; then
+            echo "::error::Rebuilds must be dispatched from the main branch."
+            exit 1
+          fi
+
+          missing=""
+          for name in AWS_ROLE_ARN TF_API_TOKEN TF_CLOUD_ORGANIZATION FLUX_GITHUB_TOKEN GRAFANA_ADMIN_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              missing="$missing $name"
+            fi
+          done
+
+          if [ -n "$missing" ]; then
+            echo "::error::Rebuild configuration is incomplete. See CONFIGURATION.md."
+            {
+              echo "### Rebuild configuration is incomplete"
+              echo ""
+              echo "Missing required settings:"
+              for name in $missing; do
+                case "$name" in
+                  AWS_ROLE_ARN) echo "- secret \`AWS_GITHUB_ACTIONS_ROLE_ARN\`" ;;
+                  *) echo "- secret \`$name\`" ;;
+                esac
+              done
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          if { [ -n "$APP_HOSTNAME" ] && [ -z "$ACME_EMAIL" ]; } ||
+             { [ -z "$APP_HOSTNAME" ] && [ -n "$ACME_EMAIL" ]; }; then
+            echo "::error::APP_HOSTNAME and ACME_EMAIL must be set together."
+            exit 1
+          fi
+
+          if [ -n "$APP_HOSTNAME" ] &&
+             [[ ! "$APP_HOSTNAME" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
+            echo "::error::APP_HOSTNAME is not a valid DNS hostname."
+            exit 1
+          fi
+
+          if [ -n "$ACME_EMAIL" ] &&
+             [[ ! "$ACME_EMAIL" =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]]; then
+            echo "::error::ACME_EMAIL is not a valid email address."
+            exit 1
+          fi
+
+          if { [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -z "$CLOUDFLARE_ZONE_ID" ]; } ||
+             { [ -z "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ZONE_ID" ]; }; then
+            echo "::error::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID must be set together."
+            exit 1
+          fi
+
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -z "$APP_HOSTNAME" ]; then
+            echo "::error::Cloudflare automation also requires APP_HOSTNAME and ACME_EMAIL."
+            exit 1
+          fi
+
+          if [ -n "$APP_HOSTNAME" ]; then
+            echo "app_hostname=$APP_HOSTNAME" >> "$GITHUB_OUTPUT"
+            echo "acme_email=$ACME_EMAIL" >> "$GITHUB_OUTPUT"
+          else
+            # RFC 2606's .invalid TLD cannot accidentally target a real domain.
+            echo "app_hostname=app.example.invalid" >> "$GITHUB_OUTPUT"
+            echo "acme_email=nobody@example.invalid" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "cloudflare_configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cloudflare_configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "### Rebuild configuration is complete" >> "$GITHUB_STEP_SUMMARY"
+
   # ===========================================================================
   # Job 1: Health Gate
   # ===========================================================================
   health-check:
+    needs: preflight
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -56,8 +147,9 @@ jobs:
           run_info=$(echo "$run_json" | jq -r '.workflow_runs[0]')
 
           if [ "$run_info" = "null" ]; then
-            echo "healthy=false" >> "$GITHUB_OUTPUT"
-            exit 1
+            echo "No earlier infrastructure apply exists; allowing the first rebuild."
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           status=$(echo "$run_info" | jq -r '.status')
@@ -70,20 +162,32 @@ jobs:
 
           echo "healthy=true" >> "$GITHUB_OUTPUT"
 
+  publish-bootstrap-image:
+    name: Validate and publish sample image
+    needs: [preflight, health-check]
+    if: needs.health-check.outputs.healthy == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/load-harness-ci.yml
+    with:
+      publish_to_ecr: true
+    secrets: inherit
+
   # ===========================================================================
   # Job 2: Rebuild Infrastructure
   # ===========================================================================
   build-infrastructure:
-    name: Deploy to ${{ inputs.environment }}
-    needs: health-check
+    name: Deploy to staging
+    needs: [preflight, health-check, publish-bootstrap-image]
     if: needs.health-check.outputs.healthy == 'true'
     runs-on: ubuntu-latest
     environment:
-      name: ${{ inputs.environment }}
+      name: staging
       url: https://github.com/${{ github.repository }}/deployments
     permissions:
       id-token: write
-      contents: write
+      contents: read
     env:
       AWS_REGION: eu-west-2
 
@@ -113,25 +217,36 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Terraform Apply
         id: terraform
+        env:
+          TF_VAR_eks_admin_principal_arns: ${{ vars.EKS_ADMIN_PRINCIPAL_ARNS_JSON || '[]' }}
         run: |
+          set -euo pipefail
           cd infrastructure/staging
-          terraform init
+          terraform init -reconfigure -input=false
           terraform apply -auto-approve
 
           # Export outputs for use in subsequent steps
-          echo "vpc_id=$(terraform output -raw vpc_id)" >> "$GITHUB_OUTPUT"
-          echo "cluster_name=$(terraform output -raw cluster_name)" >> "$GITHUB_OUTPUT"
-          echo "aws_account_id=$(terraform output -raw aws_account_id)" >> "$GITHUB_OUTPUT"
-          echo "ecr_registry=$(terraform output -raw ecr_registry)" >> "$GITHUB_OUTPUT"
-        env:
-          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          vpc_id=$(terraform output -raw vpc_id)
+          cluster_name=$(terraform output -raw cluster_name)
+          aws_account_id=$(terraform output -raw aws_account_id)
+          ecr_registry=$(terraform output -raw ecr_registry)
+
+          [[ "$vpc_id" =~ ^vpc-[0-9a-f]+$ ]] || { echo "Unexpected VPC ID output." >&2; exit 1; }
+          [[ "$cluster_name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || { echo "Unexpected cluster name output." >&2; exit 1; }
+          [[ "$aws_account_id" =~ ^[0-9]{12}$ ]] || { echo "Unexpected AWS account ID output." >&2; exit 1; }
+          [[ "$ecr_registry" =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com$ ]] || { echo "Unexpected ECR registry output." >&2; exit 1; }
+
+          printf 'vpc_id=%s\n' "$vpc_id" >> "$GITHUB_OUTPUT"
+          printf 'cluster_name=%s\n' "$cluster_name" >> "$GITHUB_OUTPUT"
+          printf 'aws_account_id=%s\n' "$aws_account_id" >> "$GITHUB_OUTPUT"
+          printf 'ecr_registry=%s\n' "$ecr_registry" >> "$GITHUB_OUTPUT"
 
       # -----------------------------------------------------------------------
       # CONFIGURE KUBECTL
       # -----------------------------------------------------------------------
       - name: Configure kubectl
         run: |
-          aws eks update-kubeconfig --name staging --region ${{ env.AWS_REGION }}
+          aws eks update-kubeconfig --name staging --region "$AWS_REGION"
 
       # -----------------------------------------------------------------------
       # CLUSTER HEALTH CHECK (before Flux)
@@ -146,19 +261,31 @@ jobs:
       # This ConfigMap is used by Flux for variable substitution in GitOps manifests.
       # -----------------------------------------------------------------------
       - name: Create terraform-outputs ConfigMap
+        env:
+          VPC_ID: ${{ steps.terraform.outputs.vpc_id }}
+          CLUSTER_NAME: ${{ steps.terraform.outputs.cluster_name }}
+          AWS_ACCOUNT_ID: ${{ steps.terraform.outputs.aws_account_id }}
+          ECR_REGISTRY: ${{ steps.terraform.outputs.ecr_registry }}
+          APP_HOSTNAME: ${{ needs.preflight.outputs.app_hostname }}
+          ACME_EMAIL: ${{ needs.preflight.outputs.acme_email }}
+          RUNTIME_CONFIG_REVISION: ${{ github.run_id }}
         run: |
+          set -euo pipefail
           # Create flux-system namespace if it doesn't exist
           kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f -
 
           # Create/update ConfigMap with Terraform outputs
           kubectl create configmap terraform-outputs \
             --namespace=flux-system \
-            --from-literal=VPC_ID=${{ steps.terraform.outputs.vpc_id }} \
-            --from-literal=CLUSTER_NAME=${{ steps.terraform.outputs.cluster_name }} \
-            --from-literal=AWS_REGION=${{ env.AWS_REGION }} \
-            --from-literal=AWS_ACCOUNT_ID=${{ steps.terraform.outputs.aws_account_id }} \
+            --from-literal=VPC_ID="$VPC_ID" \
+            --from-literal=CLUSTER_NAME="$CLUSTER_NAME" \
+            --from-literal=AWS_REGION="$AWS_REGION" \
+            --from-literal=AWS_ACCOUNT_ID="$AWS_ACCOUNT_ID" \
             --from-literal=ENVIRONMENT=staging \
-            --from-literal=ECR_REGISTRY=${{ steps.terraform.outputs.ecr_registry }} \
+            --from-literal=ECR_REGISTRY="$ECR_REGISTRY" \
+            --from-literal=APP_HOSTNAME="$APP_HOSTNAME" \
+            --from-literal=ACME_EMAIL="$ACME_EMAIL" \
+            --from-literal=RUNTIME_CONFIG_REVISION="$RUNTIME_CONFIG_REVISION" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           # Add labels for Flux compatibility
@@ -167,21 +294,33 @@ jobs:
             --overwrite \
             app.kubernetes.io/managed-by=rebuild-workflow \
             app.kubernetes.io/part-of=flux-system \
-            app.kubernetes.io/component=configuration
+            app.kubernetes.io/component=configuration \
+            reconcile.fluxcd.io/watch=Enabled
 
       # -----------------------------------------------------------------------
       # CREATE APPLICATION SECRETS
       # Secrets that applications need must be created before Flux deploys them.
       # -----------------------------------------------------------------------
-      - name: Create load-harness API key secret
+      - name: Create application namespace
         run: |
-          # Create applications namespace if it doesn't exist
           kubectl create namespace applications --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create load-harness API key secret
+        env:
+          LOAD_HARNESS_API_KEY: ${{ secrets.LOAD_HARNESS_API_KEY }}
+        run: |
+          if [ -z "$LOAD_HARNESS_API_KEY" ]; then
+            kubectl delete secret load-harness-api-key \
+              --namespace=applications \
+              --ignore-not-found
+            echo "LOAD_HARNESS_API_KEY is not set; API-key authentication is disabled."
+            exit 0
+          fi
 
           # Create/update the API key secret
           kubectl create secret generic load-harness-api-key \
             --namespace=applications \
-            --from-literal=api-key=${{ secrets.LOAD_HARNESS_API_KEY }} \
+            --from-literal=api-key="$LOAD_HARNESS_API_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           # Add labels for tracking
@@ -210,6 +349,24 @@ jobs:
             app.kubernetes.io/managed-by=rebuild-workflow \
             app.kubernetes.io/part-of=load-harness
 
+      - name: Create Grafana administrator secret
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic grafana-admin-credentials \
+            --namespace=observability \
+            --from-literal=admin-user=admin \
+            --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          if kubectl get deployment kube-prometheus-stack-grafana \
+            --namespace=observability >/dev/null 2>&1; then
+            kubectl rollout restart deployment kube-prometheus-stack-grafana \
+              --namespace=observability
+          fi
+
       # -----------------------------------------------------------------------
       # BOOTSTRAP FLUX
       # Flux is bootstrapped using the CLI instead of Terraform to avoid
@@ -232,17 +389,19 @@ jobs:
           version: 2.7.3
 
       - name: Bootstrap Flux
+        env:
+          GITHUB_TOKEN: ${{ secrets.FLUX_GITHUB_TOKEN }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
         run: |
           flux bootstrap github \
-            --owner=your-org \
-            --repository=infra-fleet \
+            --owner="$REPOSITORY_OWNER" \
+            --repository="$REPOSITORY_NAME" \
             --path=k8s/flux-system \
             --components=source-controller,kustomize-controller,helm-controller \
             --components-extra=image-reflector-controller,image-automation-controller \
             --version=v2.7.3 \
             --token-auth
-        env:
-          GITHUB_TOKEN: ${{ secrets.FLUX_GITHUB_TOKEN }}
 
       # -----------------------------------------------------------------------
       # FINAL HEALTH CHECK
@@ -266,13 +425,16 @@ jobs:
       # -----------------------------------------------------------------------
       # UPDATE CLOUDFLARE DNS FOR TLS
       # Wait for NLB to be provisioned, then update Cloudflare DNS to point
-      # app.example.com to the NLB. This enables TLS via cert-manager.
+      # the configured application hostname to the NLB.
       # -----------------------------------------------------------------------
       - name: Update Cloudflare DNS to point to NLB
+        if: needs.preflight.outputs.cloudflare_configured == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          APP_HOSTNAME: ${{ needs.preflight.outputs.app_hostname }}
         run: |
+          set -euo pipefail
           echo "Waiting for NGINX Ingress NLB to be provisioned..."
 
           # Wait for the ingress-nginx namespace to exist
@@ -300,10 +462,12 @@ jobs:
 
           # Get existing DNS record ID (if any)
           echo "Checking for existing DNS record..."
-          RECORD_RESPONSE=$(curl -s -X GET \
-            "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records?name=app.example.com&type=CNAME" \
+          RECORD_RESPONSE=$(curl --fail-with-body --silent --show-error --get \
+            "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            --data-urlencode "name=$APP_HOSTNAME" \
+            --data-urlencode "type=CNAME")
 
           # Validate Cloudflare API response
           if ! echo "$RECORD_RESPONSE" | jq -e . > /dev/null 2>&1; then
@@ -321,18 +485,13 @@ jobs:
 
           if [ -z "$RECORD_ID" ]; then
             # Create new DNS record
-            echo "Creating DNS record: app.example.com -> $NLB_HOST"
-            CREATE_RESPONSE=$(curl -s -X POST \
+            echo "Creating DNS record: $APP_HOSTNAME -> $NLB_HOST"
+            CREATE_RESPONSE=$(curl --fail-with-body --silent --show-error -X POST \
               "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records" \
               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
               -H "Content-Type: application/json" \
-              --data '{
-                "type": "CNAME",
-                "name": "app",
-                "content": "'"$NLB_HOST"'",
-                "ttl": 300,
-                "proxied": false
-              }')
+              --data "$(jq -n --arg name "$APP_HOSTNAME" --arg content "$NLB_HOST" \
+                '{type:"CNAME", name:$name, content:$content, ttl:300, proxied:false}')")
 
             if ! echo "$CREATE_RESPONSE" | jq -e . > /dev/null 2>&1; then
               echo "ERROR: Cloudflare API returned invalid JSON"
@@ -347,18 +506,13 @@ jobs:
             echo "$CREATE_RESPONSE" | jq .
           else
             # Update existing DNS record
-            echo "Updating DNS record: app.example.com -> $NLB_HOST"
-            UPDATE_RESPONSE=$(curl -s -X PUT \
+            echo "Updating DNS record: $APP_HOSTNAME -> $NLB_HOST"
+            UPDATE_RESPONSE=$(curl --fail-with-body --silent --show-error -X PUT \
               "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/dns_records/$RECORD_ID" \
               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
               -H "Content-Type: application/json" \
-              --data '{
-                "type": "CNAME",
-                "name": "app",
-                "content": "'"$NLB_HOST"'",
-                "ttl": 300,
-                "proxied": false
-              }')
+              --data "$(jq -n --arg name "$APP_HOSTNAME" --arg content "$NLB_HOST" \
+                '{type:"CNAME", name:$name, content:$content, ttl:300, proxied:false}')")
 
             if ! echo "$UPDATE_RESPONSE" | jq -e . > /dev/null 2>&1; then
               echo "ERROR: Cloudflare API returned invalid JSON"
@@ -373,12 +527,12 @@ jobs:
             echo "$UPDATE_RESPONSE" | jq .
           fi
 
-          echo "DNS record updated: app.example.com -> $NLB_HOST"
+          echo "DNS record updated: $APP_HOSTNAME -> $NLB_HOST"
 
           # Wait for DNS propagation with verification
           echo "Waiting for DNS propagation..."
           for i in {1..12}; do
-            RESOLVED=$(dig +short app.example.com | head -1)
+            RESOLVED=$(dig +short "$APP_HOSTNAME" | head -1)
             if [ -n "$RESOLVED" ]; then
               echo "DNS resolved to: $RESOLVED"
               break

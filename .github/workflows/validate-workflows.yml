@@ -5,6 +5,10 @@ on:
     paths:
       - '.github/workflows/**'
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   validate-workflows:
     runs-on: ubuntu-latest
@@ -15,8 +19,8 @@ jobs:
         run: |
           echo "🔍 Validating workflow YAML syntax..."
 
-          # Install yamllint for validation
-          pip install yamllint --quiet --break-system-packages
+          # Keep tooling deterministic; dependency updates are reviewed here.
+          pip install yamllint==1.37.1 --quiet --break-system-packages
 
           # Create permissive yamllint config (focus on syntax, not style)
           echo "extends: relaxed" > /tmp/yamllint.yml
@@ -42,11 +46,16 @@ jobs:
         run: |
           echo "🔍 Validating GitHub Actions workflow syntax..."
 
-          # Install actionlint
-          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          # Download a fixed actionlint release and verify the publisher's
+          # checksum before executing it.
+          curl --fail --silent --show-error --location \
+            --output /tmp/actionlint.tar.gz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.9/actionlint_1.7.9_linux_amd64.tar.gz
+          echo "233b280d05e100837f4af1433c7b40a5dcb306e3aa68fb4f17f8a7f45a7df7b4  /tmp/actionlint.tar.gz" | sha256sum --check
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
 
           # Run actionlint on all workflow files (disable shellcheck for now)
-          if ./actionlint -shellcheck= .github/workflows/*.yml; then
+          if /tmp/actionlint -shellcheck= .github/workflows/*.yml; then
             echo "✅ All workflows have valid GitHub Actions syntax"
           else
             echo "❌ GitHub Actions syntax validation failed"
@@ -78,32 +87,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Check required secrets documentation
-        run: |
-          echo "🔍 Checking that required secrets are documented..."
-          
-          # Check that workflows requiring AWS secrets exist
-          if grep -r "AWS_ACCESS_KEY_ID" .github/workflows/; then
-            echo "✅ Found AWS credential requirements"
-            echo "📝 Required secrets for these workflows:"
-            echo "  - AWS_ACCESS_KEY_ID"
-            echo "  - AWS_SECRET_ACCESS_KEY"
-            echo ""
-            echo "⚠️ IMPORTANT: These must be configured in GitHub repository secrets before workflows will work"
-          fi
-          
-      - name: Validate cron schedules
-        run: |
-          echo "🔍 Validating cron schedules..."
-          
-          # Extract and validate cron expressions
-          if grep -r "cron:" .github/workflows/; then
-            echo "✅ Found scheduled workflows"
-            echo "📅 Schedule summary:"
-            echo "  - Nightly Destruction: 8 PM UTC daily (saves ~$4.80/night)"
-            echo "  - No automatic rebuilds (manual trigger only)"
-          fi
-          
       - name: Check workflow permissions
         run: |
           echo "🔍 Checking workflow permissions and safety..."
@@ -120,7 +103,4 @@ jobs:
           
           echo ""
           echo "✅ Workflow validation complete"
-          echo "📚 Next steps after merge:"
-          echo "  1. Configure AWS secrets in GitHub repository settings"
-          echo "  2. Test manual rebuild workflow"
-          echo "  3. Verify nightly destruction (will run at 8 PM UTC)"
+          echo "📚 Deployment setup and manual lifecycle steps: CONFIGURATION.md"

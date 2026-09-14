@@ -1,5 +1,10 @@
 # Cost Optimization Guide
 
+> Historical analysis from the source fleet. Prices and scheduled-lifecycle
+> assumptions in this document are not current template guarantees. The public
+> template uses EKS 1.35 with `STANDARD` support and manual destroy by default.
+> Check current AWS pricing before deployment.
+
 ## Overview
 
 This guide helps you minimize AWS costs for the infra-fleet platform while maintaining a production-like learning environment.

@@ -1,6 +1,11 @@
 # Design Decision Record (DDR)
 ## Terraform Cloud Access to Private EKS Cluster & Flux Bootstrap Issue
 
+> Historical decision record from the source fleet. The current template uses
+> HCP Terraform only for state and locking with **Local** execution. Follow
+> [TERRAFORM-CLOUD-SETUP.md](TERRAFORM-CLOUD-SETUP.md), not the old remote-worker
+> experiments recorded below.
+
 **Date:** 2025-02-21 (Updated: 2025-12-26)
 **Author:** Imran Adan
 **Status:** Approved

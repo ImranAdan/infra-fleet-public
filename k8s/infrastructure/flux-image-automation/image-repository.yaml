@@ -9,7 +9,7 @@ metadata:
   namespace: flux-system
 spec:
   # ECR repository URL
-  image: 123456789012.dkr.ecr.eu-west-2.amazonaws.com/load-harness
+  image: ${ECR_REGISTRY}/load-harness
   # Scan interval - check for new images every minute
   interval: 1m
   # AWS provider enables automatic ECR authentication

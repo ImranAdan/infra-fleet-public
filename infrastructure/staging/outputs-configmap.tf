@@ -25,5 +25,5 @@ output "aws_account_id" {
 
 output "ecr_registry" {
   description = "ECR registry URL for Flux variable substitution"
-  value       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.id}.amazonaws.com"
+  value       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.region}.amazonaws.com"
 }

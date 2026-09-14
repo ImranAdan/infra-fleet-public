@@ -1,5 +1,14 @@
 # Security Policy
 
+## Known deployment limitation
+
+The current progressive-delivery path depends on the retired community
+`ingress-nginx` controller. Upstream no longer provides bug or security fixes.
+Do not expose a new public deployment as production infrastructure. Replacing
+the Ingress/NGINX metric path with a maintained Gateway API implementation
+requires an apply, canary rollout, rollback, and destroy validation cycle; it
+is not treated as a mechanical dependency bump.
+
 ## This repository holds no credentials
 
 `infra-fleet-public` is a template. It contains **no cloud credentials, no

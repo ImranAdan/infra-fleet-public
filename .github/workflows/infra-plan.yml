@@ -1,4 +1,4 @@
-name: Infra Plan (PR)
+name: Infrastructure Validation
 
 on:
   pull_request:
@@ -6,35 +6,18 @@ on:
     paths:
       - 'infrastructure/**'
       - '!infrastructure/**/*.md'  # Exclude markdown files
-
-env:
-  AWS_REGION: eu-west-2
+  push:
+    branches: [ main ]
+    paths:
+      - 'infrastructure/**'
+      - '!infrastructure/**/*.md'
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  detect:
-    runs-on: ubuntu-latest
-    outputs:
-      staging: ${{ steps.detect.outputs.staging-changed }}
-      permanent: ${{ steps.detect.outputs.permanent-changed }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          fetch-depth: 0
-
-      - name: Detect changed stacks
-        id: detect
-        uses: ./.github/actions/detect-terraform-changes
-        with:
-          base-ref: origin/${{ github.base_ref }}
-          head-ref: HEAD
-
-  plan-staging:
-    needs: detect
-    if: needs.detect.outputs.staging == 'true'
+  validate-staging:
+    name: Validate staging
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -42,6 +25,7 @@ jobs:
       - name: Security scan (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: 'v0.74.0'
           scan-type: 'config'
           scan-ref: 'infrastructure/staging'
           severity: 'HIGH,CRITICAL'
@@ -52,32 +36,22 @@ jobs:
         env:
           TRIVY_QUIET: true
 
-      - name: Setup AWS and Terraform
-        uses: ./.github/actions/setup-aws-terraform
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-          session-name: GitHubActions-Plan
-          tf-api-token: ${{ secrets.TF_API_TOKEN }}
-          tf-cloud-organization: ${{ secrets.TF_CLOUD_ORGANIZATION }}
-          tf-workspace: ${{ vars.TF_WORKSPACE_STAGING || 'infra-fleet-staging' }}
+          terraform_version: '1.14.0'
 
       - name: Terraform fmt (check)
         run: terraform -chdir=infrastructure/staging fmt -check
 
       - name: Terraform init
-        run: terraform -chdir=infrastructure/staging init -input=false ${{ github.actor == 'dependabot[bot]' && '-upgrade' || '' }}
+        run: terraform -chdir=infrastructure/staging init -backend=false -input=false
 
-      - name: Terraform plan (staging)
-        run: terraform -chdir=infrastructure/staging plan -input=false
-        env:
-          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+      - name: Terraform validate
+        run: terraform -chdir=infrastructure/staging validate
 
-  plan-permanent:
-    needs: detect
-    if: needs.detect.outputs.permanent == 'true'
+  validate-permanent:
+    name: Validate permanent
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -85,6 +59,7 @@ jobs:
       - name: Security scan (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: 'v0.74.0'
           scan-type: 'config'
           scan-ref: 'infrastructure/permanent'
           severity: 'HIGH,CRITICAL'
@@ -94,21 +69,16 @@ jobs:
         env:
           TRIVY_QUIET: true
 
-      - name: Setup AWS and Terraform
-        uses: ./.github/actions/setup-aws-terraform
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-          session-name: GitHubActions-Plan
-          tf-api-token: ${{ secrets.TF_API_TOKEN }}
-          tf-cloud-organization: ${{ secrets.TF_CLOUD_ORGANIZATION }}
-          tf-workspace: ${{ vars.TF_WORKSPACE_PERMANENT || 'infra-fleet-permanent' }}
+          terraform_version: '1.14.0'
 
       - name: Terraform fmt (check)
         run: terraform -chdir=infrastructure/permanent fmt -check
 
       - name: Terraform init
-        run: terraform -chdir=infrastructure/permanent init -input=false ${{ github.actor == 'dependabot[bot]' && '-upgrade' || '' }}
+        run: terraform -chdir=infrastructure/permanent init -backend=false -input=false
 
-      - name: Terraform plan (permanent)
-        run: terraform -chdir=infrastructure/permanent plan -input=false
+      - name: Terraform validate
+        run: terraform -chdir=infrastructure/permanent validate
