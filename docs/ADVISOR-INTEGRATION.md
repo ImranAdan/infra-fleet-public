@@ -23,8 +23,8 @@ make review
 
 Requires Git, Python 3.11+, `uv`, and Make. Read `review-output/report.md` in the
 advisor checkout. The review is deterministic by default and uses the fleet's
-full HEAD SHA. It requires no cloud credential or model API key. Dependency
-installation needs internet access; analysis reads only the local checkout.
+full HEAD SHA. Dependency installation needs internet access; analysis reads
+only the local checkout.
 
 The advisor rejects a dirty fleet checkout and keeps output outside it. Changes
 in an open fleet PR are evaluated only when its exact clean commit is checked

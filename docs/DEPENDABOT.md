@@ -9,13 +9,12 @@
 | GitHub Actions | `/` | grouped; major-version jumps ignored |
 | Terraform | `/infrastructure/staging` and `/infrastructure/permanent` | grouped per stack |
 
-No reviewer, label, assignee, repository owner, or cloud credential is baked
-into the template. A fork receives ordinary pull requests for a human to
-review.
+Reviewers, labels, and assignees can be configured for your deployment
+repository. Dependency updates arrive as ordinary pull requests for review.
 
 ## CI behavior
 
-Dependabot pull requests use the same credentials-free checks as other pull
+Dependabot pull requests use the same static checks as other pull
 requests:
 
 - Python tests and container scanning when application dependencies change;

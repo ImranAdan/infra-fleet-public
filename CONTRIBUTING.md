@@ -7,12 +7,11 @@ template easier or safer for someone who is not the author to adopt?**
 ## Before you start
 
 Read [CONFIGURATION.md](CONFIGURATION.md) and
-[docs/CREDENTIALS-FREE-TEMPLATE-DDR.md](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md).
+[Template Deployment Boundaries](docs/PUBLIC-TEMPLATE-BOUNDARY-DDR.md).
 
-The second one matters most: **this repository holds no cloud credentials and
-cannot deploy anything.** That is deliberate. Pull requests that add secrets,
-add this repository to an IAM trust policy, or make CI depend on cloud access
-will be declined.
+Changes must preserve the documented template adoption and deployment
+boundaries. Explain any proposed change to workflow access or IAM trust in its
+design context.
 
 ## What is especially welcome
 
@@ -27,7 +26,7 @@ will be declined.
 
 ## What CI checks
 
-Everything here runs without credentials:
+Pull requests receive these static and application checks:
 
 | Check | Scope |
 |-------|-------|

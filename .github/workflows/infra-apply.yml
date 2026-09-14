@@ -46,7 +46,7 @@ jobs:
             {
               echo "### Deployment skipped"
               echo ""
-              echo "This is the expected state for the credentials-free public template."
+              echo "Configure deployment settings using CONFIGURATION.md."
               echo "Static Terraform validation runs in \`infra-plan.yml\`."
               echo "See \`CONFIGURATION.md\` before enabling deployment in a private copy."
             } >> "$GITHUB_STEP_SUMMARY"

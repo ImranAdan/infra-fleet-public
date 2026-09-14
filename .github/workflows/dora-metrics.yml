@@ -38,7 +38,7 @@ jobs:
             {
               echo "### DORA collection skipped"
               echo ""
-              echo "No deployment role is configured. This is expected in the public template."
+              echo "Configure metrics collection using CONFIGURATION.md."
             } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"

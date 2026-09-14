@@ -29,7 +29,7 @@ rules pass. Pull request subjects and arbitrary refs are not trusted.
 
 ## Secrets stay at repository scope
 
-The supplied workflows run credentials-free preflight jobs before entering the
+The supplied workflows run configuration preflight jobs before entering the
 environment. Those jobs check whether deployment secrets are complete, so the
 secrets listed in [CONFIGURATION.md](../CONFIGURATION.md) must remain repository
 Actions secrets for the current implementation.

@@ -1,9 +1,8 @@
 # Configure a private fleet
 
 This is the shortest supported path from the public template to a working
-staging fleet. The public repository is deliberately credentials-free and
-never deploys to AWS. These steps apply to a private repository created from
-the template.
+staging fleet. These steps apply to a private repository created from the
+template.
 
 The supported deployment is one `eu-west-2` staging cluster. A production
 environment is not included.
@@ -188,7 +187,7 @@ certificate issuance complete.
 
 ## Runtime secrets
 
-No Kubernetes Secret is committed. `rebuild-stack.yml` creates:
+`rebuild-stack.yml` provisions these runtime values:
 
 | Secret | Purpose |
 |---|---|
