@@ -10,6 +10,13 @@ spec:
   # Single replica - HPA will scale up based on CPU load (see issue #129)
   # Node capacity: t3.large = 35 pods max
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Preserve capacity at every HPA size, including the eight-pod maximum.
+      # Percentage defaults permit unavailable pods once the workload scales.
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: load-harness

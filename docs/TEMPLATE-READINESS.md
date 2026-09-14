@@ -35,7 +35,7 @@ Rebranding does not remove that dependency or establish production readiness.
 
 | Check | Evidence and limit |
 |---|---|
-| Advisor quality | The report-approval handoff passes Ruff, formatting, strict mypy on 43 source files and all 434 deterministic tests. |
+| Advisor quality | The report-approval handoff passes Ruff, formatting, strict mypy on 43 source files and all 443 deterministic tests, including publication freshness races. |
 | Advisor local review | JSON and Markdown are produced from the verified merged fleet with `stub`. Workflow and Deployment collection are complete. IAM collection is explicitly partial for four unsupported policy resources or expressions; it does not execute Terraform or fetch policy URLs. |
 | Publication plan | The approved report validates one active fleet recommendation and one resolution action. Two historical IAM recommendations are deferred because their current collector is incomplete. Every new issue links to the approving report PR; unknown intent remains coverage without automatic advisor tickets. |
 | Load Harness | All 105 tests pass in the container, alongside container and image-security checks. |
@@ -45,8 +45,11 @@ Rebranding does not remove that dependency or establish production readiness.
 | Workflow checks | Advisor Actionlint passes with ShellCheck. Fleet passes its configured syntax gate; enabling ShellCheck surfaces thirteen existing warnings across six workflows. |
 | Main CI | Applicable post-merge workflows were checked through completion. The optional infrastructure apply job remained gated; successful static workflows do not establish deployment success. |
 
-No paid model API, live cluster validation or GitHub App installation test was
-performed. Fleet issue publication and feedback remain explicit opt-ins through
+Approved report [#47](https://github.com/ImranAdan/infra-fleet-advisor-public/pull/47)
+triggered the App-authenticated publisher and created fleet issue
+[#44](https://github.com/ImranAdan/infra-fleet-public/issues/44). A retry created
+zero duplicates. No paid model API or live cluster validation was performed.
+Fleet issue publication is enabled for this approved-report handoff through
 `FLEET_ISSUES_ENABLED=true`. Optional decision feedback has a separate
 `FLEET_FEEDBACK_ENABLED=true` setting. The report PR is the fleet issue-creation
 decision record. The earlier generated advisor tickets are consolidated in a
@@ -76,7 +79,10 @@ closing those tickets does not mean their missing checks are implemented.
 2. Expand bounded IAM structural support for local condition references and
    interpolated resource ARNs. Keep unsupported policy data explicitly partial;
    do not execute Terraform or introduce cloud access into collection.
-3. Scope rollout intent to the workloads it means to cover. The remaining
+3. Scope rollout intent to the workloads it means to cover. The
+   [application rollout contract](ROLLOUT-CAPACITY.md) enforces zero unavailable
+   capacity across the Load Harness HPA range and preserves generated controller
+   semantics. The remaining
    reliability finding points at Flux's generated `source-controller` using
    `Recreate`; do not mechanically edit upstream output to enforce an
    application availability rule.
