@@ -36,34 +36,12 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   }
 }
 
-# OIDC Provider for Terraform Cloud
-resource "aws_iam_openid_connect_provider" "terraform_cloud" {
-  url = "https://app.terraform.io"
-
-  client_id_list = [
-    "aws.workload.identity",
-  ]
-
-  # Terraform Cloud OIDC thumbprint
-  # This is the official thumbprint from HashiCorp documentation
-  thumbprint_list = [
-    "9e99a48a9960b14926bb7f3b02e22da2b0ab7280",
-  ]
-
-  tags = {
-    Name        = "terraform-cloud-oidc"
-    Environment = "permanent"
-    ManagedBy   = "terraform"
-    Purpose     = "Terraform Cloud OIDC authentication"
-  }
-}
-
-# IAM Role for GitHub Actions and Terraform Cloud
+# IAM role for GitHub Actions. HCP Terraform stores state but each workspace
+# uses Local execution, so it does not need an AWS identity of its own.
 resource "aws_iam_role" "github_actions" {
   name        = "GitHubActions-InfraFleet"
-  description = "Role for GitHub Actions and Terraform Cloud to manage infrastructure"
+  description = "Role for GitHub Actions to manage infrastructure"
 
-  # Trust policy - allows both GitHub Actions and Terraform Cloud to assume this role
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -76,28 +54,11 @@ resource "aws_iam_role" "github_actions" {
         Condition = {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-          StringLike = {
-            # Only allow this specific repository
-            "token.actions.githubusercontent.com:sub" = "repo:your-org/infra-fleet:*"
-          }
-        }
-      },
-      {
-        Effect = "Allow"
-        Principal = {
-          Federated = aws_iam_openid_connect_provider.terraform_cloud.arn
-        }
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Condition = {
-          StringEquals = {
-            "app.terraform.io:aud" = "aws.workload.identity"
-          }
-          StringLike = {
-            # Allow this org across staging/permanent workspaces
-            "app.terraform.io:sub" = [
-              "organization:your-terraform-org:project:*:workspace:infra-fleet-staging:run_phase:*",
-              "organization:your-terraform-org:project:*:workspace:infra-fleet-permanent:run_phase:*"
+            # GitHub changes the subject when a job uses an Environment, so
+            # trust the deployment branch and the staging Environment exactly.
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${var.github_repository}:ref:refs/heads/${var.github_deployment_branch}",
+              "repo:${var.github_repository}:environment:${var.github_deployment_environment}",
             ]
           }
         }
@@ -370,7 +331,7 @@ resource "aws_iam_policy" "github_actions" {
 # Policy 2: the supporting services the stack depends on.
 resource "aws_iam_policy" "github_actions_supporting" {
   name        = "GitHubActions-InfraFleet-Supporting-Policy"
-  description = "IAM, logging, SSM, ECR, KMS and Terraform state permissions"
+  description = "Logging, SSM, ECR, KMS and load balancer cleanup permissions"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -488,30 +449,6 @@ resource "aws_iam_policy" "github_actions_supporting" {
         Condition = local.eu_west_2_only
       },
       {
-        Sid    = "TerraformStateBucket"
-        Effect = "Allow"
-        Action = [
-          "s3:DeleteObject",
-          "s3:GetObject",
-          "s3:ListBucket",
-          "s3:PutObject",
-        ]
-        Resource = [
-          "arn:aws:s3:::terraform-state-*",
-          "arn:aws:s3:::terraform-state-*/*",
-        ]
-      },
-      {
-        Sid    = "TerraformStateLock"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:DeleteItem",
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-        ]
-        Resource = "arn:aws:dynamodb:*:*:table/terraform-state-lock*"
-      },
-      {
         Sid      = "StsIdentity"
         Effect   = "Allow"
         Action   = "sts:GetCallerIdentity"
@@ -537,18 +474,13 @@ resource "aws_iam_role_policy_attachment" "github_actions_supporting" {
   policy_arn = aws_iam_policy.github_actions_supporting.arn
 }
 
-# Outputs for use in GitHub Actions and Terraform Cloud workflows
+# Outputs for use in GitHub Actions and local bootstrap
 output "github_actions_role_arn" {
-  description = "ARN of the IAM role for GitHub Actions and Terraform Cloud to assume"
+  description = "ARN of the IAM role for GitHub Actions to assume"
   value       = aws_iam_role.github_actions.arn
 }
 
 output "github_oidc_provider_arn" {
   description = "ARN of the GitHub OIDC provider"
   value       = aws_iam_openid_connect_provider.github_actions.arn
-}
-
-output "terraform_cloud_oidc_provider_arn" {
-  description = "ARN of the Terraform Cloud OIDC provider"
-  value       = aws_iam_openid_connect_provider.terraform_cloud.arn
 }

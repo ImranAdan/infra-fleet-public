@@ -46,7 +46,7 @@ Access Grafana dashboards on localhost:
 - **Username**: `admin`
 - **Password**: Get with:
   ```bash
-  kubectl get secret -n observability kube-prometheus-stack-grafana \
+  kubectl get secret -n observability grafana-admin-credentials \
     -o jsonpath="{.data.admin-password}" | base64 -d && echo
   ```
 
@@ -64,7 +64,7 @@ Access Prometheus metrics and query interface:
 
 ### Alertmanager (Currently Disabled)
 
-> **Note**: Alertmanager is disabled to save pod capacity on t3.medium.
+> **Note**: Alertmanager is disabled to save pod capacity on the single staging node.
 > See `k8s/infrastructure/observability/kube-prometheus-stack.yaml` to re-enable.
 
 Access Alertmanager for alert management:

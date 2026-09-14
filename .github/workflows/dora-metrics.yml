@@ -12,23 +12,54 @@ on:
   #   - cron: "*/10 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   AWS_REGION: eu-west-2
   PUSHGATEWAY_URL: http://127.0.0.1:9091
 
 jobs:
+  configuration:
+    name: Deployment configuration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check AWS role
+        id: check
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+        run: |
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### DORA collection skipped"
+              echo ""
+              echo "No deployment role is configured. This is expected in the public template."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
   workflow-metrics:
-    if: github.event_name == 'workflow_run'
+    needs: configuration
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event != 'pull_request' &&
+      needs.configuration.outputs.configured == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           role-session-name: GitHubActions-DoraMetrics-${{ github.run_id }}
@@ -144,17 +175,18 @@ jobs:
           fi
 
   cluster-metrics:
-    if: github.event_name != 'workflow_run'
+    needs: configuration
+    if: github.event_name != 'workflow_run' && needs.configuration.outputs.configured == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
           role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
           role-session-name: GitHubActions-DoraCluster-${{ github.run_id }}

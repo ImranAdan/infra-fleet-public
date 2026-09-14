@@ -1,5 +1,10 @@
 # Cost Optimization Guide
 
+> Historical analysis from the source fleet. Prices and scheduled-lifecycle
+> assumptions in this document are not current template guarantees. The public
+> template uses EKS 1.35 with `STANDARD` support and manual destroy by default.
+> Check current AWS pricing before deployment.
+
 ## Overview
 
 This guide helps you minimize AWS costs for the infra-fleet platform while maintaining a production-like learning environment.
@@ -389,7 +394,7 @@ cluster-start
 - Hybrid cleanup approach (v2 script in `scripts/cleanup-k8s-resources-v2.sh`)
 - Handles both healthy clusters (kubectl) and destroyed clusters (AWS API)
 - Pre/post verification prevents silent failures
-- See `docs/implementation-summary-hybrid-cleanup.md` for details
+- See `.github/actions/cleanup-kubernetes-resources` for the implementation
 
 ---
 

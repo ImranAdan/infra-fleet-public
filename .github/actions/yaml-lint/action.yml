@@ -16,7 +16,7 @@ runs:
   steps:
     - name: Install yamllint
       shell: bash
-      run: pip install yamllint --quiet
+      run: pip install yamllint==1.37.1 --quiet
 
     - name: Create yamllint config
       shell: bash
@@ -32,7 +32,14 @@ runs:
 
     - name: Run yamllint
       shell: bash
+      env:
+        YAML_PATH: ${{ inputs.path }}
       run: |
-        echo "Validating YAML syntax in ${{ inputs.path }}..."
-        yamllint -c /tmp/yamllint-config.yml ${{ inputs.path }}
+        set -euo pipefail
+        if [[ "$YAML_PATH" = /* ]] || [[ "$YAML_PATH" == *..* ]] || [ ! -e "$YAML_PATH" ]; then
+          echo "Invalid YAML validation path: $YAML_PATH" >&2
+          exit 2
+        fi
+        echo "Validating YAML syntax in $YAML_PATH..."
+        yamllint -c /tmp/yamllint-config.yml "$YAML_PATH"
         echo "YAML syntax validation passed"

@@ -42,7 +42,8 @@ The platform uses **kube-prometheus-stack** (Helm chart v67.4.0) to provide:
 
 ### Port Forwarding (Recommended)
 
-Since no Ingress is configured (to avoid ALB costs and finalizer issues), use port-forwarding:
+Port-forwarding is the supported access path while the repository's retired
+ingress controller is being replaced:
 
 ```bash
 # Prometheus UI
@@ -61,9 +62,11 @@ Then access:
 | Setting | Value |
 |---------|-------|
 | Username | `admin` |
-| Password | `prom-operator` |
+| Password | Value supplied as the `GRAFANA_ADMIN_PASSWORD` Actions secret |
 
-**Note**: Change the password in production environments.
+The rebuild workflow writes this value to the runtime-only
+`grafana-admin-credentials` Kubernetes Secret. No default cluster password is
+committed.
 
 ## Configuration
 

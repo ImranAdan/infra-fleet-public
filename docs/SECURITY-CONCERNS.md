@@ -2,6 +2,11 @@
 
 This document tracks security findings, implemented mitigations, and outstanding concerns for the infra-fleet platform.
 
+> This is a point-in-time audit trail, not setup guidance. Findings below keep
+> their original wording for provenance, with current dispositions added where
+> later changes superseded them. Use [SECURITY.md](../SECURITY.md) and
+> [CONFIGURATION.md](../CONFIGURATION.md) for the supported deployment boundary.
+
 ## Static Code Security Audit
 
 Completed: December 2025
@@ -256,7 +261,9 @@ add that action to the relevant statement rather than restoring a wildcard.
 
 **Finding:** Traffic unencrypted between client and NLB.
 
-**Status:** Deferred - requires cert-manager setup and domain configuration.
+**Current disposition:** Optional TLS is implemented with cert-manager and a
+configured hostname. The remaining blocker is the retired ingress controller;
+do not expose it as a new public deployment.
 
 **Options:**
 - Deploy cert-manager with Let's Encrypt
@@ -269,7 +276,9 @@ add that action to the relevant statement rather than restoring a wildcard.
 
 **Finding:** No approval gates on destructive workflows (nightly-destroy).
 
-**Status:** Accepted risk - stack is ephemeral and can be rebuilt via `rebuild-stack.yml`.
+**Current disposition:** Resolved. Cleanup and Terraform destroy use the
+protected `staging` environment, and manual dispatch requires the exact target
+confirmation `destroy staging`.
 
 ---
 
@@ -298,10 +307,98 @@ add that action to the relevant statement rather than restoring a wildcard.
 | M3 | imagePullPolicy not Always | Backlog |
 | M4 | API_KEY secret optional | By design (dev mode) |
 | M5 | EKS public API | Accepted risk |
-| M8 | Grafana password in plan | Backlog |
+| M8 | Grafana password in plan | Resolved: runtime Secret outside Terraform |
 
 ---
 
+## Security Audit — 2026-09-11
+
+Full-repository audit of the template as published. Tooling: `gitleaks` over
+the entire commit history, `trivy config` across Terraform and Kubernetes,
+`trivy image` against a locally built application image, `actionlint`,
+`shellcheck`, plus manual review of workflow triggers, IAM, RBAC and the
+application middleware.
+
+Scope is this repository only. A deployment built from it inherits these
+properties but adds its own credentials and cloud configuration.
+
+### Verified sound
+
+Recorded because a negative result is worth as much as a finding when the
+alternative would have been serious.
+
+| Check | Result |
+|-------|--------|
+| Secrets in git history | `gitleaks` reports 6 hits across 40 commits. **All six are the literal `test-api-key-12345`** in `conftest.py` and `test_app.py`. No real credential has ever been committed |
+| `pull_request_target` | **Absent.** The standard route to credential theft in a public repository is not present anywhere |
+| `issue_comment` triggers | None |
+| Script injection | Untrusted values (`workflow_run.*`, `head_commit.message`) are passed through `env:`, not interpolated into `run:`. The one direct interpolation is `pull_request.number`, an integer GitHub controls |
+| `workflow_run` handling | `dora-metrics.yml` runs with secrets, but checks out the **default branch**, not pull request head. No "pwn request" |
+| Container image | 0 HIGH/CRITICAL with `--ignore-unfixed`, matching what CI enforces |
+| Application headers | CSP, HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` all set by `middleware/security_headers.py` |
+| Flask session key | Falls back to `secrets.token_hex(32)`, never a hardcoded default, and is supplied from a Secret in Kubernetes |
+| Network policy | Present for the application |
+| Repository controls | Secret scanning and push protection **enabled**; default workflow permission is `read`; `main` is protected |
+
+### Findings
+
+**H1 — Application container had a writable root filesystem** (`AVD-KSV-0014`)
+
+`readOnlyRootFilesystem` was unset, while `pushgateway.yaml` in the same
+repository sets it. Fixed. Verified by running the image with
+`--read-only`: `/health`, `/metrics`, `/ui/` and `POST /load/cpu` all return
+200 once gunicorn has a writable state directory, so the fix adds `emptyDir`
+mounts for `/tmp` and `/home/app/.gunicorn`. Without them gunicorn logs
+`Read-only file system: '/home/app/.gunicorn'` and the control server fails.
+
+**H2 — No seccomp profile** (`AVD-KSV-0104`). Fixed: `RuntimeDefault` at pod
+level.
+
+**M1 — Third-party actions were pinned to mutable tags (resolved)**
+
+Ten of twelve are pinned by tag, two by commit. A tag can be moved to point at
+new code, which then runs with whatever credentials the job holds. This is not
+hypothetical here: `trivy-action@0.33.1` stopped resolving when upstream
+re-tagged, taking CI down with no commit in this repository. That was an
+outage; the same mechanism is available for a compromise.
+
+`sha_pinning_required` is `false` at repository level.
+
+Current disposition: all third-party action references are pinned by full
+commit SHA with a version comment. `scripts/validate-template-contract.sh`
+rejects newly introduced version-tag references.
+
+**M2 — `iam:PassRole` without a condition** (`AVD-AWS-0342`)
+
+Present in the current stack. A narrower proposal exists, but it has not been
+validated through a complete AWS apply/destroy cycle and should not be treated
+as approved merely because it is open. IAM scoping remains follow-up work.
+
+**L1 — Dependabot security updates are repository state.** Version updates are
+configured in `.github/dependabot.yml`, but alerts and security-update pull
+requests are separate GitHub settings that every adopter must verify.
+
+**L2 — Workflows lacked a top-level permission baseline (resolved).** Each
+workflow now declares its baseline explicitly; jobs add only the capabilities
+they require. The template contract rejects workflows that omit the baseline.
+
+**L3 — No `.gitleaks.toml`.** An adopter running a secret scan gets six false
+positives from the test fixtures with nothing recording that they are expected.
+
+### Not this repository's to fix
+
+`trivy config` reports 9 CRITICAL and 7 MEDIUM findings in
+`k8s/flux-system/flux-system/gotk-components.yaml` — a ClusterRole that can
+manage all resources and read secrets cluster-wide, and a binding to
+`cluster-admin`.
+
+That file is generated by `flux bootstrap` and carries `DO NOT EDIT`. The
+permissions are what Flux requires to reconcile arbitrary manifests; narrowing
+them would break the GitOps controller, and any edit is reverted by the next
+upgrade. They are listed here so the count is not mistaken for something
+actionable.
+
+---
 ## Positive Security Findings
 
 ### Application Security

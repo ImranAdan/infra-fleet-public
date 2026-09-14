@@ -9,7 +9,6 @@
 # Or use the helper script:
 #   ./local-dev/dev.sh up
 #
-version: '3.8'
 
 services:
   load-harness:
@@ -36,14 +35,17 @@ services:
       - ../.env
     environment:
       - PYTHONPATH=/app/src
-    command: ["pytest", "tests/", "-v"]
+    # -p no:cacheprovider: the image runs as non-root and /app is read-only to
+    # it, so pytest cannot write .pytest_cache. The cache is worthless in a
+    # throwaway container anyway, and without this every run emits a warning.
+    command: ["pytest", "tests/", "-v", "-p", "no:cacheprovider"]
     profiles:
       - test
 
   # Prometheus - scrapes /metrics from load-harness
   # Access at: http://localhost:9090
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
     ports:
       - "9090:9090"
     volumes:
@@ -57,7 +59,7 @@ services:
   # Dashboard auto-imported via setup script
   # Note: Pinned to 11.4.0 to match cluster version
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:11.4.0@sha256:d8ea37798ccc41061a62ab080f2676dda6bf7815558499f901bdb0f533a456fb
     ports:
       - "3000:3000"
     environment:

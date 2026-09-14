@@ -13,6 +13,12 @@ set -euo pipefail
 CLUSTER_NAME="${1:-staging}"
 AWS_REGION="${2:-eu-west-2}"
 
+if [[ ! "$CLUSTER_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] ||
+   [[ ! "$AWS_REGION" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]; then
+    echo "Invalid EKS cluster name or AWS region." >&2
+    exit 2
+fi
+
 echo "🔍 Resource Discovery Report (READ-ONLY)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Cluster: $CLUSTER_NAME"

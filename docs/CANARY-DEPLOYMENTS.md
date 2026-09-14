@@ -1,5 +1,10 @@
 # Canary Deployments with Flagger
 
+> **Deployment preview:** this implementation depends on retired community
+> `ingress-nginx`, which no longer receives security fixes. The behavior below
+> documents the current lab; do not treat it as a production rollout design.
+> See [../SECURITY.md](../SECURITY.md).
+
 This document describes how canary deployments work in this infrastructure using Flagger with NGINX Ingress.
 
 ## Architecture Overview
@@ -49,7 +54,7 @@ When a new image or config change is detected:
 5. Prometheus metrics analyzed every 30s
 6. If healthy, increase canary traffic by 10%
 7. Repeat until maxWeight (50%) reached
-8. After 3 successful iterations at max → promote canary to primary
+8. A successful analysis at max weight allows promotion to primary
 
 ### Timeline (Happy Path)
 
@@ -59,10 +64,12 @@ t=0:30  canary 20% ← analyze
 t=1:00  canary 30% ← analyze
 t=1:30  canary 40% ← analyze
 t=2:00  canary 50% ← analyze (max weight)
-t=2:30  canary 50% ← iteration 1 of 3
-t=3:00  canary 50% ← iteration 2 of 3
-t=3:30  canary 50% ← iteration 3 of 3 → PROMOTED
+t=2:30  successful max-weight analysis → PROMOTED
 ```
+
+This is illustrative. Webhook duration, metric intervals, reconciliation, and
+load-balancer behavior make the live timing variable. `analysis.threshold: 3`
+is the failed-check limit before rollback, not three required successes.
 
 ## Metrics and Thresholds
 

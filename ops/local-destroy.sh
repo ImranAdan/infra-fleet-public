@@ -4,27 +4,58 @@
 # Replicates the nightly-destroy workflow for local execution
 #
 # Usage:
-#   ./ops/local-destroy.sh [--force]
+#   ./ops/local-destroy.sh --confirm-staging-destroy [--force]
 #
 # Prerequisites:
 #   - AWS credentials configured (aws sso login or environment variables)
 #   - Terraform CLI installed
 #   - kubectl installed
 #
-# Environment Variables (optional):
-#   AWS_REGION     - AWS region (default: eu-west-2)
-#   CLUSTER_NAME   - EKS cluster name (default: staging)
-#   TF_VAR_grafana_admin_password - Grafana password (can be any value for destroy)
-#
+# Reads HCP Terraform identifiers from config.env. AWS credentials must already
+# be available in the caller's shell.
 
 set -euo pipefail
 
-# Configuration
-AWS_REGION="${AWS_REGION:-eu-west-2}"
-CLUSTER_NAME="${CLUSTER_NAME:-staging}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-FORCE="${1:-}"
+CONFIG_FILE="${CONFIG_FILE:-$REPO_ROOT/config.env}"
+AWS_REGION="eu-west-2"
+CLUSTER_NAME="staging"
+FORCE=""
+CONFIRMED=false
+
+for argument in "$@"; do
+    case "$argument" in
+        --confirm-staging-destroy) CONFIRMED=true ;;
+        --force) FORCE=--force ;;
+        *)
+            echo "Usage: $0 --confirm-staging-destroy [--force]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [ "$CONFIRMED" != true ]; then
+    echo "Refusing to destroy without --confirm-staging-destroy." >&2
+    exit 2
+fi
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Missing $CONFIG_FILE. Copy config.example.env to config.env first." >&2
+    exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$CONFIG_FILE"
+set +a
+
+if [ -z "${TF_CLOUD_ORGANIZATION:-}" ] || [ -z "${TF_WORKSPACE_STAGING:-}" ]; then
+    echo "config.env must define TF_CLOUD_ORGANIZATION and TF_WORKSPACE_STAGING." >&2
+    exit 1
+fi
+
+export TF_WORKSPACE="$TF_WORKSPACE_STAGING"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🔥 LOCAL STACK DESTROY"
@@ -32,6 +63,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "Cluster: $CLUSTER_NAME"
 echo "Region:  $AWS_REGION"
 echo "Date:    $(date)"
+echo "AWS identity: $(aws sts get-caller-identity --query Arn --output text)"
 echo ""
 
 # ============================================================================
@@ -136,9 +168,6 @@ echo "✅ PRESERVING: Permanent infrastructure (infrastructure/permanent/)"
 echo ""
 
 cd "$REPO_ROOT/infrastructure/staging"
-
-# Set a dummy grafana password if not set (required by variable but not used for destroy)
-export TF_VAR_grafana_admin_password="${TF_VAR_grafana_admin_password:-destroy-placeholder}"
 
 terraform init -input=false
 terraform destroy -auto-approve

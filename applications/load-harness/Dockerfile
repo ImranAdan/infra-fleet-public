@@ -1,5 +1,5 @@
 # Multi-stage build for production optimization
-FROM python:3.13-slim AS builder
+FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder
 
 # Install build dependencies for packages that need compilation (e.g., psutil)
 # Also run upgrade to get latest security patches
@@ -15,7 +15,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-FROM python:3.13-slim AS runtime
+FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS runtime
 
 # Apply security patches for CVE-2025-15467 and CVE-2025-69419 (openssl)
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*

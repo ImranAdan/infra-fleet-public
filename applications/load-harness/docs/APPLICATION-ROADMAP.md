@@ -1,12 +1,18 @@
 # Application Roadmap — Load Harness
 
-A Python Flask-based synthetic workload service designed to **stress test the EKS cluster**, exercise **HPA**, validate **ALB ingress**, and provide **observable CPU/memory load** for cost/performance analysis.
+A Python Flask synthetic workload service designed to stress the EKS cluster,
+exercise HPA, validate the current NGINX/NLB ingress path, and provide observable
+CPU and memory load.
+
+> The community NGINX ingress controller is retired. This application remains
+> useful locally and by port-forward; treat the cluster ingress as a private
+> preview until the Gateway API migration is live-cycle tested.
 
 ## Purpose
 
-This application provides a repeatable, deterministic workload to validate:
+This application provides a repeatable, controlled workload to validate:
 
-- ALB → EKS ingress behavior
+- NLB → NGINX ingress → EKS behavior
 - Application performance under load
 - Resource limits and pod behavior
 - Horizontal Pod Autoscaler (HPA) capabilities
@@ -35,12 +41,13 @@ Notes:
 - With `min=1`, `max=2`, autoscaling is possible but limited.
 - Real autoscaling tests require Cluster Autoscaler or Karpenter.
 - The cluster already runs core system pods (kube-system, flux, observability).
-- An ALB ingress is provisioned via AWS Load Balancer Controller.
+- The NGINX ingress Service provisions an AWS NLB through AWS Load Balancer
+  Controller.
 
 ## High-Level Architecture
 
 ```
-User → ALB → Ingress → Service → Pods (Flask/Gunicorn)
+User → NLB → NGINX Ingress → Service → Pods (Flask/Gunicorn)
                          |
                          └── /metrics → Prometheus → Grafana
 ```
@@ -57,58 +64,82 @@ Components:
 
 ## Endpoints
 
+Verified against `src/load_harness/load_harness_service.py` and
+`src/load_harness/constants.py`.
+
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/` | GET | Application info |
-| `/health` | GET | Health check (liveness/readiness) |
-| `/metrics` | GET | Prometheus metrics |
-| `/load/cpu` | POST | Blocking CPU load |
-| `/load/memory` | POST | Memory allocation load |
-| `/load/cpu/sustained` | POST | Non-blocking background CPU load |
-| `/load/cpu/sustained/status` | GET | Check sustained load job status |
-| `/load/cpu/sustained/stop` | POST | Stop sustained load workers |
+| `/health` | GET | Liveness check |
+| `/ready` | GET | Readiness check |
+| `/version` | GET | Build version, injected as `APP_VERSION` |
+| `/system/info` | GET | Host CPU and memory as seen by the pod |
+| `/metrics` | GET | Prometheus metrics, via `prometheus-flask-exporter` |
+| `/load/cpu` | POST | Start CPU load in background workers. Returns immediately |
+| `/load/cpu/status` | GET | Status of the running CPU job |
+| `/load/cpu/stop` | POST | Stop CPU workers |
+| `/load/cpu/work` | POST | **Blocking** CPU work. Occupies a worker, so load balances across pods |
+| `/load/memory` | POST | Start memory load in a background worker. Returns immediately |
+| `/load/memory/status` | GET | Status of the running memory job |
+| `/load/memory/stop` | POST | Stop the memory worker |
+| `/load/memory/sync` | POST | Legacy blocking memory load |
 | `/apidocs` | GET | Interactive Swagger UI |
 | `/apispec.json` | GET | OpenAPI specification |
 
-### POST /load/cpu — Blocking CPU Load
+The dashboard is mounted under `/ui` and adds `/ui/`, `/ui/login`,
+`/ui/logout`, `/ui/api/system-info` and several `/ui/partials/*` routes used by
+HTMX. The prefix comes from `url_prefix="/ui"` on the blueprint in
+`src/load_harness/dashboard/routes.py`.
+
+### POST /load/cpu — background CPU load
 
 ```json
 {
-  "duration_ms": 500,
-  "complexity": 5
-}
-```
-
-- `duration_ms`: 1-10000 (default: 100)
-- `complexity`: 1-10 (default: 5)
-
-### POST /load/memory — Memory Load
-
-```json
-{
-  "size_mb": 100,
-  "duration_ms": 2000
-}
-```
-
-- `size_mb`: 1-2048 (default: 50)
-- `duration_ms`: 1-120000 (default: 1000)
-
-### POST /load/cpu/sustained — Non-Blocking CPU Load
-
-```json
-{
-  "workers": 2,
+  "cores": 1,
   "duration_seconds": 60,
-  "complexity": 5
+  "intensity": 5
 }
 ```
 
-- `workers`: 1-4 (default: 1)
-- `duration_seconds`: 1-300 (default: 30)
-- `complexity`: 1-10 (default: 5)
+| Field | Range | Default |
+|-------|-------|---------|
+| `cores` | 1-16 | 1 |
+| `duration_seconds` | 10-900 | 60 |
+| `intensity` | 1-10 | 5 |
 
-Returns immediately with `job_id` for monitoring. Health probes remain responsive.
+Returns immediately with a job id. Health probes stay responsive, which is what
+makes this safe to run against a pod that Kubernetes is also monitoring.
+
+### POST /load/cpu/work — blocking CPU work
+
+```json
+{
+  "iterations": 100000
+}
+```
+
+`iterations`: 1,000-10,000,000, default 100,000.
+
+Unlike `/load/cpu`, this occupies the worker until it finishes. That is the
+point: it is what the dashboard's distributed test uses to spread load across
+pods rather than concentrating it in one.
+
+### POST /load/memory — background memory load
+
+```json
+{
+  "size_mb": 50,
+  "duration_seconds": 30
+}
+```
+
+| Field | Range | Default |
+|-------|-------|---------|
+| `size_mb` | 1-2048 | 50 |
+| `duration_seconds` | 5-300 | 30 |
+
+`/load/memory/sync` is the older blocking form, taking `size_mb` and
+`duration_ms` (1-120,000, default 1,000).
 
 ## Metrics Exposed
 
@@ -121,41 +152,23 @@ Via `prometheus-flask-exporter`:
 
 ## Dockerfile
 
-Multi-stage build with security best practices:
+Multi-stage build. Rather than reproduce it here and let the copy drift, see
+[`../Dockerfile`](../Dockerfile) - it is the source of truth. The properties
+worth knowing:
 
-```dockerfile
-# Multi-stage build for production optimization
-FROM python:3.11-slim AS builder
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-FROM python:3.11-slim AS runtime
-
-# Create non-root user for security
-RUN useradd --create-home --shell /bin/bash app
-
-WORKDIR /app
-
-# Copy Python packages from builder stage
-COPY --from=builder /root/.local /home/app/.local
-
-# Copy application code
-COPY src/ ./src/
-
-# Switch to non-root user
-USER app
-
-# Add local Python packages to PATH and set PYTHONPATH
-ENV PATH=/home/app/.local/bin:$PATH
-ENV PYTHONPATH=/app/src
-
-EXPOSE 8080
-
-# Use environment variable for port, defaulting to 8080
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 2 load_harness.wsgi:app"]
-```
+- **Two stages.** Dependencies are built in the builder and only
+  `/root/.local` is copied forward, so build tools never reach the runtime
+  image.
+- **No package installer at runtime.** `pip`, `setuptools` and `wheel` are
+  removed from the runtime stage. They are not needed to run gunicorn, and the
+  packages setuptools vendors were the source of two HIGH CVEs.
+- **Non-root.** The container runs as the `app` user, enforced again by
+  `securityContext` in `deployment.yaml`.
+- **Safe worker creation.** Background CPU and memory workers use the `spawn`
+  multiprocessing context instead of forking the multithreaded web process.
+- **Scanned in CI.** `load-harness-ci.yml` runs Trivy against the built image
+  with `severity: CRITICAL,HIGH` and `exit-code: 1`, so a vulnerable image
+  fails the build rather than shipping.
 
 ## Deployment on EKS
 
@@ -175,50 +188,32 @@ Currently deployed:
 - **Grafana** — Dashboards and visualization
 - **ServiceMonitor** — Auto-discovery of application metrics
 
-## Implementation Roadmap
+## Extending or replacing the Harness
 
-### Phase 1: Core Load Testing ✅ COMPLETE
+The Harness exists to give the platform something real to deploy, scale,
+canary and measure. It is meant to be replaced.
 
-- ✅ Flask application with factory pattern
-- ✅ `/load/cpu` endpoint with configurable duration and complexity
-- ✅ `/load/memory` endpoint for memory pressure testing
-- ✅ Prometheus metrics via `prometheus-flask-exporter`
-- ✅ Health check endpoint
-- ✅ Docker-first development workflow
-- ✅ Multi-stage Dockerfile with non-root user
-- ✅ CI/CD pipeline with GitHub Actions
-- ✅ FluxCD GitOps deployment
+Replacing it is a small migration, not an image-only toggle. Preserve or
+deliberately update this contract:
 
-### Phase 2: Advanced Load Patterns ✅ COMPLETE
+1. The Deployment must expose the Service's named HTTP port, provide distinct
+   liveness and readiness endpoints, keep resource requests for HPA, and expose
+   Prometheus metrics compatible with the `ServiceMonitor`.
+2. The image repository, immutable bootstrap tag, release-please package name,
+   Flux `ImageRepository`/`ImagePolicy`, and CI `ECR_REPOSITORY` must move
+   together. `scripts/validate-template-contract.sh` currently enforces the
+   Harness version/tag pair.
+3. Flagger's `targetRef`, `autoscalerRef`, Service port, ingress reference,
+   webhook routes, and MetricTemplates must match the replacement. The current
+   analysis relies specifically on NGINX ingress metrics and public `/health`
+   and `/ready` endpoints.
+4. Update the Kubernetes Secret contract if the replacement does not use the
+   Harness's optional API key and required Flask session key.
 
-- ✅ Non-blocking sustained CPU load (`/load/cpu/sustained`)
-- ✅ Multiprocessing workers for background load
-- ✅ Job management (start, status, stop)
-- ✅ Health probes remain responsive during sustained load
+Validate the replacement through build, schema and policy checks first. Canary
+promotion, rollback, HPA behavior, and teardown still require an approved live
+cycle in a configured private copy.
 
-### Phase 3: API Documentation ✅ COMPLETE
-
-- ✅ OpenAPI/Swagger documentation with Flasgger
-- ✅ Interactive Swagger UI at `/apidocs`
-- ✅ OpenAPI spec at `/apispec.json`
-- ✅ Request/response schemas for all endpoints
-
-### Phase 4: Observability Stack ✅ COMPLETE
-
-- ✅ Prometheus deployment (kube-prometheus-stack)
-- ✅ Grafana dashboards
-- ✅ ServiceMonitor for auto-discovery
-- ✅ HPA configuration
-
-### Phase 5: Future Enhancements (Planned)
-
-- 🔄 Network I/O load endpoints
-- 🔄 Disk I/O load endpoints
-- 🔄 Chaos engineering patterns
-- 🔄 Load test automation with scenarios
-- 🔄 Cost-per-request analysis dashboard
-
----
-
-**Status**: Phases 1-4 complete, Phase 5 planned
-**Last Updated**: 2025-12-23
+Keeping the Harness alongside your own workload is also reasonable - it is a
+useful way to generate load and confirm autoscaling still behaves after a
+change.

@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: aws-load-balancer-controller
-      version: 1.7.1
+      version: 3.5.0
       sourceRef:
         kind: HelmRepository
         name: eks-charts
@@ -32,7 +32,7 @@ spec:
     vpcId: ${VPC_ID}
 
     # Single replica for pod capacity (t3.large = 35 pods max)
-    # Running 1 replica is acceptable for dev/staging with nightly rebuild
+    # Running 1 replica is acceptable for this manually torn-down staging lab
     replicaCount: 1
 
     # Resource limits

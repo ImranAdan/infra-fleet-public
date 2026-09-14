@@ -135,4 +135,4 @@ docker-compose down -v
 
 ## Production Deployment
 
-For EKS deployment, see Phase 2b plan in `APPLICATION-ROADMAP.md`.
+For EKS deployment, see `APPLICATION-ROADMAP.md`.
