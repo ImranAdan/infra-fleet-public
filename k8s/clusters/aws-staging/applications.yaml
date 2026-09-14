@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: applications
+  namespace: flux-system
+spec:
+  interval: 1m
+  path: ./k8s/profiles/aws-staging/applications
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 15m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: fleet-config
+  dependsOn:
+    - name: policies
+    - name: infrastructure
+    - name: cert-manager-issuer

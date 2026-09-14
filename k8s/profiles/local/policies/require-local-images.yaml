@@ -1,0 +1,20 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-local-images
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-designated-local-registry
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [applications]
+      validate:
+        message: Harness images must come from the fleet local registry.
+        pattern:
+          spec:
+            containers:
+              - image: "fleet-local-registry:5000/load-harness:*"

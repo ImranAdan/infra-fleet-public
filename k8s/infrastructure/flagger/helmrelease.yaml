@@ -26,10 +26,6 @@ metadata:
   name: flagger
   namespace: flux-system
 spec:
-  # Wait for NGINX Ingress Controller to be ready
-  dependsOn:
-    - name: nginx-ingress-controller
-      namespace: ingress-nginx
   interval: 1h
   chart:
     spec:
@@ -50,7 +46,7 @@ spec:
 
     # NGINX Ingress - enables weighted traffic splitting
     # Flagger will manage nginx.ingress.kubernetes.io/canary-weight annotation
-    meshProvider: nginx
+    meshProvider: ${TRAFFIC_PROVIDER}
 
     # Resource limits for t3.large node
     resources:

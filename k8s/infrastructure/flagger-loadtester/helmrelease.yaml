@@ -34,7 +34,7 @@ spec:
       namespace: flux-system
   interval: 1h
   # Deploy alongside the sample application.
-  targetNamespace: applications
+  targetNamespace: flux-system
   chart:
     spec:
       chart: loadtester

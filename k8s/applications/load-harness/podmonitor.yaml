@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: load-harness
+  namespace: applications
+spec:
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [load-harness, load-harness-primary]
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

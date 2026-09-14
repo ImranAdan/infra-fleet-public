@@ -264,7 +264,12 @@ def create_metrics_provider(
     Returns:
         LocalMetricsProvider for local environment, KubernetesMetricsProvider otherwise.
     """
-    is_local = os.environ.get("ENVIRONMENT", "local") == "local"
+    backend = os.environ.get("METRICS_BACKEND")
+    if backend is None:
+        backend = "local" if os.environ.get("ENVIRONMENT", "local") == "local" else "kubernetes"
+    if backend not in ("local", "kubernetes"):
+        raise ValueError("METRICS_BACKEND must be local or kubernetes")
+    is_local = backend == "local"
 
     if is_local:
         return LocalMetricsProvider(prometheus_client, logger)

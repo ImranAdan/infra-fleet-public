@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fleet_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+action=${1:-help}
+if [ "$#" -gt 0 ]; then shift; fi
+profile=''
+revision=''
+service=app
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --profile|--revision|--service)
+      if [ "$#" -lt 2 ]; then echo "Missing value for $1" >&2; exit 2; fi
+      case "$1" in
+        --profile) profile=$2 ;;
+        --revision) revision=$2 ;;
+        --service) service=$2 ;;
+      esac
+      shift 2 ;;
+    --help|-h) action=help; shift ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+if [ "$action" = help ]; then
+  cat <<'EOF'
+Usage: ./fleet ACTION --profile local|aws-staging
+
+  render       Print the effective infrastructure, policies and application
+  up           Create/reconcile local Kubernetes, or dispatch the AWS rebuild
+  sync         Reconcile a committed local revision (--revision FULL_SHA)
+  status       Show local controllers, or recent AWS rebuild runs
+  down         Delete this facade's local cluster, or dispatch AWS teardown
+  access       Local port-forward (--service app|prometheus|grafana)
+  credentials  Print local application and Grafana credentials on request
+  test         Prove local drift correction, admission and canary delivery
+
+Local up/sync use a committed Git snapshot and require a clean tracked checkout.
+AWS up/down dispatch the existing main-branch workflows; AWS resources cost money.
+EOF
+  exit 0
+fi
+case "$profile" in local|aws-staging) ;; *) echo 'Choose --profile local or aws-staging.' >&2; exit 2 ;; esac
+case "$action" in render|up|sync|status|down|access|credentials|test) ;; *) echo "Unknown action: $action" >&2; exit 2 ;; esac
+cd "$fleet_root"
+if [ "$action" = render ]; then
+  exec "$fleet_root/scripts/render-profile.sh" "$profile"
+fi
+if [ "$profile" = aws-staging ]; then
+  case "$action" in
+    up) exec gh workflow run rebuild-stack.yml --ref main ;;
+    down) exec gh workflow run nightly-destroy.yml --ref main ;;
+    status) exec gh run list --workflow rebuild-stack.yml --limit 5 ;;
+    *) echo "$action is available only for the local profile." >&2; exit 2 ;;
+  esac
+fi
+# Closed strategies: profile text cannot select a script, command or import.
+source "$fleet_root/scripts/fleet-profiles/local.sh"
+local_main "$action" "$revision" "$service"

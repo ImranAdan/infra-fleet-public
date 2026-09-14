@@ -33,11 +33,6 @@ metadata:
   name: kube-prometheus-stack
   namespace: observability
 spec:
-  # dependsOn ensures kube-prometheus-stack waits for ALB controller webhook to be ready
-  # Without this, Helm install fails with "no endpoints available for service aws-load-balancer-webhook-service"
-  dependsOn:
-    - name: aws-load-balancer-controller
-      namespace: kube-system
   interval: 10m
   chart:
     spec:

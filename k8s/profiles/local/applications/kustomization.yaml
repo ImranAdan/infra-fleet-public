@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../applications
+  - metrictemplate.yaml
+images:
+  - name: load-harness
+    newName: ${IMAGE_REGISTRY}/load-harness
+    newTag: ${IMAGE_TAG}
+patches:
+  - target:
+      kind: Deployment
+      name: load-harness
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: PROMETHEUS_URL, value: "http://kube-prometheus-stack-prometheus.observability:9090"}
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: "false"
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: load-harness
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+  - target:
+      kind: NetworkPolicy
+      name: load-harness
+    patch: |-
+      - op: replace
+        path: /spec/ingress/1/from/0/namespaceSelector/matchLabels/kubernetes.io~1metadata.name
+        value: envoy-gateway-system
+  - target:
+      kind: Canary
+      name: load-harness
+    patch: |-
+      - op: add
+        path: /spec/service/hosts
+        value: [localhost]
+      - op: add
+        path: /spec/service/gatewayRefs
+        value: [{name: fleet, namespace: envoy-gateway-system}]
