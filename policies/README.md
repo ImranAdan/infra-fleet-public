@@ -16,6 +16,7 @@ Policies are validated in two places:
 | `block-default-namespace` | Medium | Prevents deployments to the `default` namespace |
 | `block-latest-tag` | Medium | Requires explicit image tags (no `:latest`) |
 | `require-ecr-images` | High | Requires ECR images in `applications` namespace |
+| `require-rollout-capacity` | Medium | Requires explicit zero-unavailable rolling updates, positive integer surge and per-container readiness for application Deployments |
 
 ## Scope & Limitations
 
@@ -103,6 +104,18 @@ The `k8s-manifest-validate` workflow displays a table showing each policy evalua
 - **REASON**: Failure message (if applicable)
 
 ## Testing Policies Locally
+
+Rollout regression cases run in CI with the same pinned CLI:
+
+```bash
+docker run --rm -v "$(pwd)":/workspace -w /workspace \
+  ghcr.io/kyverno/kyverno-cli:v1.13.4 \
+  test tests/policies/rollout-capacity
+```
+
+They cover safe single and scaled workloads, unavailable or zero-surge
+rollouts, missing readiness and the generated-controller boundary. Read the
+[rollout contract](../docs/ROLLOUT-CAPACITY.md) before changing that scope.
 
 ```bash
 # Test a single file

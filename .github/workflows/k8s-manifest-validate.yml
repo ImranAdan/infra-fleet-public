@@ -15,11 +15,13 @@ on:
     paths:
       - 'k8s/**'
       - 'policies/**'
+      - 'tests/policies/**'
   push:
     branches: [main]
     paths:
       - 'k8s/**'
       - 'policies/**'
+      - 'tests/policies/**'
 
 permissions:
   contents: read
@@ -78,3 +80,14 @@ jobs:
         with:
           policy-path: policies/
           resource-path: k8s/applications/
+
+      - name: Test rollout policy regression cases
+        run: |
+          set -euo pipefail
+          /tmp/kyverno test tests/policies/rollout-capacity 2>&1 | tee "$RUNNER_TEMP/rollout-policy-tests.log"
+          # The pinned CLI can exit zero on a malformed test definition.
+          if grep -q '^Test errors:' "$RUNNER_TEMP/rollout-policy-tests.log" ||
+             ! grep -Eq '^Test Summary: [1-9][0-9]* tests passed and 0 tests failed$' "$RUNNER_TEMP/rollout-policy-tests.log"; then
+            echo '::error::Rollout policy tests did not complete successfully.'
+            exit 1
+          fi

@@ -1,0 +1,319 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: single
+  namespace: applications
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scaled
+  namespace: applications
+spec:
+  replicas: 8
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: implicit-defaults
+  namespace: applications
+spec:
+  replicas: 8
+  selector:
+    matchLabels:
+      app: fixture
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unavailable-integer
+  namespace: applications
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unavailable-percent
+  namespace: applications
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zero-surge
+  namespace: applications
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 0
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: percentage-surge
+  namespace: applications
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 25%
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: application-recreate
+  namespace: applications
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: missing-readiness
+  namespace: applications
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: empty-readiness
+  namespace: applications
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sidecar-missing-readiness
+  namespace: applications
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+        - name: sidecar
+          image: registry.example.test/sidecar:v1.0.0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upstream-controller
+  namespace: flux-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixture
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: fixture
+    spec:
+      containers:
+        - name: app
+          image: registry.example.test/app:v1.0.0
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080

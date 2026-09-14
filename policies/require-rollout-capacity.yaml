@@ -1,0 +1,54 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-rollout-capacity
+  annotations:
+    policies.kyverno.io/title: Preserve Application Rollout Capacity
+    policies.kyverno.io/category: Reliability
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment
+    policies.kyverno.io/description: >-
+      Application Deployments declare zero-unavailable rolling updates,
+      positive integer surge capacity and a readiness probe for each container.
+      Generated platform controllers retain their upstream rollout semantics.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: application-zero-unavailable
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - applications
+      validate:
+        message: >-
+          Application Deployments must declare RollingUpdate with
+          maxUnavailable: 0 and a positive integer maxSurge.
+        pattern:
+          spec:
+            strategy:
+              type: RollingUpdate
+              rollingUpdate:
+                maxUnavailable: 0
+                maxSurge: ">0"
+    - name: application-readiness
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - applications
+      validate:
+        message: Every application container must declare a readiness probe.
+        foreach:
+          - list: request.object.spec.template.spec.containers
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.readinessProbe || '' }}"
+                    operator: Equals
+                    value: ""
