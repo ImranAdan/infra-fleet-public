@@ -60,8 +60,10 @@ the advisor repository, not evidence-backed fleet defects.
    destroy cycle. Derive missing actions and resource scopes from actual
    plan/API evidence instead of restoring service wildcards.
 3. Verify optional App-authored report PRs receive required Quality checks and
-   preserve decline history. The default-token delivery path needs a human
-   push to trigger PR checks. Feedback policy PRs require their own solution.
+   preserve decline history. Default-token automated report updates did not
+   obtain completed Quality checks in this audit; use a maintainer-reviewed
+   check-trigger path before merging. Feedback policy PRs require their own
+   solution.
 
 ## Advisor priorities
 
