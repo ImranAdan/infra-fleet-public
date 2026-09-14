@@ -1,5 +1,5 @@
 # Design Decision Record (DDR)
-## Credentials-Free Public Template
+## Public Template and Deployment Boundaries
 
 **Date:** 2026-09-10
 **Author:** Imran Adan
@@ -14,6 +14,15 @@
 secrets**. Its CI proves the code is correct; it does not provision anything.
 
 Provisioning happens in a private repository that supplies its own secrets.
+
+### Public presentation — 14 September 2026
+
+The README and adoption entry points describe the platform, advisor, and
+operator setup. They do not advertise the repository as "secret-free" or make
+categorical assertions about absent credentials. The credential boundary is
+architectural rationale recorded here; setup guides retain the configuration
+requirements needed to operate a private fleet. This changes project language,
+not authentication, workflow permissions, or deployment behavior.
 Anyone adopting this template does the same: copy it, make it private, inject
 their own values.
 

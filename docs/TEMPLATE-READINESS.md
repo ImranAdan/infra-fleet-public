@@ -13,8 +13,8 @@ cloud credentials. Development can focus on the advisor while the platform's
 deployment gates remain explicit. This is not certification for a new public or
 production deployment.
 
-The public repositories keep no deployment credential. Static CI cannot prove
-an actual AWS apply, canary promotion, rollback, or clean teardown. The retired
+Static CI cannot prove an actual AWS apply, canary promotion, rollback, or clean
+teardown. The retired
 ingress-nginx path remains the largest deployment blocker. Rebranding does not
 remove that technical dependency.
 

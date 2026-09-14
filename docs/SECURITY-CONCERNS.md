@@ -329,7 +329,7 @@ alternative would have been serious.
 
 | Check | Result |
 |-------|--------|
-| Secrets in git history | `gitleaks` reports 6 hits across 40 commits. **All six are the literal `test-api-key-12345`** in `conftest.py` and `test_app.py`. No real credential has ever been committed |
+| Secrets in git history | The recorded `gitleaks` scan reports 6 fixture matches across 40 commits in `conftest.py` and `test_app.py` |
 | `pull_request_target` | **Absent.** The standard route to credential theft in a public repository is not present anywhere |
 | `issue_comment` triggers | None |
 | Script injection | Untrusted values (`workflow_run.*`, `head_commit.message`) are passed through `env:`, not interpolated into `run:`. The one direct interpolation is `pull_request.number`, an integer GitHub controls |
@@ -410,7 +410,7 @@ actionable.
 - Dependencies pinned to specific versions
 
 ### Infrastructure Security
-- OIDC authentication for AWS (no static credentials)
+- Short-lived OIDC authentication for AWS
 - ECR images immutable with scan-on-push
 - IMDSv2 enforced on EKS nodes (SSRF protection)
 - Worker nodes in private subnets

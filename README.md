@@ -2,7 +2,7 @@
 
 # Infra Fleet
 
-**An opinionated staging Kubernetes platform you can fork — and a sample app that puts it through its paces.**
+**A staging Kubernetes platform template, with GitOps delivery, observable workloads, and an intent-driven advisor.**
 
 EKS · GitOps · canary deployments with automatic rollback · Prometheus and Grafana · DORA metrics · one-command teardown to keep the bill honest
 
@@ -10,7 +10,6 @@ EKS · GitOps · canary deployments with automatic rollback · Prometheus and Gr
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.35-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![Flux](https://img.shields.io/badge/GitOps-Flux%20v2.7.3-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)](https://developer.hashicorp.com/terraform)
-[![No credentials](https://img.shields.io/badge/secrets%20in%20this%20repo-none-2ea44f)](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md)
 [![Use this template](https://img.shields.io/badge/Use%20this-template-2ea44f?logo=github)](https://github.com/ImranAdan/infra-fleet-public/generate)
 
 [Try it locally](#try-it-locally-first) · [What you get](#what-you-get) · [Make it yours](CONFIGURATION.md) · [Docs](docs/README.md)
@@ -23,7 +22,7 @@ Infra Fleet is the platform template in the Infra Fleet project.
 [Infra Fleet Advisor](https://github.com/ImranAdan/infra-fleet-advisor-public)
 reviews its Git repository against declared security, reliability, and cost
 intent and proposes evidenced recommendations for human review. The platform
-works independently; the advisor needs no AWS or cluster access.
+works independently; the advisor evaluates versioned repository desired state.
 See [connecting the advisor](docs/ADVISOR-INTEGRATION.md).
 
 ---
@@ -39,7 +38,7 @@ See [connecting the advisor](docs/ADVISOR-INTEGRATION.md).
 
 ## Try it locally, first
 
-No AWS account. No credentials. No configuration.
+Start with the Load Harness and monitoring stack in Docker Compose.
 
 ```bash
 git clone https://github.com/ImranAdan/infra-fleet-public.git
@@ -69,14 +68,14 @@ Fork this and you have a platform that does the following, on day one:
 | **Exposes useful signals** | Prometheus, Grafana and an explicitly heuristic DORA-signal pipeline for deployment events, lead time and failures |
 | **Makes cost visible** | Spot instances, a slim Flux install, nginx ingress, and a manual teardown workflow for when you are not using it |
 | **Proves itself in CI** | Terraform validated and scanned, manifests schema-checked, Kyverno policies enforced, images scanned with Trivy, commit messages linted, releases cut by release-please |
-| **Starts credentials-free** | This repository contains no deployment credential, and its Terraform takes the adopter's repository identity as an explicit bootstrap input |
+| **Connects intent to improvement** | Infra Fleet Advisor evaluates declared positions against versioned repository evidence and proposes work for review |
 
 ---
 
 ## Why this one
 
-Most "reference platform" repositories are a diagram and a `terraform apply`
-that stopped working eleven months ago. Three things make this different.
+The platform gives you a concrete staging implementation to inspect, adapt,
+and evaluate against your own priorities.
 
 **It is testable, not just diagrammed.** CI checks the application, container,
 Terraform and Kubernetes manifests without cloud access. A private copy adds
@@ -89,11 +88,10 @@ IPv4 and worker capacity are billed independently. The repository ships with
 a destroy workflow because the most reliable cost control for a learning
 environment is to turn it off when it is not being used.
 
-**The public source cannot reach your account.** The repository you are reading
-has no secrets and no cloud access by design — deliberately, and
-[written down](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md). Deployment happens in
-your own private copy, with your own credentials, after a bootstrap step you run
-yourself. Forking it grants nobody anything.
+**Intent guides the next improvement.** The advisor turns declared security,
+reliability, and cost positions into deterministic evaluations. Recommendations
+cite repository evidence; unsupported positions remain explicit capability
+gaps. You decide which proposals to accept.
 
 ---
 
@@ -105,7 +103,7 @@ Click **Use this template** at the top of the repository, or:
 gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
 ```
 
-**Keep it private.** This template holds no secrets; your deployment will.
+Use a private repository for your deployment configuration and operations.
 
 Then follow **[CONFIGURATION.md](CONFIGURATION.md)** — every value you need to
 supply, where each one comes from, and what you can skip. You need an AWS
@@ -349,7 +347,6 @@ scheduled by default.
 
 ### Adopting this template
 - **[CONFIGURATION.md](CONFIGURATION.md)** - every value you need to supply. Start here
-- [Credentials-Free Template (DDR)](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md) - why this repository holds no secrets
 - [GitHub OIDC Setup](docs/GITHUB-OIDC-SETUP.md) - AWS trust configuration
 - [Terraform Cloud Setup](docs/TERRAFORM-CLOUD-SETUP.md) - HCP Terraform workspaces
 - [SECURITY.md](SECURITY.md) - security policy and notes for forks
@@ -376,6 +373,7 @@ scheduled by default.
 These document decisions and plans specific to the original project. They are
 kept for the reasoning, not as instructions for adopters.
 - [Terraform Cloud / EKS Access (DDR)](docs/TERRAFORM-CLOUD-EKS-DDR.md)
+- [Template Deployment Boundaries (DDR)](docs/PUBLIC-TEMPLATE-BOUNDARY-DDR.md)
 - [Multi-Environment Design](docs/MULTI-ENVIRONMENT-DESIGN.md)
 - [Security Concerns](docs/SECURITY-CONCERNS.md) - audit findings and their status
 

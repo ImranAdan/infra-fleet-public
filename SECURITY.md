@@ -9,20 +9,12 @@ the Ingress/NGINX metric path with a maintained Gateway API implementation
 requires an apply, canary rollout, rollback, and destroy validation cycle; it
 is not treated as a mechanical dependency bump.
 
-## This repository holds no credentials
+## Deployment scope
 
-`infra-fleet-public` is a template. It contains **no cloud credentials, no
-deployment secrets, and no account identifiers**, and it is not named in any
-IAM trust policy. Its CI validates code; it does not provision infrastructure.
-
-That is a deliberate design decision, recorded in
-[docs/CREDENTIALS-FREE-TEMPLATE-DDR.md](docs/CREDENTIALS-FREE-TEMPLATE-DDR.md).
-The practical consequence is that `terraform plan`, `terraform apply` and any
-workflow requiring AWS or HCP Terraform access cannot run here, by design.
-
-If you are adopting this template, see [CONFIGURATION.md](CONFIGURATION.md).
-Deployment happens in **your own private repository**, with **your own**
-credentials.
+`infra-fleet-public` is a staging platform template. For deployment setup and
+operational prerequisites, see [CONFIGURATION.md](CONFIGURATION.md).
+The architectural rationale is recorded in
+[Template Deployment Boundaries](docs/PUBLIC-TEMPLATE-BOUNDARY-DDR.md).
 
 ## Reporting a vulnerability
 
@@ -49,8 +41,7 @@ Out of scope:
   credentials and configuration
 - Findings in upstream projects (EKS, Flux, Flagger, Prometheus) that this
   template merely uses
-- The absence of credentials causing workflows to fail. That is the intended
-  behaviour, not a defect
+- Setup failures caused by incomplete deployment configuration
 
 ## Notes for adopters
 

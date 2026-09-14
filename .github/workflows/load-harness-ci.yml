@@ -232,7 +232,7 @@ jobs:
             {
               echo "### ECR publish skipped"
               echo ""
-              echo "The image was built and scanned, but this credentials-free template has no AWS role."
+              echo "The image was built and scanned. Configure ECR publication using CONFIGURATION.md."
               echo "A configured private copy publishes release tags to ECR."
             } >> "$GITHUB_STEP_SUMMARY"
           else

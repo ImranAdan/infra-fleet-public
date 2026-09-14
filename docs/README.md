@@ -4,9 +4,8 @@ This is the documentation for **Infra Fleet**, a template for an AWS
 EKS platform and the sample application — the Harness — that runs on it.
 
 If you are adopting the template, start with
-[../CONFIGURATION.md](../CONFIGURATION.md). This repository holds no
-credentials and cannot deploy anything; see
-[CREDENTIALS-FREE-TEMPLATE-DDR.md](CREDENTIALS-FREE-TEMPLATE-DDR.md).
+[../CONFIGURATION.md](../CONFIGURATION.md). For repository review and
+recommendation delivery, see [Advisor Integration](ADVISOR-INTEGRATION.md).
 
 **Main README**: [../README.md](../README.md)
 
@@ -150,7 +149,7 @@ review current AWS pricing before deployment.
 ### Design Decisions
 | Document | Description |
 |----------|-------------|
-| [Credentials-Free Template DDR](CREDENTIALS-FREE-TEMPLATE-DDR.md) | Why this repository holds no secrets |
+| [Template Deployment Boundaries DDR](PUBLIC-TEMPLATE-BOUNDARY-DDR.md) | Template adoption and deployment architecture |
 | [Terraform Cloud EKS DDR](TERRAFORM-CLOUD-EKS-DDR.md) | Cluster access design |
 | [Multi-Environment Design](MULTI-ENVIRONMENT-DESIGN.md) | Future multi-env architecture |
 

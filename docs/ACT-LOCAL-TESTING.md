@@ -1,9 +1,9 @@
 # Local workflow validation
 
 GitHub Actions is the execution environment, but most of this template's
-contracts can be checked locally without cloud credentials or `act`.
+contracts can be checked locally with the toolchain below.
 
-## Credentials-free checks
+## Local checks
 
 Run the repository contract first:
 
