@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.5](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.4...v1.6.5) (2026-09-14)
+
+
+### Bug Fixes
+
+* harden plug-and-play fleet adoption ([0979268](https://github.com/ImranAdan/infra-fleet-public/commit/09792680b8645373e9c5fa732323d922adfd2a75))
+* make fleet template adoption deterministic ([ec3d932](https://github.com/ImranAdan/infra-fleet-public/commit/ec3d932b562f0b8a013737b708b4513d895bb012))
+
 ## [1.6.4](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.3...v1.6.4) (2026-09-10)
 
 
