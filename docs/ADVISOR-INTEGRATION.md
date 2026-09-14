@@ -35,16 +35,27 @@ out locally; scheduled reviews target merged fleet `main`.
 1. The advisor compiles declared intent into registered deterministic checks.
 2. It records collected evidence, incomplete coverage, and unverified intent.
 3. Its advisory workflow proposes a report PR in the advisor repository.
-4. A maintainer reviews and merges the report before it becomes the baseline.
-5. Optional issues-only publication revalidates that baseline before creating
-   fleet issues. Unsupported intent becomes capability work in the advisor.
-6. A separate manual remediation path previews the narrow mechanical patcher
-   registry; opening a fleet proposal needs a separate write credential.
+4. A reviewer examines and merges the report-only PR. That PR is the
+   issue-creation decision record and the report becomes the lifecycle baseline.
+5. A separate configured issues-only workflow verifies that approval,
+   revalidates its exact report and creates eligible fleet issues. Each new
+   issue links to the approving report PR. Unsupported intent and incomplete
+   relevant collection remain report coverage rather than fresh fix requests.
+6. The owner selects valuable fleet issues and asks an agent working in this
+   project to propose PR fixes. Issue creation does not automatically start an
+   agent. Fleet review and CI govern the proposed changes.
+7. Another advisor run checks the resulting repository state. Existing issue
+   identities are reused and resolution notes leave closure to a maintainer.
+
+The optional manual mechanical remediation path remains separate from this
+ordinary agent handoff; opening a fleet proposal needs a write credential.
 
 The fleet grants no advisor access to its cloud account. Human decisions control
 issue closure, policy approval, and fleet merges. See the advisor's
 [setup guide](https://github.com/ImranAdan/infra-fleet-advisor-public/blob/main/docs/setup.md)
 for opt-in variables, credential scopes, report freshness, and current limits.
+See [the operating workflow](https://github.com/ImranAdan/infra-fleet-advisor-public/blob/main/docs/WORKFLOW.md)
+for review, publication retries and selecting agent work.
 
 ## Platform contracts to retain
 
