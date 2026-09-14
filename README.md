@@ -90,7 +90,7 @@ environment is to turn it off when it is not being used.
 
 **Intent guides the next improvement.** The advisor turns declared security,
 reliability, and cost positions into deterministic evaluations. Recommendations
-cite repository evidence; unsupported positions remain explicit capability
+cite repository evidence; unsupported positions remain explicit coverage
 gaps. You decide which proposals to accept.
 
 ---

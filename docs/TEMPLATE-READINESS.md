@@ -29,15 +29,15 @@ Rebranding does not remove that dependency or establish production readiness.
 | Advisor [#26](https://github.com/ImranAdan/infra-fleet-advisor-public/pull/26) | Merged deterministic local setup, current-report publication gates, capability lifecycle handling, opt-in fleet publication, remediation eligibility checks, collector budgets and a bounded IAM literal parser. All review threads were resolved. |
 | Advisor [#28](https://github.com/ImranAdan/infra-fleet-advisor-public/pull/28) | Merged matching public messaging and a recorded language decision. |
 | Advisor [#29](https://github.com/ImranAdan/infra-fleet-advisor-public/pull/29) | Preserves historical evidence behind lifecycle notes while using current facts for freshly validated recommendations. Publication validation remains mandatory. |
-| Advisor [#27](https://github.com/ImranAdan/infra-fleet-advisor-public/pull/27) | Refreshes the ratified report against the merged fleet and all seventeen current intent positions. Both fleet issue and advisor capability plans are validated before merge. |
+| Advisor [#27](https://github.com/ImranAdan/infra-fleet-advisor-public/pull/27) | Merged the report against the adopted fleet and all seventeen intent positions. Its earlier automatic capability-ticket publication is superseded by the report-approval decision in PDR 0006. |
 
 ## Verification and its limits
 
 | Check | Evidence and limit |
 |---|---|
-| Advisor quality | Ruff and formatting pass, strict mypy passes on 42 source files, and all 389 deterministic tests pass. |
+| Advisor quality | The report-approval handoff passes Ruff, formatting, strict mypy on 43 source files and all 434 deterministic tests. |
 | Advisor local review | JSON and Markdown are produced from the verified merged fleet with `stub`. Workflow and Deployment collection are complete. IAM collection is explicitly partial for four unsupported policy resources or expressions; it does not execute Terraform or fetch policy URLs. |
-| Publication plans | The refreshed report validates four fleet issue actions and seventeen capability actions: sixteen active coverage gaps and one resolution. Historical IAM recommendations are carried forward because current collection is incomplete; they are not newly confirmed findings. |
+| Publication plan | The approved report validates one active fleet recommendation and one resolution action. Two historical IAM recommendations are deferred because their current collector is incomplete. Every new issue links to the approving report PR; unknown intent remains coverage without automatic advisor tickets. |
 | Load Harness | All 105 tests pass in the container, alongside container and image-security checks. |
 | Template contract | CI passes. Isolated checks accept release/deployment tag advances and reject a full-image Flux setter. |
 | Infrastructure | Current permanent and staging validation and scans pass. Backend-free, readonly-lock initialization and Terraform validation were exercised locally. No live AWS plan or infrastructure change was performed. |
@@ -47,8 +47,11 @@ Rebranding does not remove that dependency or establish production readiness.
 
 No paid model API, live cluster validation or GitHub App installation test was
 performed. Fleet issue publication and feedback remain explicit opt-ins through
-`FLEET_ISSUES_ENABLED=true`. Advisor capability issues are implementation work in
-the advisor repository, not evidence-backed fleet defects.
+`FLEET_ISSUES_ENABLED=true`. Optional decision feedback has a separate
+`FLEET_FEEDBACK_ENABLED=true` setting. The report PR is the fleet issue-creation
+decision record. The earlier generated advisor tickets are consolidated in a
+[coverage review](https://github.com/ImranAdan/infra-fleet-advisor-public/blob/main/docs/COVERAGE-REVIEW.md);
+closing those tickets does not mean their missing checks are implemented.
 
 ## Work before public deployment
 
@@ -67,7 +70,7 @@ the advisor repository, not evidence-backed fleet defects.
 
 ## Advisor priorities
 
-1. Implement deterministic checks for the ratified capability gaps. Cost has
+1. Select deterministic check work deliberately from report coverage. Cost has
    five positions and no registered checks. Absence of a finding does not prove
    that an intent position is satisfied.
 2. Expand bounded IAM structural support for local condition references and
