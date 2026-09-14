@@ -1,6 +1,6 @@
 <div align="center">
 
-# Infrastructure Fleet
+# Infra Fleet
 
 **An opinionated staging Kubernetes platform you can fork — and a sample app that puts it through its paces.**
 
@@ -16,6 +16,15 @@ EKS · GitOps · canary deployments with automatic rollback · Prometheus and Gr
 [Try it locally](#try-it-locally-first) · [What you get](#what-you-get) · [Make it yours](CONFIGURATION.md) · [Docs](docs/README.md)
 
 </div>
+
+---
+
+Infra Fleet is the platform template in the Infra Fleet project.
+[Infra Fleet Advisor](https://github.com/ImranAdan/infra-fleet-advisor-public)
+reviews its Git repository against declared security, reliability, and cost
+intent and proposes evidenced recommendations for human review. The platform
+works independently; the advisor needs no AWS or cluster access.
+See [connecting the advisor](docs/ADVISOR-INTEGRATION.md).
 
 ---
 

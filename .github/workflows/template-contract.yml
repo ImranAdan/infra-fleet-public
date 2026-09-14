@@ -10,6 +10,7 @@ on:
       - 'CONFIGURATION.md'
       - 'config.example.env'
       - '.release-please-manifest.json'
+      - 'release-please-config.json'
       - 'applications/load-harness/local-dev/**'
       - 'ops/**'
   push:
@@ -22,6 +23,7 @@ on:
       - 'CONFIGURATION.md'
       - 'config.example.env'
       - '.release-please-manifest.json'
+      - 'release-please-config.json'
       - 'applications/load-harness/local-dev/**'
       - 'ops/**'
 

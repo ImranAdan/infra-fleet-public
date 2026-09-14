@@ -1,6 +1,6 @@
-# Infrastructure Fleet Documentation
+# Infra Fleet Documentation
 
-This is the documentation for **Infrastructure Fleet**, a template for an AWS
+This is the documentation for **Infra Fleet**, a template for an AWS
 EKS platform and the sample application — the Harness — that runs on it.
 
 If you are adopting the template, start with
@@ -142,6 +142,8 @@ review current AWS pricing before deployment.
 ### Operations
 | Document | Description |
 |----------|-------------|
+| [Advisor Integration](ADVISOR-INTEGRATION.md) | Run static reviews and understand the delivery contract |
+| [Template Readiness](TEMPLATE-READINESS.md) | PR review evidence and gates before deployment |
 | [Cost Optimization Guide](COST-OPTIMIZATION-GUIDE.md) | Cost analysis and strategies |
 | [Security Concerns](SECURITY-CONCERNS.md) | Security considerations |
 

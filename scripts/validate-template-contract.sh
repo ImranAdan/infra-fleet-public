@@ -43,10 +43,15 @@ version=$(jq -er '."applications/load-harness"' .release-please-manifest.json)
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "The release manifest does not contain a semantic load-harness version." >&2
   failed=true
-elif ! grep -Fq \
-  'image: ${ECR_REGISTRY}/load-harness:v'"$version" \
+fi
+
+# release-please advances the release manifest before the image is published;
+# Flux advances the deployment only after ECR contains the release. These tags
+# legitimately differ while a release is being built or deployed.
+if ! grep -Eq \
+  '^[[:space:]]+image: \$\{ECR_REGISTRY\}/load-harness:v[0-9]+\.[0-9]+\.[0-9]+[[:space:]]+# \{"\$imagepolicy": "flux-system:load-harness:tag"\}[[:space:]]*$' \
   k8s/applications/load-harness/deployment.yaml; then
-  echo "The bootstrap deployment tag does not match the release manifest ($version)." >&2
+  echo "The deployment must retain the ECR substitution, a release tag, and the Flux tag setter." >&2
   failed=true
 fi
 
