@@ -32,11 +32,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "📊 Check 1: EKS Cluster Status"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-CLUSTER_EXISTS=false
 CLUSTER_HEALTHY=false
 
 if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" &>/dev/null; then
-    CLUSTER_EXISTS=true
     CLUSTER_STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" --query 'cluster.status' --output text)
     echo "   ✅ Cluster found: $CLUSTER_NAME"
     echo "   Status: $CLUSTER_STATUS"
