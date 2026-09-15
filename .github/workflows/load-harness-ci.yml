@@ -121,10 +121,16 @@ jobs:
           }
           trap cleanup EXIT
 
+          # API_KEY is required whenever ENVIRONMENT is not "local": the app
+          # refuses to start rather than serve every load endpoint openly. Pass
+          # one here so the smoke test exercises the configuration that ships,
+          # authentication included, instead of an open one that never does.
           docker run -d --name "$container_name" \
             -p 8080:8080 \
             -e PORT=8080 \
             -e ENVIRONMENT=ci \
+            -e API_KEY=ci-smoke-test-key \
+            -e SECRET_KEY=ci-smoke-test-session-key \
             -e "APP_VERSION=$IMAGE_TAG" \
             "$ECR_REPOSITORY:$IMAGE_TAG"
 

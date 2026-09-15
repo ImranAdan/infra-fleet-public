@@ -72,9 +72,14 @@ def init_auth(app, config_override=None):
             return None
 
         # Check 2: Valid X-API-Key header (API clients)
-        # Use hmac.compare_digest for timing-safe comparison (prevents timing attacks)
+        # Use hmac.compare_digest for timing-safe comparison (prevents timing
+        # attacks). Compare bytes, not str: compare_digest raises TypeError on
+        # str arguments holding non-ASCII characters, which turned a malformed
+        # header into a 500 instead of a 401.
         provided_key = request.headers.get("X-API-Key")
-        if provided_key and hmac.compare_digest(provided_key, api_key):
+        if provided_key and hmac.compare_digest(
+            provided_key.encode("utf-8"), api_key.encode("utf-8")
+        ):
             return None
 
         # Neither session nor valid API key - unauthorized

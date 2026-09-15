@@ -68,8 +68,14 @@ ENV APP_VERSION=${APP_VERSION}
 EXPOSE 8080
 
 # Use environment variable for port, defaulting to 8080
-# --timeout 120: Required for cluster distributed load tests. The /partials/cluster-result
-# endpoint uses ThreadPoolExecutor to send concurrent requests to /load/cpu/work. With only
-# 2 sync workers, Worker 1 blocks waiting for responses while Worker 2 processes requests
-# sequentially. Default 30s timeout causes Worker 1 to be killed before all requests complete.
+#
+# --timeout 120: the /load/cpu/work endpoint is synchronous by design, so a
+# large iteration count can legitimately outlast the 30s default.
+#
+# This previously carried a longer note explaining that a dashboard request
+# blocked one worker while waiting on its own loopback request to the other.
+# That was a deadlock, not a timeout to tune: two concurrent dashboard actions
+# occupied both workers, neither inner request could be served, and /health went
+# unanswered until the liveness probe restarted the pod. The dashboard now calls
+# the service in-process, so no request waits on this same worker pool.
 CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 120 load_harness.wsgi:app"]

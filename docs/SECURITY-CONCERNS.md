@@ -229,14 +229,34 @@ The policy is split across two managed policies attached to the same role,
 because the enumerated form exceeds the 6,144-character managed policy limit
 as a single document.
 
-**Residual risk - IAM write actions remain on `Resource = "*"`.** This is now
-the largest privilege in the role and it was not narrowed by the work above.
-The `Iam` statement grants `iam:CreateRole`, `iam:AttachRolePolicy`,
-`iam:PutRolePolicy` and `iam:CreatePolicyVersion` against any ARN, so a
-principal that assumes this role can create a privileged role, attach an
-arbitrary policy to it, or rewrite this policy. The OIDC trust conditions
-restrict *who may assume* the role; they place no limit on what the role can
-do once assumed.
+**Residual risk - IAM write actions remain broadly scoped.** This is still the
+largest privilege in the role. The `Iam` statement grants `iam:CreateRole`,
+`iam:AttachRolePolicy`, `iam:PutRolePolicy` and `iam:CreatePolicyVersion`, so a
+principal that assumes this role can create a privileged role, attach a policy
+to it, or rewrite this policy. The OIDC trust conditions restrict *who may
+assume* the role; they place no limit on what the role can do once assumed.
+
+Two partial controls are now in place:
+
+- The statement's `Resource` is scoped to this account's own IAM namespace
+  (`role/*`, `policy/*`, `instance-profile/*`, `oidc-provider/*`) rather than
+  `"*"`. The role has no reason to write IAM in another account.
+- An explicit `Deny` blocks attaching `AdministratorAccess`, `IAMFullAccess` or
+  `PowerUserAccess` to any role, user or group, closing the one-step
+  escalation. None of those policies are used anywhere in this repository, so
+  the Deny cannot affect a legitimate apply.
+
+Neither closes the hole. `iam:PutRolePolicy` still permits an inline policy
+granting `"Action": "*"`, and an IAM condition cannot inspect a policy
+document. The complete control is a **permissions boundary**: a boundary policy
+in this stack, an `iam:PermissionsBoundary` condition on
+`CreateRole`/`PutRolePolicy`/`AttachRolePolicy`, and every role-creating call
+attaching it - including the EKS module's `iam_role_permissions_boundary` and
+`node_iam_role_permissions_boundary`. That condition denies `CreateRole` until
+every caller sets the boundary, so it cannot be merged from a static review: it
+needs a full plan, apply, rollout and destroy cycle against the account to
+validate. `iam:DeleteRolePermissionsBoundary` is already denied so the control
+cannot be quietly removed once introduced.
 
 `iam:PassRole` is the one part that has been constrained: it sits in its own
 statement with an `iam:PassedToService` condition limiting it to

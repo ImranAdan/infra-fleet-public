@@ -71,13 +71,21 @@ spec:
         - name: PORT
           value: "5000"
         # API Key authentication - requires X-API-Key header for protected endpoints
-        # Secret created by rebuild-stack.yml from GitHub secret LOAD_HARNESS_API_KEY
+        # Secret created by rebuild-stack.yml from GitHub secret LOAD_HARNESS_API_KEY,
+        # and by scripts/fleet-profiles/local.sh before the app reconciles.
+        #
+        # optional: true keeps a missing Secret out of the kubelet's way so the
+        # failure surfaces in the container log rather than as a config error.
+        # It no longer means auth is disabled: ENVIRONMENT is "staging" here, and
+        # the app refuses to start without an API_KEY outside local development,
+        # so a missing or renamed Secret crash-loops the pod instead of
+        # publishing every load endpoint unauthenticated.
         - name: API_KEY
           valueFrom:
             secretKeyRef:
               name: load-harness-api-key
               key: api-key
-              optional: true # Auth disabled if secret doesn't exist
+              optional: true
         # Chaos/fault injection - set >0.0 to enable random failures
         # Used for testing Flagger canary rollbacks
         - name: FAIL_RATE

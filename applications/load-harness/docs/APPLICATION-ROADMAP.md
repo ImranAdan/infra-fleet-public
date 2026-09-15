@@ -207,8 +207,11 @@ deliberately update this contract:
    Prometheus metrics compatible with the `PodMonitor`.
 2. The image repository, immutable bootstrap tag, release-please package name,
    Flux `ImageRepository`/`ImagePolicy`, and CI `ECR_REPOSITORY` must move
-   together. `scripts/validate-template-contract.sh` currently enforces the
-   Harness version/tag pair.
+   together. `scripts/validate-template-contract.sh` checks that the AWS
+   profile keeps a release tag and the Flux tag setter. It deliberately does
+   not compare that tag to the release manifest: release-please advances the
+   manifest before the image is published, so the two legitimately differ while
+   a release is building.
 3. Flagger's `targetRef`, `autoscalerRef`, Service port, ingress reference,
    webhook routes, and MetricTemplates must match the replacement. Local
    analysis reads application metrics; AWS staging reads NGINX ingress metrics.
