@@ -60,6 +60,7 @@ trap 'rm -rf "$rendered_root"' EXIT
 ./scripts/render-k8s-for-validation.sh "$rendered_root/k8s"
 ./tests/profiles/facade.sh
 ./tests/profiles/local-git-snapshot.sh
+./tests/profiles/cluster-ownership.sh
 
 while IFS= read -r -d '' shell_file; do
   bash -n "$shell_file"

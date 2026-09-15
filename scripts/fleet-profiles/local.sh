@@ -27,6 +27,27 @@ local_prerequisites() {
 
 local_cluster_exists() { kind get clusters 2>/dev/null | grep -Fxq "$FLEET_CLUSTER"; }
 
+local_cluster_fingerprint() {
+  local node node_id nodes
+  local -a node_ids=()
+  nodes=$(kind get nodes --name "$FLEET_CLUSTER") || return 1
+  while IFS= read -r node; do
+    [ -n "$node" ] || continue
+    node_id=$(docker inspect --format '{{.Id}}' "$node") || return 1
+    [[ "$node_id" =~ ^[0-9a-f]{64}$ ]] || fail "Cannot identify kind node $node." || return 1
+    node_ids+=("$node_id")
+  done <<< "$nodes"
+  [ "${#node_ids[@]}" -gt 0 ] || fail 'The local kind cluster has no nodes.' || return 1
+  printf '%s\n' "${node_ids[@]}" | LC_ALL=C sort | git hash-object --stdin
+}
+
+local_record_cluster() {
+  local fingerprint
+  fingerprint=$(local_cluster_fingerprint)
+  printf '%s\n%s\n' "$FLEET_OWNER" "$fingerprint" > "$FLEET_STATE/cluster-owned"
+  chmod 600 "$FLEET_STATE/cluster-owned"
+}
+
 local_owned_container() {
   local actual_owner
   actual_owner=$(docker inspect --format '{{index .Config.Labels "io.infra-fleet.owner"}}' "$1")
@@ -34,8 +55,15 @@ local_owned_container() {
 }
 
 local_existing_cluster() {
+  local actual_fingerprint recorded_fingerprint recorded_owner
   local_cluster_exists || fail 'Local cluster is not running; use ./fleet up --profile local.' || return 1
   [ -f "$FLEET_STATE/cluster-owned" ] || fail 'Cluster name already exists without this facade ownership record.' || return 1
+  recorded_owner=$(sed -n '1p' "$FLEET_STATE/cluster-owned")
+  recorded_fingerprint=$(sed -n '2p' "$FLEET_STATE/cluster-owned")
+  [ "$recorded_owner" = "$FLEET_OWNER" ] || fail 'The local cluster ownership record belongs to another workspace.' || return 1
+  actual_fingerprint=$(local_cluster_fingerprint)
+  [ "$recorded_fingerprint" = "$actual_fingerprint" ] || \
+    fail 'The live kind cluster does not match this workspace ownership record; refusing to change it.' || return 1
   kind get kubeconfig --name "$FLEET_CLUSTER" > "$FLEET_STATE/kubeconfig"
   chmod 600 "$FLEET_STATE/kubeconfig"
 }
@@ -228,9 +256,9 @@ local_up() {
   if local_cluster_exists; then
     local_existing_cluster
   else
-    printf '%s\n' "$FLEET_OWNER" > "$FLEET_STATE/cluster-owned"
     kind create cluster --name "$FLEET_CLUSTER" --image "$FLEET_NODE_IMAGE" \
       --config "$fleet_root/platform/local/kind.yaml" --kubeconfig "$FLEET_STATE/kubeconfig"
+    local_record_cluster
   fi
   local_calico
   local_secrets
@@ -273,6 +301,7 @@ local_down() {
     local_existing_cluster
     kind delete cluster --name "$FLEET_CLUSTER"
   fi
+  rm -f "$FLEET_STATE/cluster-owned"
   for container in "$FLEET_GIT" "$FLEET_REGISTRY"; do
     if docker inspect "$container" >/dev/null 2>&1; then
       local_owned_container "$container"
