@@ -39,7 +39,7 @@ Press `Ctrl+C` to stop all port-forwards.
 Access Grafana dashboards on localhost:
 
 ```bash
-./ops/port-forward-grafana.sh
+./ops/port-forward.sh grafana
 ```
 
 - **URL**: http://localhost:3000
@@ -55,7 +55,7 @@ Access Grafana dashboards on localhost:
 Access Prometheus metrics and query interface:
 
 ```bash
-./ops/port-forward-prometheus.sh
+./ops/port-forward.sh prometheus
 ```
 
 - **URL**: http://localhost:9090
@@ -70,7 +70,7 @@ Access Prometheus metrics and query interface:
 Access Alertmanager for alert management:
 
 ```bash
-./ops/port-forward-alertmanager.sh
+./ops/port-forward.sh alertmanager
 ```
 
 - **URL**: http://localhost:9093
@@ -81,7 +81,7 @@ Access Alertmanager for alert management:
 Access the load-harness application:
 
 ```bash
-./ops/port-forward-load-harness.sh
+./ops/port-forward.sh load-harness
 ```
 
 - **Dashboard**: http://localhost:8080/ui (Web Dashboard)

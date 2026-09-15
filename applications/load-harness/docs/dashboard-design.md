@@ -237,7 +237,7 @@ Queries Prometheus for real-time metrics. Requires the dashboard backend to quer
 | Avg Response | `rate(flask_http_request_duration_seconds_sum[1m]) / rate(flask_http_request_duration_seconds_count[1m])` | Milliseconds |
 
 **Note**: Prometheus URL is determined automatically based on the `ENVIRONMENT` variable:
-- Local development: `http://localhost:9090` (requires port-forward via `ops/port-forward-prometheus.sh`)
+- Local development: `http://localhost:9090` (requires port-forward via `ops/port-forward.sh prometheus`)
 - In-cluster: `http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090`
 
 ---
