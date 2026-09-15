@@ -12,7 +12,7 @@ setup. Do not run `flux bootstrap` against this public template.
 ```text
 k8s/flux-system/
 ├── kustomization.yaml                 # root bootstrap entry point
-├── platform-kustomizations.yaml       # infrastructure/issuer/app ordering
+├── ../clusters/aws-staging/           # infrastructure/issuer/app ordering
 └── flux-system/
     ├── gotk-components.yaml           # generated Flux controllers
     ├── gotk-sync.yaml                 # generated repository source/sync

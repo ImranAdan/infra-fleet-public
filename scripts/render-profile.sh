@@ -14,6 +14,8 @@ if [ "$profile" = local ]; then
 else
   components+=(configuration)
 fi
+# The Flux placeholders are literal sed patterns.
+# shellcheck disable=SC2016
 for component in "${components[@]}"; do
   printf '%s\n' '---'
   kubectl kustomize "k8s/profiles/$profile/$component"

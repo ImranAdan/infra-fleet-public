@@ -14,7 +14,7 @@ memory. No AWS or GitHub write credentials are needed. Initial startup downloads
 controller images and Helm charts. The monitoring storage is ephemeral.
 
 Commit application or manifest changes before deployment. The local source
-serves the committed snapshot through a read-only Git daemon on the kind Docker
+serves the committed snapshot through a read-only Git HTTP backend on the kind Docker
 network; it does not publish the repository or create a GitHub deploy key.
 
 ```bash

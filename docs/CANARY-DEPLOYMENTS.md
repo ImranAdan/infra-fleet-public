@@ -167,7 +167,7 @@ Canary failed! Scaling down load-harness.applications
 | File | Purpose |
 |------|---------|
 | `k8s/applications/load-harness/canary.yaml` | Canary resource with analysis config and webhooks |
-| `k8s/applications/load-harness/metrictemplate.yaml` | Custom Prometheus queries for metrics |
+| `k8s/profiles/aws-staging/applications/metrictemplate.yaml` | AWS ingress metrics adapter |
 | `k8s/infrastructure/flagger/helmrelease.yaml` | Flagger controller deployment |
 | `k8s/infrastructure/flagger-loadtester/helmrelease.yaml` | Load tester for synthetic traffic |
 

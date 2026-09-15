@@ -8,7 +8,7 @@ Local Kubernetes or EKS · Flux GitOps · Kyverno admission policies · canary d
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.35-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
-[![Flux](https://img.shields.io/badge/GitOps-Flux%20v2.7.3-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
+[![Flux](https://img.shields.io/badge/GitOps-Flux%20v2.7.5-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)](https://developer.hashicorp.com/terraform)
 [![Use this template](https://img.shields.io/badge/Use%20this-template-2ea44f?logo=github)](https://github.com/ImranAdan/infra-fleet-public/generate)
 
@@ -263,7 +263,7 @@ Automated certificate management:
 |-----------|---------|---------|
 | EKS | 1.35 | Kubernetes control plane |
 | Terraform | >= 1.14.0, < 2.0.0 | Infrastructure as Code |
-| Flux | v2.7.3 | GitOps operator |
+| Flux | v2.7.5 local / v2.7.3 AWS | GitOps operator |
 | Spot Instances | t3.large | Cost-optimized compute |
 
 ### Platform Services

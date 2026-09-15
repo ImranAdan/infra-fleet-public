@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 30s
-  url: git://fleet-local-git.flux-system.svc.cluster.local:9418/fleet.git
+  url: http://fleet-local-git.flux-system.svc.cluster.local:8080/cgi-bin/git/fleet.git
   ref:
     branch: fleet-local
 ---

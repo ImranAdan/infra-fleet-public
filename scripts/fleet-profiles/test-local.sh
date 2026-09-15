@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Experiments are confined to this facade's local Git source and cluster.
+fleet_root=${fleet_root:?Local acceptance requires the fleet root}
 
 test_wait_phase() {
   local expected=$1 timeout=$2 phase deadline
@@ -69,6 +70,8 @@ test_local() {
   kctl create namespace fleet-test --dry-run=client -o yaml | kctl apply -f - >/dev/null
   local probe_image
   probe_image=$(kctl get deployment flagger-loadtester -n flux-system -o jsonpath='{.spec.template.spec.containers[0].image}')
+  # This is evaluated inside the probe pod, after it is created.
+  # shellcheck disable=SC2016
   kctl run fleet-test-network -n fleet-test --restart=Never --image="$probe_image" --command -- \
     sh -c 'curl -fsS --max-time 10 http://kube-prometheus-stack-prometheus.observability:9090/-/ready >/dev/null || exit 2; curl -fsS --connect-timeout 3 --max-time 5 http://load-harness-primary.applications:5000/health >/dev/null; result=$?; [ "$result" -eq 28 ]' >/dev/null
   kctl wait pod/fleet-test-network -n fleet-test --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m

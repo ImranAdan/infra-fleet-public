@@ -111,7 +111,8 @@ Flagger uses **custom MetricTemplates** that query NGINX ingress metrics. This
 is required because prometheus-operator relabels the application namespace to
 `exported_namespace`, while the ingress controller keeps `namespace` set to
 `ingress-nginx`. The templates live in
-`k8s/applications/load-harness/metrictemplate.yaml`.
+`k8s/profiles/aws-staging/applications/metrictemplate.yaml`. The local profile
+uses its application metric templates instead.
 
 | Metric | Threshold | Template |
 |--------|-----------|----------|

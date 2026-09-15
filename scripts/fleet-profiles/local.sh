@@ -2,6 +2,7 @@
 # Sourced only by the fixed local strategy in ./fleet.
 
 FLEET_CLUSTER=infra-fleet-local
+fleet_root=${fleet_root:?Local profile requires the fleet root}
 FLEET_CONTEXT=kind-infra-fleet-local
 FLEET_REGISTRY=fleet-local-registry
 FLEET_GIT=fleet-local-git
@@ -93,7 +94,7 @@ local_secrets() {
   for secret in load-harness-api-key load-harness-secret-key grafana-admin-credentials; do
     case "$secret" in
       load-harness-api-key) filename=api-key; namespace=applications; key=api-key ;;
-      load-harness-secret-key) filename=session-key; namespace=applications; key=secret-key ;;
+      load-harness-secret-key) filename=session-key; namespace=applications; key='secret-key' ;;
       grafana-admin-credentials) filename=grafana-password; namespace=observability; key=admin-password ;;
     esac
     if [ ! -f "$FLEET_STATE/$filename" ]; then
@@ -134,6 +135,7 @@ local_start_services() {
   else
     docker run -d --name "$FLEET_REGISTRY" --network kind \
       --label "io.infra-fleet.owner=$FLEET_OWNER" \
+      -e OTEL_TRACES_EXPORTER=none \
       -p 127.0.0.1:5001:5000 -v "$FLEET_STATE/registry:/var/lib/registry" \
       "$FLEET_REGISTRY_IMAGE" >/dev/null
   fi
@@ -158,8 +160,7 @@ EOF
       --label "io.infra-fleet.owner=$FLEET_OWNER" \
       --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
       -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/srv/fleet.git \
-      -v "$FLEET_STATE/source:/srv:ro" --entrypoint git "$FLEET_GIT_IMAGE" \
-      daemon --reuseaddr --export-all --base-path=/srv --listen=0.0.0.0 --port=9418 >/dev/null
+      -v "$FLEET_STATE/source:/srv:ro" "$FLEET_GIT_IMAGE" >/dev/null
   fi
   sleep 1
   git_ip=$(docker inspect --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "$FLEET_GIT")
@@ -173,8 +174,8 @@ metadata:
 spec:
   ports:
     - name: git
-      port: 9418
-      targetPort: 9418
+      port: 8080
+      targetPort: 8080
 ---
 apiVersion: discovery.k8s.io/v1
 kind: EndpointSlice
@@ -187,7 +188,7 @@ addressType: IPv4
 ports:
   - name: git
     protocol: TCP
-    port: 9418
+    port: 8080
 endpoints:
   - addresses: ["$git_ip"]
     conditions:
