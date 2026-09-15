@@ -60,9 +60,10 @@ for review, publication retries and selecting agent work.
 ## Platform contracts to retain
 
 Keep cloud-specific runtime values outside Git and retain Flux substitutions in
-manifests. Image automation uses the `:tag` setter so it preserves
-`${ECR_REGISTRY}`. The release manifest and deployed tag can differ while a
-release builds and Flux reconciles; neither is evidence of a failed deployment.
+profile overlays. The AWS adapter translates `${ECR_REGISTRY}` into the shared
+`${IMAGE_REGISTRY}` contract, while image automation changes only the AWS
+overlay tag. The release manifest and deployed tag can differ while a release
+builds and Flux reconciles; neither is evidence of a failed deployment.
 
 The advisor is supplementary static review. Platform CI remains responsible
 for Terraform, manifest, policy, application, and container checks. A live

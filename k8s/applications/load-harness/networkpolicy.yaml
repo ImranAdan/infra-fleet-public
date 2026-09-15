@@ -14,14 +14,24 @@ metadata:
   namespace: applications
 spec:
   podSelector:
-    matchLabels:
-      app: load-harness
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [load-harness, load-harness-primary]
   policyTypes:
     - Ingress
     - Egress
 
   # INGRESS: Only allow traffic from known sources
   ingress:
+    # Flagger's load tester probes the canary directly before shifting traffic.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: flux-system
+      ports:
+        - protocol: TCP
+          port: 5000
     # Allow traffic from NGINX Ingress Controller
     - from:
         - namespaceSelector:

@@ -1,6 +1,6 @@
 # Monitoring Setup Guide
 
-Comprehensive guide for the observability stack deployed on the EKS cluster.
+Guide to the observability stack shared by the local and AWS staging profiles.
 
 ## Overview
 
@@ -10,7 +10,7 @@ The platform uses **kube-prometheus-stack** (Helm chart v67.4.0) to provide:
 - **Grafana**: Dashboards and visualization
 - **kube-state-metrics**: Kubernetes object metrics
 - **node-exporter**: Node-level metrics (CPU, memory, disk)
-- **ServiceMonitors**: Auto-discovery of application metrics
+- **PodMonitors and ServiceMonitors**: Auto-discovery of workload metrics
 
 ## Architecture
 
@@ -23,7 +23,7 @@ The platform uses **kube-prometheus-stack** (Helm chart v67.4.0) to provide:
 │  │   (scrape)  │    │ (visualize) │    │    metrics     │  │
 │  └──────┬──────┘    └─────────────┘    └────────────────┘  │
 │         │                                                   │
-│         │ ServiceMonitor                                    │
+│         │ PodMonitor                                        │
 │         ▼                                                   │
 └─────────────────────────────────────────────────────────────┘
           │
@@ -40,17 +40,13 @@ The platform uses **kube-prometheus-stack** (Helm chart v67.4.0) to provide:
 
 ## Access
 
-### Port Forwarding (Recommended)
+### Port forwarding
 
-Port-forwarding is the supported access path while the repository's retired
-ingress controller is being replaced:
+Use the facade so it selects the active profile's namespace and service:
 
 ```bash
-# Prometheus UI
-kubectl port-forward -n observability prometheus-kube-prometheus-stack-prometheus-0 9090:9090
-
-# Grafana UI
-kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
+./fleet access --profile local --service prometheus
+./fleet access --profile local --service grafana
 ```
 
 Then access:
@@ -99,32 +95,35 @@ committed.
 | Alertmanager | Saves 1 pod, not needed for ephemeral stack |
 | Admission Webhooks | Known timeout issues |
 
-## ServiceMonitor Configuration
+## Monitor configuration
 
-Applications expose Prometheus metrics via ServiceMonitor CRDs. Example for load-harness:
+The load harness exposes Prometheus metrics through a PodMonitor so Flagger's
+generated primary and canary pods remain discoverable:
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+kind: PodMonitor
 metadata:
   name: load-harness
   namespace: applications
-  labels:
-    release: kube-prometheus-stack
 spec:
   selector:
-    matchLabels:
-      app: load-harness
-  endpoints:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [load-harness, load-harness-primary]
+  podMetricsEndpoints:
     - port: http
       path: /metrics
       interval: 15s
 ```
 
-Prometheus auto-discovers ServiceMonitors across all namespaces due to:
+Prometheus discovers both monitor types across all namespaces:
 ```yaml
 serviceMonitorSelectorNilUsesHelmValues: false
 serviceMonitorSelector: {}
+podMonitorSelectorNilUsesHelmValues: false
+podMonitorSelector: {}
 ```
 
 ## Verifying the Setup
@@ -208,9 +207,9 @@ observability:  4 pods
 
 ### Prometheus Not Scraping Target
 
-1. Check ServiceMonitor exists:
+1. Check the application PodMonitor exists:
    ```bash
-   kubectl get servicemonitor -n applications
+   kubectl get podmonitor -n applications
    ```
 
 2. Check Prometheus config includes target:
@@ -219,9 +218,9 @@ observability:  4 pods
    # Open http://localhost:9090/config
    ```
 
-3. Verify service labels match ServiceMonitor selector:
+3. Verify pod labels match the PodMonitor selector:
    ```bash
-   kubectl get svc -n applications --show-labels
+   kubectl get pods -n applications --show-labels
    ```
 
 ### Grafana Dashboard Not Loading

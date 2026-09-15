@@ -7,9 +7,7 @@ metadata:
     app: load-harness
     managed-by: flux
 spec:
-  # Single replica - HPA will scale up based on CPU load (see issue #129)
-  # Node capacity: t3.large = 35 pods max
-  replicas: 1
+  # HPA and Flagger own replica counts; Flux must not reset them on reconciliation.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -52,7 +50,7 @@ spec:
           # with a read-only root filesystem, provided gunicorn and tempfiles
           # have somewhere to write. See volumeMounts below.
           readOnlyRootFilesystem: true
-        image: ${ECR_REGISTRY}/load-harness:v1.6.4 # {"$imagepolicy": "flux-system:load-harness:tag"}
+        image: load-harness:base
         volumeMounts:
         - name: tmp
           mountPath: /tmp
@@ -65,6 +63,10 @@ spec:
         env:
         - name: ENVIRONMENT
           value: "staging"
+        - name: METRICS_BACKEND
+          value: "kubernetes"
+        - name: SESSION_COOKIE_SECURE
+          value: "true"
         # APP_VERSION is baked into the Docker image at build time (--build-arg)
         - name: PORT
           value: "5000"

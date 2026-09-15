@@ -1,5 +1,5 @@
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: require-rollout-capacity
   annotations:
@@ -9,46 +9,46 @@ metadata:
     policies.kyverno.io/subject: Deployment
     policies.kyverno.io/description: >-
       Application Deployments declare zero-unavailable rolling updates,
-      positive integer surge capacity and a readiness probe for each container.
-      Generated platform controllers retain their upstream rollout semantics.
+      positive integer surge capacity and a usable readiness probe for every
+      container. Generated platform controllers retain their upstream rollout
+      semantics.
 spec:
-  validationFailureAction: Enforce
-  background: true
-  rules:
-    - name: application-zero-unavailable
-      match:
-        any:
-          - resources:
-              kinds:
-                - Deployment
-              namespaces:
-                - applications
-      validate:
-        message: >-
-          Application Deployments must declare RollingUpdate with
-          maxUnavailable: 0 and a positive integer maxSurge.
-        pattern:
-          spec:
-            strategy:
-              type: RollingUpdate
-              rollingUpdate:
-                maxUnavailable: 0
-                maxSurge: ">0"
-    - name: application-readiness
-      match:
-        any:
-          - resources:
-              kinds:
-                - Deployment
-              namespaces:
-                - applications
-      validate:
-        message: Every application container must declare a readiness probe.
-        foreach:
-          - list: request.object.spec.template.spec.containers
-            deny:
-              conditions:
-                any:
-                  - key: "{{ element.readinessProbe || '' }}"
-                    operator: Equals
-                    value: ""
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments]
+  matchConditions:
+    - name: applications-namespace
+      expression: object.metadata.namespace == 'applications'
+  validations:
+    - expression: >-
+        has(object.spec.strategy) &&
+        object.spec.strategy.type == 'RollingUpdate' &&
+        has(object.spec.strategy.rollingUpdate) &&
+        has(object.spec.strategy.rollingUpdate.maxUnavailable) &&
+        ((type(object.spec.strategy.rollingUpdate.maxUnavailable) == int &&
+          object.spec.strategy.rollingUpdate.maxUnavailable == 0) ||
+         (type(object.spec.strategy.rollingUpdate.maxUnavailable) == double &&
+          object.spec.strategy.rollingUpdate.maxUnavailable == 0.0)) &&
+        has(object.spec.strategy.rollingUpdate.maxSurge) &&
+        ((type(object.spec.strategy.rollingUpdate.maxSurge) == int &&
+          object.spec.strategy.rollingUpdate.maxSurge > 0) ||
+         (type(object.spec.strategy.rollingUpdate.maxSurge) == double &&
+          object.spec.strategy.rollingUpdate.maxSurge > 0.0))
+      message: >-
+        Application Deployments must use RollingUpdate with maxUnavailable 0
+        and a positive integer maxSurge.
+    - expression: >-
+        object.spec.template.spec.containers.all(container,
+          has(container.readinessProbe) &&
+          (has(container.readinessProbe.httpGet) ||
+           has(container.readinessProbe.tcpSocket) ||
+           has(container.readinessProbe.exec) ||
+           has(container.readinessProbe.grpc)))
+      message: Every application container must declare a usable readiness probe.

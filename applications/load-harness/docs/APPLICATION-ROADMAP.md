@@ -170,14 +170,20 @@ worth knowing:
   with `severity: CRITICAL,HIGH` and `exit-code: 1`, so a vulnerable image
   fails the build rather than shipping.
 
-## Deployment on EKS
+## Deployment profiles
 
-Managed via FluxCD GitOps:
+Managed through the `./fleet` facade and FluxCD GitOps. Both the local kind
+cluster and AWS staging compose these shared resources:
 
 - `k8s/applications/load-harness/deployment.yaml`
 - `k8s/applications/load-harness/service.yaml`
 - `k8s/applications/load-harness/hpa.yaml`
-- `k8s/applications/load-harness/servicemonitor.yaml`
+- `k8s/applications/load-harness/podmonitor.yaml`
+
+Routing, image registries and canary metric providers live under the selected
+`k8s/profiles/` directory. See
+[`DEPLOYMENT-PROFILES.md`](../../../docs/DEPLOYMENT-PROFILES.md) for the
+effective resource graph and operator commands.
 
 ## Observability Integration
 
@@ -186,7 +192,7 @@ Currently deployed:
 - **metrics-server** — HPA metrics source
 - **Prometheus** — Metrics collection (kube-prometheus-stack)
 - **Grafana** — Dashboards and visualization
-- **ServiceMonitor** — Auto-discovery of application metrics
+- **PodMonitor** — Auto-discovery of application metrics
 
 ## Extending or replacing the Harness
 
@@ -198,15 +204,15 @@ deliberately update this contract:
 
 1. The Deployment must expose the Service's named HTTP port, provide distinct
    liveness and readiness endpoints, keep resource requests for HPA, and expose
-   Prometheus metrics compatible with the `ServiceMonitor`.
+   Prometheus metrics compatible with the `PodMonitor`.
 2. The image repository, immutable bootstrap tag, release-please package name,
    Flux `ImageRepository`/`ImagePolicy`, and CI `ECR_REPOSITORY` must move
    together. `scripts/validate-template-contract.sh` currently enforces the
    Harness version/tag pair.
 3. Flagger's `targetRef`, `autoscalerRef`, Service port, ingress reference,
-   webhook routes, and MetricTemplates must match the replacement. The current
-   analysis relies specifically on NGINX ingress metrics and public `/health`
-   and `/ready` endpoints.
+   webhook routes, and MetricTemplates must match the replacement. Local
+   analysis reads application metrics; AWS staging reads NGINX ingress metrics.
+   Both profiles use the public `/health` and `/ready` endpoints.
 4. Update the Kubernetes Secret contract if the replacement does not use the
    Harness's optional API key and required Flask session key.
 

@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cert-manager-issuer
+  namespace: flux-system
+spec:
+  interval: 1m
+  path: ./k8s/cert-manager-issuer
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 15m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: fleet-config
+  dependsOn:
+    - name: infrastructure

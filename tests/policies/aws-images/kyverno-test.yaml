@@ -1,0 +1,19 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: aws-image-boundaries
+policies:
+  - ../../../policies/aws/require-ecr-images.yaml
+resources:
+  - resources.yaml
+results:
+  - policy: require-ecr-images
+    isValidatingPolicy: true
+    resources: [aws-images-good]
+    kind: Pod
+    result: pass
+  - policy: require-ecr-images
+    isValidatingPolicy: true
+    resources: [aws-images-bad-sidecar]
+    kind: Pod
+    result: fail

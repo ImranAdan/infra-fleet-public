@@ -1,5 +1,9 @@
 # Infra Fleet Documentation
 
+Choose [local Kubernetes or AWS staging](DEPLOYMENT-PROFILES.md). The profiles
+share application resources and delivery controls; their provisioning,
+networking and registry restrictions are explicit.
+
 This is the documentation for **Infra Fleet**, a template for an AWS
 EKS platform and the sample application — the Harness — that runs on it.
 
@@ -94,7 +98,7 @@ asset is retained only as project history; it shows an obsolete ALB path.
 |-----------|-------------|---------|
 | EKS | 1.35 (`STANDARD` support) | Kubernetes control plane |
 | Nodes | t3.large spot | Cost-optimized compute |
-| Flux | v2.7.3 | GitOps operator |
+| Flux | v2.7.5 local / v2.7.3 AWS | GitOps operator |
 | Flagger | 1.45.0 | Progressive delivery |
 | nginx-ingress | 4.15.1 (retired; do not expose publicly) | Ingress + canary traffic |
 | cert-manager | v1.21.1 | TLS certificates |
@@ -127,7 +131,7 @@ review current AWS pricing before deployment.
 ### Observability
 | Document | Description |
 |----------|-------------|
-| [Monitoring Setup](MONITORING-SETUP.md) | Prometheus, Grafana, ServiceMonitors |
+| [Monitoring Setup](MONITORING-SETUP.md) | Prometheus, Grafana, PodMonitors and ServiceMonitors |
 | [DORA Metrics](DORA-METRICS.md) | Engineering metrics collection |
 
 ### CI/CD & Development
@@ -158,7 +162,7 @@ review current AWS pricing before deployment.
 ## Included capabilities
 
 ### Implemented in the template
-- [x] EKS 1.35 + Flux v2.7.3 GitOps
+- [x] Local Kubernetes or EKS 1.35 with Flux GitOps
 - [x] Progressive-delivery manifests (deployment preview; ingress migration required)
 - [x] Optional TLS automation (deployment preview; ingress migration required)
 - [x] Dashboard UI (Flask + HTMX + Tailwind)

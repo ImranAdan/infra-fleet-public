@@ -1,9 +1,9 @@
 # Progressive Delivery with Flagger
 
-> **Deployment preview:** this implementation depends on retired community
-> `ingress-nginx`, which no longer receives security fixes. The behavior below
-> documents the current lab; do not treat it as a production rollout design.
-> See [../SECURITY.md](../SECURITY.md).
+> **Deployment preview:** the local profile uses Envoy Gateway. AWS staging
+> retains retired community `ingress-nginx`, which no longer receives security
+> fixes, so that route is a private preview. See
+> [../SECURITY.md](../SECURITY.md).
 
 **Status**: Implemented (2025-12-26)
 **Last Updated**: 2026-01-01
@@ -85,7 +85,7 @@ The Flagger controller runs in the `flux-system` namespace and watches for Canar
 
 | Setting | Value | Description |
 |---------|-------|-------------|
-| `meshProvider` | `nginx` | Weighted traffic through NGINX Ingress |
+| `meshProvider` | Profile value | `gatewayapi:v1` locally; `nginx` in AWS staging |
 | `metricsServer` | `http://kube-prometheus-stack-prometheus.observability:9090` | Prometheus endpoint |
 
 ### 2. Canary Resource
@@ -107,28 +107,30 @@ The Canary CRD tells Flagger how to manage the load-harness deployment.
 
 ### 3. Metrics
 
-Flagger uses **custom MetricTemplates** that query NGINX ingress metrics. This
-is required because prometheus-operator relabels the application namespace to
-`exported_namespace`, while the ingress controller keeps `namespace` set to
-`ingress-nginx`. The templates live in
-`k8s/applications/load-harness/metrictemplate.yaml`.
+Flagger uses profile-specific **custom MetricTemplates**. Local templates query
+application metrics from the PodMonitor. AWS templates query NGINX ingress
+metrics and account for prometheus-operator relabelling the application
+namespace to `exported_namespace`. The templates live under each profile's
+`applications/` directory.
 
 | Metric | Threshold | Template |
 |--------|-----------|----------|
-| `request-success-rate` | > 99% | `nginx-request-success-rate` |
-| `request-duration` | p99 < 500ms | `nginx-request-duration` |
+| `workload-request-success-rate` | > 99% | Local application or AWS NGINX success template |
+| `workload-request-duration` | p99 < 500ms | Local application or AWS NGINX latency template |
 
 ---
 
 ## How Traffic Shifting Works
 
-Without a service mesh, Flagger uses **pod scaling** for traffic splitting:
+Flagger delegates weighted routing to the selected profile: Envoy Gateway
+locally and NGINX in AWS staging. It also coordinates the canary and primary
+Deployment replica counts:
 
-1. **Initial state**: Primary has all replicas, canary has 0
-2. **Step 1 (10%)**: Scale canary to ~10% of total pods
-3. **Step 2 (20%)**: Scale canary to ~20% of total pods
-4. ...continues until maxWeight (50%)...
-5. **Promotion**: Canary becomes new primary, old primary scaled down
+1. **Initial state**: Primary receives all traffic and the canary has 0 replicas.
+2. **Analysis starts**: Flagger starts the canary and assigns it 10% route weight.
+3. **Passing checks**: The selected router advances weight in 10% increments.
+4. **Maximum analysis**: The canary receives 50% while the last checks run.
+5. **Promotion**: The tested revision becomes primary and the canary scales down.
 
 ```
 Timeline:
@@ -235,7 +237,7 @@ Timeline with FAIL_RATE=0.3:
 ─────────────────────────────────────────────────────────────────────
 
 Flagger logs:
-Halt advancement load-harness.applications request-success-rate 70.00 < 99
+Halt advancement load-harness.applications workload-request-success-rate 70.00 < 99
 Rolling back load-harness.applications failed checks threshold reached 1
 Canary failed! Scaling down load-harness.applications
 ```
@@ -325,16 +327,16 @@ kubectl annotate deployment load-harness -n applications \
 Check if metrics are available:
 
 ```bash
-# Verify ServiceMonitor is working
-kubectl get servicemonitor -n applications
+# Verify the application PodMonitor is present
+kubectl get podmonitor -n applications
 
 # Check Prometheus targets
 # Port-forward and check Status > Targets
 ```
 
-Also verify that traffic goes through the NGINX ingress with the correct
-`Host` header; direct service calls bypass ingress metrics and result in
-"no values found" during analysis (see
+For AWS staging, also verify that traffic goes through NGINX with the correct
+`Host` header; direct service calls bypass ingress metrics. For local, verify
+that the primary and canary pods are `UP` Prometheus targets (see
 `k8s/applications/load-harness/canary.yaml`).
 
 ### Canary Never Promotes

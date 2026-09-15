@@ -1,10 +1,5 @@
-# --------------------------------------------------------------------------------------------------
-# Block Latest Tag Policy
-# Prevents use of the 'latest' tag or untagged images in container definitions.
-# This ensures all deployments use explicit, versioned image tags for reproducibility.
-# --------------------------------------------------------------------------------------------------
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: block-latest-tag
   annotations:
@@ -12,34 +7,30 @@ metadata:
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: medium
     policies.kyverno.io/description: >-
-      The 'latest' tag is mutable and can lead to unexpected container updates.
-      This policy requires all containers to use explicit version tags
-      for better reproducibility and rollback capabilities.
+      Every application, init and ephemeral container must use an explicit
+      image tag or digest so releases remain reproducible and reversible.
 spec:
-  validationFailureAction: Enforce
-  background: true
-  rules:
-    - name: block-latest-tag
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-                - Deployment
-                - StatefulSet
-                - DaemonSet
-                - Job
-                - CronJob
-      validate:
-        message: "Using 'latest' tag or untagged images is not allowed. Use explicit version tags (e.g., v1.2.3)."
-        anyPattern:
-          # For Pods (spec.containers)
-          - spec:
-              containers:
-                - image: "!*:latest & *:*"
-          # For Deployments/StatefulSets/etc. (spec.template.spec.containers)
-          - spec:
-              template:
-                spec:
-                  containers:
-                    - image: "!*:latest & *:*"
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: true
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  variables:
+    - name: allContainers
+      expression: >-
+        object.spec.containers
+        + object.spec.?initContainers.orValue([])
+        + object.spec.?ephemeralContainers.orValue([])
+  validations:
+    - expression: >-
+        variables.allContainers.all(container,
+          isImage(container.image) && image(container.image).tag() != 'latest')
+      message: Every container image must use an explicit tag other than latest, or a digest.

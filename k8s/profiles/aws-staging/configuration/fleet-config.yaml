@@ -1,0 +1,19 @@
+# Compatibility adapter for existing AWS bootstrap outputs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fleet-config
+  namespace: flux-system
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
+data:
+  IMAGE_REGISTRY: ${ECR_REGISTRY}
+  TRAFFIC_PROVIDER: nginx
+  TRAFFIC_ENDPOINT: nginx-ingress-controller-ingress-nginx-controller.ingress-nginx
+  APP_HOSTNAME: ${APP_HOSTNAME}
+  ACME_EMAIL: ${ACME_EMAIL}
+  RUNTIME_CONFIG_REVISION: ${RUNTIME_CONFIG_REVISION}
+  VPC_ID: ${VPC_ID}
+  CLUSTER_NAME: ${CLUSTER_NAME}
+  AWS_REGION: ${AWS_REGION}
+  ENVIRONMENT: staging

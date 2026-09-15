@@ -1,0 +1,24 @@
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: request-success-rate
+  namespace: applications
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability:9090
+  query: |
+    sum(rate(flask_http_request_total{namespace="{{ namespace }}",pod=~"{{ target }}-[a-z0-9]+-[a-z0-9]+",status!~"5.."}[{{ interval }}]))
+    / sum(rate(flask_http_request_total{namespace="{{ namespace }}",pod=~"{{ target }}-[a-z0-9]+-[a-z0-9]+"}[{{ interval }}])) * 100
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: request-duration
+  namespace: applications
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability:9090
+  query: |
+    histogram_quantile(0.99, sum(rate(flask_http_request_duration_seconds_bucket{namespace="{{ namespace }}",pod=~"{{ target }}-[a-z0-9]+-[a-z0-9]+"}[{{ interval }}])) by (le)) * 1000

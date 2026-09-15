@@ -35,6 +35,6 @@ spec:
       branch: main
   update:
     # Path to scan for image policy markers
-    path: ./k8s/applications
+    path: ./k8s/profiles/aws-staging/applications
     # Setters strategy looks for {"$imagepolicy": ...} markers
     strategy: Setters

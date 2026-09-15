@@ -63,7 +63,12 @@ def create_app(config_override: dict | None = None):
     # Secure flag: Only send cookie over HTTPS (required for production)
     # Local dev doesn't use HTTPS, so we check the environment
     environment = os.getenv("ENVIRONMENT", "local")
-    app.config["SESSION_COOKIE_SECURE"] = environment != "local"
+    cookie_secure = os.getenv("SESSION_COOKIE_SECURE")
+    if cookie_secure is not None and cookie_secure not in ("true", "false"):
+        raise ValueError("SESSION_COOKIE_SECURE must be true or false")
+    app.config["SESSION_COOKIE_SECURE"] = (
+        environment != "local" if cookie_secure is None else cookie_secure == "true"
+    )
 
     # Base config from environment
     app.config.from_mapping(

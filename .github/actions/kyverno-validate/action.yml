@@ -1,88 +1,38 @@
-# --------------------------------------------------------------------------------------------------
-# Kyverno Policy Validation Composite Action
-# Validates Kubernetes manifests against Kyverno policies using the Kyverno CLI.
-# This provides shift-left policy enforcement before manifests reach the cluster.
-# --------------------------------------------------------------------------------------------------
-name: 'Kyverno Policy Validate'
-description: 'Validate Kubernetes manifests against Kyverno policies'
+name: Kyverno Policy Validate
+description: Validate the effective deployment profile against its selected policies
 
 inputs:
-  policy-path:
-    description: 'Path to directory containing Kyverno policies'
+  profile:
+    description: Deployment profile
     required: true
-    default: 'policies/'
-  resource-path:
-    description: 'Path to directory containing Kubernetes manifests (application workloads)'
-    required: true
-    default: 'k8s/applications/'
+    default: aws-staging
 
 runs:
-  using: 'composite'
+  using: composite
   steps:
+    - name: Install pinned renderer
+      shell: bash
+      run: |
+        ./scripts/install-profile-tools.sh "$RUNNER_TEMP/fleet-bin"
+        echo "$RUNNER_TEMP/fleet-bin" >> "$GITHUB_PATH"
+
     - name: Install Kyverno CLI
       shell: bash
       run: |
         set -euo pipefail
-        KYVERNO_VERSION="1.13.4"
-        curl --fail --silent --show-error --location \
-          --output /tmp/kyverno.tar.gz \
-          "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz"
-        echo "abd318dbb971ab6de2bbe3b7226f4a03230d5c9c651df8a29b6b5e085a55aeeb  /tmp/kyverno.tar.gz" | sha256sum --check
+        curl -fsSL --retry 3 -o /tmp/kyverno.tar.gz \
+          https://github.com/kyverno/kyverno/releases/download/v1.19.1/kyverno-cli_v1.19.1_linux_x86_64.tar.gz
+        echo "b38228f367fc0fdc2b08f4c83ea50ac5f16c60ff8d62d76a66157c33c47b70ae  /tmp/kyverno.tar.gz" | sha256sum --check
         tar -xzf /tmp/kyverno.tar.gz -C /tmp kyverno
 
-    - name: Check for policies
+    - name: Validate selected policies
       shell: bash
-      id: check-policies
       env:
-        POLICY_PATH: ${{ inputs.policy-path }}
+        PROFILE: ${{ inputs.profile }}
       run: |
         set -euo pipefail
-        if [[ "$POLICY_PATH" = /* ]] || [[ "$POLICY_PATH" == *..* ]]; then
-          echo "Invalid policy path: $POLICY_PATH" >&2
-          exit 2
-        fi
-        shopt -s nullglob
-        policy_files=("$POLICY_PATH"/*.yaml)
-        if [ -d "$POLICY_PATH" ] && [ "${#policy_files[@]}" -gt 0 ]; then
-          echo "policies_exist=true" >> "$GITHUB_OUTPUT"
-          echo "Found Kyverno policies in $POLICY_PATH"
-        else
-          echo "policies_exist=false" >> "$GITHUB_OUTPUT"
-          echo "No Kyverno policies found in $POLICY_PATH, skipping validation"
-        fi
-
-    - name: Validate against policies
-      shell: bash
-      if: steps.check-policies.outputs.policies_exist == 'true'
-      env:
-        POLICY_PATH: ${{ inputs.policy-path }}
-        RESOURCE_PATH: ${{ inputs.resource-path }}
-      run: |
-        set -euo pipefail
-        echo "Validating manifests against Kyverno policies..."
-
-        rendered_path=$(mktemp -d)/k8s
-        ./scripts/render-k8s-for-validation.sh "$rendered_path"
-
-        if [[ "$RESOURCE_PATH" != k8s/* ]] || [[ "$RESOURCE_PATH" == *..* ]]; then
-          echo "resource-path must be a repository-relative path below k8s/." >&2
-          exit 2
-        fi
-        rendered_resources="$rendered_path/${RESOURCE_PATH#k8s/}"
-        mapfile -d '' resource_files < <(
-          find "$rendered_resources" -type f \( -name '*.yaml' -o -name '*.yml' \) -print0
-        )
-
-        if [ "${#resource_files[@]}" -gt 0 ]; then
-          resource_args=()
-          for resource_file in "${resource_files[@]}"; do
-            resource_args+=(--resource "$resource_file")
-          done
-          echo "Found resources in $RESOURCE_PATH"
-          echo ""
-          /tmp/kyverno apply "$POLICY_PATH" "${resource_args[@]}" --table
-          echo ""
-          echo "Kyverno policy validation passed"
-        else
-          echo "No resource files found to validate"
-        fi
+        case "$PROFILE" in local|aws-staging) ;; *) echo 'Unsupported profile' >&2; exit 2 ;; esac
+        rendered=$(mktemp -d)
+        kubectl kustomize "k8s/profiles/$PROFILE/policies" > "$rendered/policies.yaml"
+        ./scripts/render-profile.sh "$PROFILE" > "$rendered/resources.yaml"
+        /tmp/kyverno apply "$rendered/policies.yaml" --resource "$rendered/resources.yaml" --table

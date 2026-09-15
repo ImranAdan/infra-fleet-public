@@ -4,11 +4,11 @@
 
 **A staging Kubernetes platform template, with GitOps delivery, observable workloads, and an intent-driven advisor.**
 
-EKS · GitOps · canary deployments with automatic rollback · Prometheus and Grafana · DORA metrics · one-command teardown to keep the bill honest
+Local Kubernetes or EKS · Flux GitOps · Kyverno admission policies · canary deployments with automatic rollback · Prometheus and Grafana
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.35-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
-[![Flux](https://img.shields.io/badge/GitOps-Flux%20v2.7.3-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
+[![Flux](https://img.shields.io/badge/GitOps-Flux%20v2.7.5-5468FF?logo=flux&logoColor=white)](https://fluxcd.io/)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)](https://developer.hashicorp.com/terraform)
 [![Use this template](https://img.shields.io/badge/Use%20this-template-2ea44f?logo=github)](https://github.com/ImranAdan/infra-fleet-public/generate)
 
@@ -27,18 +27,30 @@ See [connecting the advisor](docs/ADVISOR-INTEGRATION.md).
 
 ---
 
-> **Deployment preview:** the current canary path still depends on the retired
+> **AWS deployment preview:** the AWS canary path still depends on the retired
 > community `ingress-nginx` controller. Existing artifacts remain available,
 > but upstream no longer ships bug or security fixes. Use the local path freely;
 > do not expose a new public deployment until the planned Gateway API migration
 > has been completed and validated through an apply, rollout, rollback, and
-> destroy cycle.
+> destroy cycle. Local Kubernetes uses Envoy Gateway and Gateway API.
 
 ---
 
 ## Try it locally, first
 
-Start with the Load Harness and monitoring stack in Docker Compose.
+Choose a [deployment profile](docs/DEPLOYMENT-PROFILES.md). Local Kubernetes runs
+Flux, Kyverno, Flagger, Envoy Gateway and monitoring on kind, sharing application
+resources and delivery controls with AWS staging.
+
+```bash
+git clone https://github.com/ImranAdan/infra-fleet-public.git
+cd infra-fleet-public
+./fleet up --profile local
+./fleet access --profile local --service app
+```
+
+See the guide for prerequisites, login credentials, acceptance checks and
+teardown. For faster application-only development, use Docker Compose:
 
 ```bash
 git clone https://github.com/ImranAdan/infra-fleet-public.git
@@ -52,9 +64,10 @@ Open **http://localhost:8080/ui** and press a button — the dashboard drives
 real CPU and memory load, and you watch Prometheus and Grafana react to it live.
 
 That is the same application the cluster runs, with the same app-level metrics
-and dashboards. The cluster adds ingress metrics for canary analysis. If you
-like what you see, the rest of this repository is an inspectable staging
-implementation—not a production blueprint.
+and dashboards. Kubernetes adds GitOps reconciliation, policy enforcement,
+network isolation, autoscaling and canary delivery. If you like what you see,
+the rest of this repository is an inspectable staging implementation—not a
+production blueprint.
 
 ---
 
@@ -64,11 +77,34 @@ Fork this and you have a platform that does the following, on day one:
 
 | | |
 |---|---|
-| **Models staged delivery** | A release or rebuild tests, scans and publishes an image, Flux picks it up, and Flagger evaluates a canary; the current ingress path remains a non-public preview |
+| **Models staged delivery** | Choose local Kubernetes or AWS staging; Flux reconciles the selected profile and Flagger evaluates a canary. AWS routing remains a non-public preview |
 | **Exposes useful signals** | Prometheus, Grafana and an explicitly heuristic DORA-signal pipeline for deployment events, lead time and failures |
 | **Makes cost visible** | Spot instances, a slim Flux install, nginx ingress, and a manual teardown workflow for when you are not using it |
-| **Proves itself in CI** | Terraform validated and scanned, manifests schema-checked, Kyverno policies enforced, images scanned with Trivy, commit messages linted, releases cut by release-please |
+| **Proves itself in CI** | Both profiles rendered and checked, local Flux/Kyverno/canary behaviour exercised, Terraform and images scanned, commits linted |
 | **Connects intent to improvement** | Infra Fleet Advisor evaluates declared positions against versioned repository evidence and proposes work for review |
+
+---
+
+## Current verification checkpoint
+
+The local profile has completed a full disposable-cluster acceptance cycle.
+Flux repaired deliberate drift, Kyverno rejected unsafe rollout and image
+changes, Calico blocked an unauthorized namespace, Prometheus discovered the
+application, and Flagger both promoted a healthy revision and rolled back a
+forced failure. The authenticated application UI and API, Grafana health, and
+the Prometheus target were also exercised through operator-facing commands.
+
+CI renders and validates both deployment profiles, applies each profile's
+admission policies, tests the application and container, and repeats the local
+Kubernetes acceptance path. AWS staging has static coverage here; it still
+requires an approved account-specific apply, rollout, rollback and destroy
+cycle before anyone treats that route as deployment evidence.
+
+The next review layer is the Advisor. It reads the merged repository revision,
+opens a report PR, and waits for a human decision. Merging that report can then
+publish eligible recommendations as fleet issues for separately selected fix
+PRs. See [connecting the advisor](docs/ADVISOR-INTEGRATION.md) for the exact
+handoff.
 
 ---
 
@@ -105,11 +141,10 @@ gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
 
 Use a private repository for your deployment configuration and operations.
 
-Then follow **[CONFIGURATION.md](CONFIGURATION.md)** — every value you need to
-supply, where each one comes from, and what you can skip. You need an AWS
-account and an HCP Terraform organisation; a first cluster build commonly takes
-25–40 minutes. A custom domain is optional; without one, port-forwarding reaches
-the application and Grafana.
+Start with the [local profile](docs/DEPLOYMENT-PROFILES.md) using Docker, or
+follow **[CONFIGURATION.md](CONFIGURATION.md)** for AWS staging. The AWS profile
+needs an AWS account and HCP Terraform organisation; a first cluster build
+commonly takes 25–40 minutes. A custom domain is optional.
 
 The sample application is meant to be replaced. Doing so requires preserving
 the Service, probe, metrics, image-automation, and canary contracts—not only
@@ -120,25 +155,44 @@ adding `/health` and `/metrics` endpoints. See
 ## Architecture
 
 ```mermaid
-flowchart LR
-  GitHub[Private GitHub copy] --> CI[GitHub Actions]
-  CI -->|OIDC| AWS[AWS staging resources]
-  CI -->|images| ECR[ECR]
-  HCP[HCP Terraform<br/>state and locks] -. local execution .- CI
-  GitHub --> Flux[Flux in EKS]
-  ECR --> Flux
-  Flux --> Platform[NGINX + Flagger +<br/>Prometheus + Grafana]
-  Platform --> App[Load Harness]
-  Users[Users] -->|optional DNS/TLS via NLB| Platform
+flowchart TB
+  Operator[Operator] --> Facade[./fleet --profile]
+  Repo[Versioned fleet repository] --> CI[GitHub Actions]
+
+  Facade -->|local| LocalBootstrap[kind + local registry<br/>read-only Git source]
+  LocalBootstrap --> LocalFlux[Flux local cluster root]
+  LocalFlux --> LocalPlatform[Envoy Gateway + Flagger<br/>Kyverno + monitoring]
+
+  Facade -->|aws-staging| Workflows[Reviewed GitHub workflows]
+  Workflows -->|OIDC| AWS[EKS + AWS infrastructure]
+  Workflows --> ECR[ECR images]
+  HCP[HCP Terraform<br/>state and locks] --- Workflows
+  Repo --> AWSFlux[Flux AWS cluster root]
+  ECR --> AWSFlux
+  AWS --> AWSFlux
+  AWSFlux --> AWSPlatform[NGINX staging route + Flagger<br/>Kyverno + monitoring]
+
+  Shared[Shared application base<br/>and delivery contracts] --> LocalFlux
+  Shared --> AWSFlux
+  LocalPlatform --> App[Load Harness]
+  AWSPlatform --> App
+
+  Advisor[Infra Fleet Advisor] -->|reads merged revision| Repo
+  Advisor --> ReportPR[Advisor report PR]
+  ReportPR -->|human approval| FleetIssues[Fleet issues]
+  FleetIssues -->|selected fixes| Repo
 ```
 
-HCP Terraform stores state and locks; Terraform execution and AWS calls happen
-on the operator's machine or a GitHub-hosted runner.
+The facade is the profile boundary. Local commands do not invoke AWS or GitHub
+writes. HCP Terraform stores AWS state and locks; Terraform execution and AWS
+calls happen on the operator's machine or a GitHub-hosted runner.
 
 **Key Flows:**
-- **CI/CD**: Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux → Deploy
+- **Local**: Committed revision → local registry and Git source → Flux → kind
+- **AWS CI/CD**: Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux → EKS
 - **Progressive Delivery**: New version → Flagger canary → Traffic shifting → Metrics analysis → Promote/Rollback
 - **Observability**: Applications → Prometheus scrape → Grafana dashboards → DORA metrics
+- **Advisor**: Merged fleet revision → report PR → human approval → eligible fleet issues
 
 See [docs/README.md](docs/README.md) for detailed architecture diagram.
 
@@ -158,10 +212,10 @@ analysis:
   maxWeight: 50        # Max 50% traffic to canary
   stepWeight: 10       # 10% increments
   metrics:
-    - name: nginx-request-success-rate
+    - name: workload-request-success-rate
       thresholdRange:
         min: 99        # Requires 99% success rate
-    - name: nginx-request-duration
+    - name: workload-request-duration
       thresholdRange:
         max: 500       # p99 latency < 500ms
 ```
@@ -227,14 +281,16 @@ Automated certificate management:
 │       └── local-dev/              # Docker Compose dev environment
 │
 ├── k8s/                            # GitOps manifests
-│   ├── flux-system/                # Flux controllers + kustomizations
-│   ├── infrastructure/             # Helm releases, namespaces
+│   ├── clusters/                   # Explicit local and AWS Flux roots
+│   ├── profiles/                   # Provider-specific composition
+│   ├── flux-system/                # Generated Flux controllers + AWS bootstrap
+│   ├── infrastructure/             # Shared Helm releases and namespaces
 │   │   ├── cert-manager/           # TLS certificates
 │   │   ├── flagger/                # Progressive delivery
 │   │   ├── nginx-ingress-controller/
 │   │   └── observability/          # Prometheus, Grafana, Pushgateway
-│   └── applications/               # App deployments
-│       └── load-harness/           # Deployment, Service, Ingress, Canary, HPA
+│   └── applications/               # Shared application resources
+│       └── load-harness/           # Deployment, Service, Canary, HPA, policy
 │
 ├── policies/                       # Kyverno policies for CI validation
 ├── ops/                            # Operational scripts
@@ -251,7 +307,7 @@ Automated certificate management:
 |-----------|---------|---------|
 | EKS | 1.35 | Kubernetes control plane |
 | Terraform | >= 1.14.0, < 2.0.0 | Infrastructure as Code |
-| Flux | v2.7.3 | GitOps operator |
+| Flux | v2.7.5 local / v2.7.3 AWS | GitOps operator |
 | Spot Instances | t3.large | Cost-optimized compute |
 
 ### Platform Services
@@ -268,7 +324,7 @@ Automated certificate management:
 | Prometheus | Metrics collection |
 | Grafana | Dashboards and visualization |
 | Pushgateway | DORA metrics collection |
-| ServiceMonitors | Auto-discovery of scrape targets |
+| PodMonitors / ServiceMonitors | Auto-discovery of scrape targets |
 
 ### CI/CD
 | Component | Purpose |

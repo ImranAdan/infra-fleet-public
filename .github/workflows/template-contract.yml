@@ -7,6 +7,9 @@ on:
       - 'infrastructure/**'
       - 'k8s/**'
       - 'scripts/**'
+      - 'fleet'
+      - 'platform/**'
+      - 'tests/profiles/**'
       - 'CONFIGURATION.md'
       - 'config.example.env'
       - '.release-please-manifest.json'
@@ -20,6 +23,9 @@ on:
       - 'infrastructure/**'
       - 'k8s/**'
       - 'scripts/**'
+      - 'fleet'
+      - 'platform/**'
+      - 'tests/profiles/**'
       - 'CONFIGURATION.md'
       - 'config.example.env'
       - '.release-please-manifest.json'
@@ -36,6 +42,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Install pinned profile renderer
+        run: |
+          ./scripts/install-profile-tools.sh "$RUNNER_TEMP/fleet-bin"
+          echo "$RUNNER_TEMP/fleet-bin" >> "$GITHUB_PATH"
 
       - name: Validate template invariants
         run: ./scripts/validate-template-contract.sh

@@ -5,9 +5,6 @@
 # MIGRATION FROM ALB TO NGINX
 # =============================================================================
 #
-# Previous: ingress.yaml.disabled (ALB-based ingress)
-# Current:  ingress-nginx.yaml (NGINX Ingress for Flagger traffic splitting)
-#
 # Why the change:
 #   - ALB does not support weighted routing for canary deployments
 #   - Flagger requires meshProvider: nginx for true traffic splitting
