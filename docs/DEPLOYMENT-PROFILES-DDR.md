@@ -35,6 +35,19 @@ current staging NGINX preview; moving AWS routing is a separate migration.
 Metrics adapters follow the actual traffic provider. Local analysis uses
 canary-pod application metrics; AWS analysis uses the existing ingress metrics.
 
+Full profile acceptance is a deployment gate, not a default commit gate. Fast
+PR checks validate rendered resources, schemas, policy behavior, application
+tests, the container and its image. A maintainer dispatches the full local
+cycle once against a reviewed candidate branch; GitHub records that exact
+revision in the `local` Environment. The same cycle runs weekly against `main`
+to detect integration drift. It does not run automatically both before and
+after every merge.
+
+The local deployment is ephemeral and leaves no accessible endpoint after
+teardown. AWS jobs continue to use the existing `staging` Environment because
+its name is bound into the OIDC trust policy. Renaming that environment requires
+a separately reviewed AWS trust migration.
+
 ## Consequences
 
 Both profiles must build and pass profile-specific policies in CI. Kyverno

@@ -26,8 +26,8 @@ This document outlines the design for a staging → production promotion strateg
 |-----------|--------------|-------------------|
 | **Terraform** | `infrastructure/staging/` and `infrastructure/permanent/` | Partially (permanent is shared) |
 | **GitOps** | Shared application base with explicit `local` and `aws-staging` profiles | Yes - selected through `./fleet` |
-| **CI/CD** | Single workflow per resource type | No - assumes staging |
-| **GitHub Environments** | Not configured | N/A |
+| **CI/CD** | Fast PR checks plus profile-specific deployment workflows | Yes - local and AWS lifecycles are explicit |
+| **GitHub Environments** | `local` for ephemeral acceptance; `staging` for AWS | Yes - no production target |
 | **ECR** | Single repository `load-harness` | No |
 | **IAM/OIDC** | Single role `GitHubActions-InfraFleet` | No |
 
@@ -232,11 +232,22 @@ spec:
 
 ### 4. GitHub Environments & CI/CD
 
-**GitHub Environments:**
+**Current GitHub Environments:**
+
+| Environment | Profile | Trigger | Persistence |
+|-------------|---------|---------|-------------|
+| `local` | `local` | Manual final gate and weekly confidence run | Ephemeral; the workflow tears kind down |
+| `staging` | `aws-staging` | Reviewed AWS lifecycle workflows | Persistent until the destroy workflow runs |
+
+`staging` retains its name because the AWS OIDC trust policy binds that exact
+environment subject. The local workflow carries no AWS or Terraform
+credentials. See [GitHub Environments](GITHUB-ENVIRONMENTS.md).
+
+**Future production extension:**
 
 | Environment | Approval | Protection Rules |
 |-------------|----------|------------------|
-| `staging` | None | Auto-deploy on tag |
+| `staging` | Existing staging policy | Main and release tags |
 | `production` | Required (1+ reviewer) | Deployment branches: `main` only |
 
 **Environment-Specific Secrets:**

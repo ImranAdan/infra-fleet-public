@@ -62,6 +62,21 @@ trap 'rm -rf "$rendered_root"' EXIT
 ./tests/profiles/local-git-snapshot.sh
 ./tests/profiles/cluster-ownership.sh
 
+local_deployment_workflow=.github/workflows/local-kubernetes.yml
+if grep -Eq '^  (pull_request|push):' "$local_deployment_workflow"; then
+  echo "The full local deployment must not run automatically for each PR or main push." >&2
+  failed=true
+fi
+for required_contract in \
+  '^  workflow_dispatch:$' \
+  '^  schedule:$' \
+  '^      name: local$'; do
+  if ! grep -Eq "$required_contract" "$local_deployment_workflow"; then
+    echo "The local deployment workflow is missing contract: $required_contract" >&2
+    failed=true
+  fi
+done
+
 while IFS= read -r -d '' shell_file; do
   bash -n "$shell_file"
 done < <(find scripts ops applications/load-harness/local-dev -type f -name '*.sh' -print0)

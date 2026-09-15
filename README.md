@@ -94,11 +94,26 @@ application, and Flagger both promoted a healthy revision and rolled back a
 forced failure. The authenticated application UI and API, Grafana health, and
 the Prometheus target were also exercised through operator-facing commands.
 
-CI renders and validates both deployment profiles, applies each profile's
-admission policies, tests the application and container, and repeats the local
-Kubernetes acceptance path. AWS staging has static coverage here; it still
-requires an approved account-specific apply, rollout, rollback and destroy
+Pull-request CI renders and validates both deployment profiles, applies each
+profile's admission policies, and tests the application and container. The full
+local Kubernetes cycle is a separate `local` GitHub Environment deployment:
+run it once against a reviewed candidate revision rather than before and after
+every merge. A weekly run against `main` provides continuing integration
+confidence. AWS staging uses the existing protected `staging` Environment and
+still requires an approved account-specific apply, rollout, rollback and destroy
 cycle before anyone treats that route as deployment evidence.
+
+Run the final local gate from **Actions → Local Kubernetes → Run workflow** and
+select the candidate branch, or use:
+
+```bash
+gh workflow run local-kubernetes.yml --ref YOUR_CANDIDATE_BRANCH
+```
+
+The workflow records the selected commit as a GitHub deployment, creates the
+ephemeral cluster, verifies Flux, Kyverno, networking, monitoring and canary
+delivery, and tears the cluster down. See [deployment profiles](docs/DEPLOYMENT-PROFILES.md)
+and [GitHub Environments](docs/GITHUB-ENVIRONMENTS.md).
 
 The next review layer is the Advisor. It reads the merged repository revision,
 opens a report PR, and waits for a human decision. Merging that report can then
@@ -361,12 +376,14 @@ Automated certificate management:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Scheduling
+### Deployment gates and scheduling
 
-Both lifecycle workflows are **manual** (`workflow_dispatch`):
+AWS lifecycle workflows are manual. The local profile has a deliberate manual
+deployment gate plus a weekly confidence run:
 
 | Workflow | Purpose |
 |----------|---------|
+| `local-kubernetes.yml` | Deploys and tests an exact revision in the `local` GitHub Environment, then tears it down; scheduled Mondays at 05:37 UTC |
 | `rebuild-stack.yml` | Provision the cluster |
 | `nightly-destroy.yml` | Tear it down, to stop paying for it |
 | `dora-metrics.yml` | Runs automatically after deployment workflows complete |

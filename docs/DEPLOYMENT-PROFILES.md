@@ -85,11 +85,31 @@ rejections, Calico isolation, Prometheus target discovery, healthy canary
 promotion and forced-failure rollback. Operator smoke tests cover application
 authentication, the UI, Grafana health and Prometheus.
 
-CI repeats the local Kubernetes acceptance path and renders, schema-checks and
-policy-checks both profiles. The AWS profile is deliberately limited to static
+Pull-request CI renders, schema-checks and policy-checks both profiles without
+creating a cluster. Application tests, the container smoke test and the image
+scan also remain ordinary PR checks. This is the fast feedback path.
+
+The full local acceptance suite is a deployment workflow rather than a check on
+every PR and subsequent `main` push. Dispatch **Local Kubernetes** against the
+candidate branch when a group of changes is ready for final review:
+
+```bash
+gh workflow run local-kubernetes.yml --ref YOUR_CANDIDATE_BRANCH
+```
+
+GitHub binds `GITHUB_SHA` to the branch head at dispatch, checks out that exact
+commit and records the job in the `local` GitHub Environment. The cluster is
+ephemeral and is removed before the job completes; the deployment record is
+evidence of the completed integration cycle, not an endpoint that remains
+online. Runs are serialized because the workflow represents one logical target.
+A weekly scheduled run applies the same proof to current `main` without delaying
+ordinary pull requests.
+
+The AWS profile maps to the existing `staging` GitHub Environment because that
+name is part of its OIDC trust boundary. AWS remains limited to static PR
 validation until a configured private copy runs the reviewed cloud lifecycle.
-Local success is evidence for the shared contracts and local provider; it is
-not evidence that AWS resources were created or destroyed successfully.
+Local success is evidence for the shared contracts and local provider; it is not
+evidence that AWS resources were created or destroyed successfully.
 
 ## Layout and checks
 
