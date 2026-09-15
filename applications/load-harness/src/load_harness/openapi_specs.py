@@ -135,6 +135,11 @@ SYSTEM_INFO_SPEC = {
                         "example": 4096,
                         "description": "Available memory in MB",
                     },
+                    "memory_limit_mb": {
+                        "type": "integer",
+                        "example": 614,
+                        "description": "Runtime maximum accepted by memory load endpoints, derived from the cgroup limit",
+                    },
                     "timestamp": {"type": "string", "format": "date-time"},
                 },
             },

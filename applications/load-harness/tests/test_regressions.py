@@ -167,6 +167,26 @@ class TestJobIds:
         """Status filtering and log grepping rely on the prefix."""
         assert _new_job_id("mem_").startswith("mem_")
 
+    def test_dashboard_exposes_the_complete_job_id_to_javascript(self, client, app):
+        """The browser must retain the suffix that makes simultaneous IDs unique."""
+        service = app.extensions["load_harness"]
+        body = {
+            "status": "started",
+            "job_id": "job_1000000_deadbeef",
+            "cores": 1,
+            "duration_seconds": 10,
+            "intensity": 1,
+        }
+        with patch.object(service, "start_cpu_load", return_value=(body, 200)):
+            response = client.post(
+                "/ui/partials/cpu-result",
+                data={"cores": 1, "duration_seconds": 10, "intensity": 1},
+            )
+
+        assert b'data-job-id="job_1000000_deadbeef"' in response.data
+        javascript = client.get("/static/js/dashboard.js").data
+        assert b"job_id: result.dataset.jobId" in javascript
+
 
 # =============================================================================
 # JobManager locking and retention
@@ -284,4 +304,15 @@ class TestAuthentication:
 
         assert list(dashboard_routes._login_failures) == ["10.0.1.1"]
 
+        dashboard_routes._login_failures.clear()
+
+    def test_login_failure_cache_is_bounded_during_a_burst(self):
+        """Recent one-off addresses cannot grow the process cache forever."""
+        dashboard_routes._login_failures.clear()
+
+        with patch.object(dashboard_routes, "LOGIN_FAILURE_CACHE_MAX_CLIENTS", 3):
+            for index in range(10):
+                dashboard_routes._record_login_failure(f"192.0.2.{index}")
+
+        assert len(dashboard_routes._login_failures) == 3
         dashboard_routes._login_failures.clear()

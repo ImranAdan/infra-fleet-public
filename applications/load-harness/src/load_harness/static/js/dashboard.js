@@ -286,43 +286,22 @@
     // Listen for successful load responses via HTMX
     document.body.addEventListener('htmx:afterSwap', function(event) {
         if (event.detail.target.id === 'result') {
-            var resultHtml = event.detail.target.innerHTML;
+            var result = event.detail.target.querySelector('[data-job-id]');
+            if (!result) return;
 
-            // Check if it's a CPU Load success response by looking for job_id.
-            // Match the whole identifier: the server appends a random suffix to
-            // the millisecond timestamp, and rebuilding the ID from the digits
-            // alone dropped it, so two jobs started in the same millisecond
-            // collided in activeJobs - the very collision the suffix prevents.
-            var cpuJobIdMatch = resultHtml.match(/job_\d+_[0-9a-f]+/);
-            if (cpuJobIdMatch && resultHtml.includes('CPU Load')) {
-                var coresMatch = resultHtml.match(/>Cores<\/dt>\s*<dd[^>]*>\s*(\d+)\s*<\/dd>/);
-                var durationMatch = resultHtml.match(/>Duration<\/dt>\s*<dd[^>]*>\s*(\d+)s\s*<\/dd>/);
-                var intensityMatch = resultHtml.match(/>Intensity<\/dt>\s*<dd[^>]*>\s*(\d+)\s*\/\s*10\s*<\/dd>/);
-
-                if (coresMatch && durationMatch && intensityMatch) {
-                    addCpuJob({
-                        job_id: cpuJobIdMatch[0],
-                        cores: parseInt(coresMatch[1], 10),
-                        duration_seconds: parseInt(durationMatch[1], 10),
-                        intensity: parseInt(intensityMatch[1], 10)
-                    });
-                }
-            }
-
-            // Check if it's a Memory Load success response by looking for mem_id.
-            // Whole identifier, including the random suffix - see above.
-            var memJobIdMatch = resultHtml.match(/mem_\d+_[0-9a-f]+/);
-            if (memJobIdMatch && resultHtml.includes('Memory Load')) {
-                var sizeMatch = resultHtml.match(/>Size<\/dt>\s*<dd[^>]*>\s*(\d+)\s*MB\s*<\/dd>/);
-                var memDurationMatch = resultHtml.match(/>Duration<\/dt>\s*<dd[^>]*>\s*(\d+)s\s*<\/dd>/);
-
-                if (sizeMatch && memDurationMatch) {
-                    addMemoryJob({
-                        job_id: memJobIdMatch[0],
-                        size_mb: parseInt(sizeMatch[1], 10),
-                        duration_seconds: parseInt(memDurationMatch[1], 10)
-                    });
-                }
+            if (result.dataset.jobType === 'cpu') {
+                addCpuJob({
+                    job_id: result.dataset.jobId,
+                    cores: parseInt(result.dataset.cores, 10),
+                    duration_seconds: parseInt(result.dataset.duration, 10),
+                    intensity: parseInt(result.dataset.intensity, 10)
+                });
+            } else if (result.dataset.jobType === 'memory') {
+                addMemoryJob({
+                    job_id: result.dataset.jobId,
+                    size_mb: parseInt(result.dataset.sizeMb, 10),
+                    duration_seconds: parseInt(result.dataset.duration, 10)
+                });
             }
         }
     });

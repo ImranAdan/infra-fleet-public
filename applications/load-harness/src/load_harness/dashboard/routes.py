@@ -29,6 +29,7 @@ from load_harness.constants import (
     CPU_WORK_MIN_ITERATIONS,
     LOGIN_LOCKOUT_SECONDS,
     LOGIN_MAX_ATTEMPTS,
+    LOGIN_FAILURE_CACHE_MAX_CLIENTS,
 )
 from load_harness.services import create_metrics_provider
 
@@ -84,6 +85,15 @@ def _record_login_failure(client: str) -> None:
     with _login_lock:
         for address in [a for a, times in _login_failures.items() if times[-1] <= cutoff]:
             del _login_failures[address]
+        if (
+            client not in _login_failures
+            and len(_login_failures) >= LOGIN_FAILURE_CACHE_MAX_CLIENTS
+        ):
+            oldest = min(
+                _login_failures,
+                key=lambda address: _login_failures[address][-1],
+            )
+            del _login_failures[oldest]
         _login_failures.setdefault(client, []).append(now)
 
 

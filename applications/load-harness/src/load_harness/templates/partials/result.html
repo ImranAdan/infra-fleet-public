@@ -1,7 +1,9 @@
 {# Result partial for load test responses #}
 
 {% if status == "success" %}
-<div class="rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 p-4">
+<div class="rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 p-4"
+     {% if is_cpu_load %}data-job-type="cpu" data-job-id="{{ data.job_id }}" data-cores="{{ data.cores }}" data-duration="{{ data.duration_seconds }}" data-intensity="{{ data.intensity }}"{% endif %}
+     {% if is_memory_load %}data-job-type="memory" data-job-id="{{ data.job_id }}" data-size-mb="{{ data.size_mb }}" data-duration="{{ data.duration_seconds }}"{% endif %}>
     <div class="flex items-start">
         <div class="flex-shrink-0">
             <svg class="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">

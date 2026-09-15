@@ -64,6 +64,8 @@ MEMORY_JOB_PREFIX = "mem_"
 # The login form guards one shared API key, so cap the guess rate.
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 60
+# Limit memory retained by a burst of distinct active source addresses.
+LOGIN_FAILURE_CACHE_MAX_CLIENTS = 1024
 
 # =============================================================================
 # HTTP/API Settings
