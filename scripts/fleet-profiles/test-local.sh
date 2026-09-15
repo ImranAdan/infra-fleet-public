@@ -25,6 +25,22 @@ test_publish_snapshot() {
   fctl reconcile kustomization applications --with-source --timeout=5m
 }
 
+test_wait_monitoring() {
+  local deadline=$((SECONDS + 120))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if kctl exec -n flux-system deployment/flagger-loadtester -- \
+      curl --fail --silent --max-time 10 \
+      'http://kube-prometheus-stack-prometheus.observability:9090/api/v1/query?query=up%7Bnamespace%3D%22applications%22%7D' \
+      > "$FLEET_STATE/monitoring.json" && \
+      grep -Eq '"value":\[[^]]*,"1"\]' "$FLEET_STATE/monitoring.json"; then
+      return 0
+    fi
+    sleep 3
+  done
+  cat "$FLEET_STATE/monitoring.json" >&2
+  fail 'Prometheus did not report a healthy application target within 120s.'
+}
+
 test_restore_snapshot() {
   local test_result=$?
   trap - EXIT INT TERM
@@ -65,10 +81,7 @@ test_local() {
   echo 'Checking application monitoring and network isolation.'
   kctl exec -n flux-system deployment/flagger-loadtester -- \
     curl --fail --silent --max-time 10 http://load-harness-primary.applications:5000/health >/dev/null
-  kctl exec -n flux-system deployment/flagger-loadtester -- \
-    curl --fail --silent --max-time 10 \
-    'http://kube-prometheus-stack-prometheus.observability:9090/api/v1/query?query=up%7Bnamespace%3D%22applications%22%7D' > "$FLEET_STATE/monitoring.json"
-  grep -Eq '"value":\[[^]]*,"1"\]' "$FLEET_STATE/monitoring.json"
+  test_wait_monitoring
   kctl create namespace fleet-test --dry-run=client -o yaml | kctl apply -f - >/dev/null
   local probe_image
   probe_image=$(kctl get deployment flagger-loadtester -n flux-system -o jsonpath='{.spec.template.spec.containers[0].image}')
