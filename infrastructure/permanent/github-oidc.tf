@@ -279,6 +279,59 @@ resource "aws_iam_policy" "github_actions" {
           "iam:UntagOpenIDConnectProvider",
           "iam:UpdateOpenIDConnectProviderThumbprint",
         ]
+        # Scoped to this account's own IAM namespace. The role has no reason to
+        # write IAM in any other account, and a cross-account ARN reaching this
+        # statement would be a bug or an attack, never a normal apply.
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/*",
+        ]
+      },
+      # Explicit Deny closing the one-step escalation: attaching an AWS-managed
+      # administrator policy to a role this principal can already assume.
+      #
+      # A Deny always beats the Allow above, and none of these policies appear
+      # anywhere in this repository - the stacks attach only the EKS, CNI and
+      # ECR service policies - so this cannot affect a legitimate apply.
+      #
+      # This is a partial control, not the complete one. iam:PutRolePolicy still
+      # permits an inline policy granting "Action": "*", and IAM conditions
+      # cannot inspect a policy document. Closing that requires a permissions
+      # boundary: a boundary policy in this stack, an iam:PermissionsBoundary
+      # condition on CreateRole/PutRolePolicy/AttachRolePolicy, and every
+      # role-creating call - including the EKS module's
+      # iam_role_permissions_boundary and node_iam_role_permissions_boundary -
+      # attaching it. That change denies CreateRole until every caller sets the
+      # boundary, so it needs a full plan, apply and destroy cycle to validate
+      # before it can be merged. Tracked in docs/SECURITY-CONCERNS.md (H5).
+      {
+        Sid    = "DenyAdministratorPolicyAttachment"
+        Effect = "Deny"
+        Action = [
+          "iam:AttachRolePolicy",
+          "iam:AttachUserPolicy",
+          "iam:AttachGroupPolicy",
+        ]
+        Resource = "*"
+        Condition = {
+          ArnEquals = {
+            "iam:PolicyARN" = [
+              "arn:aws:iam::aws:policy/AdministratorAccess",
+              "arn:aws:iam::aws:policy/IAMFullAccess",
+              "arn:aws:iam::aws:policy/PowerUserAccess",
+            ]
+          }
+        }
+      },
+      # Once a permissions boundary exists, nothing in CI should be able to
+      # remove it from a role. Denying that now means the boundary work above
+      # cannot be quietly undone later by a policy edit.
+      {
+        Sid      = "DenyPermissionsBoundaryRemoval"
+        Effect   = "Deny"
+        Action   = "iam:DeleteRolePermissionsBoundary"
         Resource = "*"
       },
       # iam:PassRole is separated so it can carry a condition. Without one it

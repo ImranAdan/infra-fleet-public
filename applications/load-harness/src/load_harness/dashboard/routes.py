@@ -3,8 +3,13 @@
 
 import os
 import secrets
-import requests
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
+from typing import Optional
+
+import requests
 from flask import (
     Blueprint,
     render_template,
@@ -17,17 +22,16 @@ from flask import (
 )
 
 from load_harness.constants import (
-    API_REQUEST_TIMEOUT,
     CLUSTER_MAX_CONCURRENCY,
     CLUSTER_MIN_CONCURRENCY,
     CLUSTER_REQUEST_TIMEOUT,
     CPU_WORK_MAX_ITERATIONS,
     CPU_WORK_MIN_ITERATIONS,
+    LOGIN_LOCKOUT_SECONDS,
+    LOGIN_MAX_ATTEMPTS,
+    LOGIN_FAILURE_CACHE_MAX_CLIENTS,
 )
-from load_harness.services import (
-    PrometheusClient,
-    create_metrics_provider,
-)
+from load_harness.services import create_metrics_provider
 
 dashboard = Blueprint(
     "dashboard",
@@ -38,6 +42,65 @@ dashboard = Blueprint(
 
 
 # ---- Authentication Routes ----
+
+# Failed login attempts per client address. The login form guards a single
+# shared API key, so an unbounded guess rate is the whole attack.
+#
+# ponytail: per-process dict, so the real ceiling is LOGIN_MAX_ATTEMPTS x
+# gunicorn workers x pods - measured at 10 attempts before lockout with the
+# shipped 2-worker container, not 5. That is a bound, which is the point; it is
+# not a precise one. Move it to the ingress or a shared store if an exact
+# per-address limit matters.
+_login_failures = {}
+_login_lock = threading.Lock()
+
+
+def _login_blocked(client: str) -> bool:
+    """Report whether this client is currently locked out, pruning old attempts.
+
+    Never inserts a key: a lookup that created an entry would let an attacker
+    grow this dictionary one address at a time just by probing the login page.
+    """
+    cutoff = time.monotonic() - LOGIN_LOCKOUT_SECONDS
+    with _login_lock:
+        attempts = [t for t in _login_failures.get(client, ()) if t > cutoff]
+        if attempts:
+            _login_failures[client] = attempts
+        else:
+            _login_failures.pop(client, None)
+        return len(attempts) >= LOGIN_MAX_ATTEMPTS
+
+
+def _record_login_failure(client: str) -> None:
+    """Record a failed attempt, dropping every entry that has aged out.
+
+    Prunes all clients, not just this one. _login_blocked only expires the
+    address in front of it, so addresses that fail once and never return would
+    otherwise sit here for the life of the process - and failures arriving from
+    many addresses would grow the map without bound. Pruning costs one pass
+    over a map that only failed logins can grow.
+    """
+    now = time.monotonic()
+    cutoff = now - LOGIN_LOCKOUT_SECONDS
+    with _login_lock:
+        for address in [a for a, times in _login_failures.items() if times[-1] <= cutoff]:
+            del _login_failures[address]
+        if (
+            client not in _login_failures
+            and len(_login_failures) >= LOGIN_FAILURE_CACHE_MAX_CLIENTS
+        ):
+            oldest = min(
+                _login_failures,
+                key=lambda address: _login_failures[address][-1],
+            )
+            del _login_failures[oldest]
+        _login_failures.setdefault(client, []).append(now)
+
+
+def _clear_login_failures(client: str) -> None:
+    """Forget a client's failures after a successful login."""
+    with _login_lock:
+        _login_failures.pop(client, None)
 
 
 @dashboard.route("/login", methods=["GET", "POST"])
@@ -54,20 +117,32 @@ def login():
         return redirect(url_for("dashboard.index"))
 
     if request.method == "POST":
+        client = request.remote_addr or "unknown"
+
+        if _login_blocked(client):
+            current_app.logger.warning("Login lockout in effect for %s", client)
+            return render_template(
+                "login.html",
+                error=f"Too many failed attempts. Try again in {LOGIN_LOCKOUT_SECONDS} seconds.",
+            ), 429
+
         provided_key = request.form.get("api_key", "").strip()
         expected_key = current_app.config.get("API_KEY")
 
-        # Use constant-time comparison to prevent timing attacks
-        if provided_key and expected_key and secrets.compare_digest(provided_key, expected_key):
+        # Constant-time comparison to prevent timing attacks. Compare bytes:
+        # compare_digest rejects str arguments holding non-ASCII characters.
+        if provided_key and expected_key and secrets.compare_digest(
+            provided_key.encode("utf-8"), expected_key.encode("utf-8")
+        ):
+            _clear_login_failures(client)
             session["authenticated"] = True
             session.permanent = True  # Use permanent session
-            current_app.logger.info("User authenticated from %s", request.remote_addr)
+            current_app.logger.info("User authenticated from %s", client)
             return redirect(url_for("dashboard.index"))
         else:
+            _record_login_failure(client)
             error = "Invalid API key. Please try again."
-            current_app.logger.warning(
-                "Failed login attempt from %s", request.remote_addr
-            )
+            current_app.logger.warning("Failed login attempt from %s", client)
 
     return render_template("login.html", error=error)
 
@@ -87,25 +162,16 @@ def logout():
     return redirect(url_for("dashboard.login"))
 
 
-def _get_api_base_url() -> str:
-    """Get the base URL for internal API calls.
+def _service():
+    """Get the LoadHarnessService running in this process.
 
-    Uses the PORT environment variable to call the local Flask server.
-    This works both in Kubernetes (PORT=5000) and local development.
+    The dashboard used to reach the API over HTTP against 127.0.0.1. With sync
+    gunicorn workers that deadlocks: the outer request holds a worker while its
+    own inner request waits for one, so two concurrent dashboard actions stall
+    the pool and /health stops answering until the probe restarts the pod.
+    Same process, so call it directly.
     """
-    port = os.environ.get("PORT", "5000")
-    return f"http://127.0.0.1:{port}"
-
-
-def _get_auth_headers() -> dict:
-    """Get authentication headers for internal API calls.
-
-    Returns headers dict with X-API-Key if authentication is enabled.
-    """
-    api_key = current_app.config.get("API_KEY")
-    if api_key:
-        return {"X-API-Key": api_key}
-    return {}
+    return current_app.extensions["load_harness"]
 
 
 # Module-level metrics provider (lazy initialized)
@@ -125,15 +191,7 @@ def index():
     """Render main dashboard page."""
     # Fetch system info for CPU cores
     try:
-        response = requests.get(
-            f"{_get_api_base_url()}/system/info",
-            headers=_get_auth_headers(),
-            timeout=5,
-        )
-        if response.status_code == 200:
-            system_info = response.json()
-        else:
-            system_info = {"cpu_cores": 1}
+        system_info = _service().get_system_info()
     except Exception:
         system_info = {"cpu_cores": 1}
 
@@ -145,15 +203,11 @@ def index():
 
 @dashboard.route("/api/system-info")
 def system_info():
-    """Proxy system info from backend API."""
+    """Return system info for the dashboard."""
     try:
-        response = requests.get(
-            f"{_get_api_base_url()}/system/info",
-            headers=_get_auth_headers(),
-            timeout=5,
-        )
-        return jsonify(response.json()), response.status_code
+        return jsonify(_service().get_system_info()), 200
     except Exception as e:
+        current_app.logger.error("System info error: %s", e)
         return jsonify({"error": str(e), "cpu_cores": 1}), 500
 
 
@@ -165,42 +219,20 @@ def cpu_result():
         duration_seconds = int(request.form.get("duration_seconds", 60))
         intensity = int(request.form.get("intensity", 5))
 
-        response = requests.post(
-            f"{_get_api_base_url()}/load/cpu",
-            json={
-                "cores": cores,
-                "duration_seconds": duration_seconds,
-                "intensity": intensity,
-            },
-            headers=_get_auth_headers(),
-            timeout=10,
-        )
+        body, status = _service().start_cpu_load(cores, duration_seconds, intensity)
 
-        if response.status_code == 200:
+        if status == 200:
             return render_template(
                 "partials/result.html",
                 status="success",
                 test_type="CPU Load",
-                data=response.json(),
+                data=body,
                 is_cpu_load=True,
             )
-        else:
-            return render_template(
-                "partials/result.html",
-                status="error",
-                message=response.json().get("error", "Unknown error"),
-            )
-    except requests.exceptions.Timeout:
         return render_template(
             "partials/result.html",
             status="error",
-            message="Request timed out.",
-        )
-    except requests.exceptions.ConnectionError:
-        return render_template(
-            "partials/result.html",
-            status="error",
-            message="Could not connect to API. Is the server running?",
+            message=body.get("error", "Unknown error"),
         )
     except Exception as e:
         current_app.logger.error("CPU load test error: %s", e)
@@ -218,38 +250,20 @@ def memory_result():
         size_mb = int(request.form.get("size_mb", 100))
         duration_seconds = int(request.form.get("duration_seconds", 30))
 
-        response = requests.post(
-            f"{_get_api_base_url()}/load/memory",
-            json={"size_mb": size_mb, "duration_seconds": duration_seconds},
-            headers=_get_auth_headers(),
-            timeout=10,  # Non-blocking, returns immediately
-        )
+        body, status = _service().start_memory_load(size_mb, duration_seconds)
 
-        if response.status_code == 200:
+        if status == 200:
             return render_template(
                 "partials/result.html",
                 status="success",
                 test_type="Memory Load",
-                data=response.json(),
+                data=body,
                 is_memory_load=True,
             )
-        else:
-            return render_template(
-                "partials/result.html",
-                status="error",
-                message=response.json().get("error", "Unknown error"),
-            )
-    except requests.exceptions.Timeout:
         return render_template(
             "partials/result.html",
             status="error",
-            message="Request timed out.",
-        )
-    except requests.exceptions.ConnectionError:
-        return render_template(
-            "partials/result.html",
-            status="error",
-            message="Could not connect to API. Is the server running?",
+            message=body.get("error", "Unknown error"),
         )
     except Exception as e:
         current_app.logger.error("Memory load test error: %s", e)
@@ -315,19 +329,19 @@ def pod_metrics():
     )
 
 
-def _get_k8s_service_url() -> str:
+def _get_k8s_service_url() -> Optional[str]:
     """Get the Kubernetes Service URL for distributed load testing.
 
-    In Kubernetes: Uses the in-cluster service URL on port 5000.
-    Locally: Uses the local Flask server.
+    Returns None when running locally: there is no cluster to spread work
+    across, so the work runs in this process rather than over a loopback
+    request that would starve the worker pool.
 
     Note: Port 5000 must be specified explicitly because Flagger manages the
     load-harness service and configures it with port 5000 (matching the container
     port) rather than the standard HTTP port 80.
     """
-    env = os.environ.get("ENVIRONMENT", "local")
-    if env == "local":
-        return _get_api_base_url()
+    if os.environ.get("ENVIRONMENT", "local") == "local":
+        return None
     # In-cluster service URL for load distribution across pods
     # Port 5000 required - Flagger configures the service with port 5000
     return "http://load-harness.applications.svc.cluster.local:5000"
@@ -336,13 +350,18 @@ def _get_k8s_service_url() -> str:
 def _send_work_request(
     service_url: str, iterations: int, request_id: int, headers: dict
 ) -> dict:
-    """Send a single work request and return the result."""
+    """Send a single work request to a cluster peer and return the result.
+
+    This is a genuine fan-out across pods via the Service load balancer, so it
+    stays HTTP. Only ever called with a real cluster URL - see _run_work_local
+    for the single-process case.
+    """
     try:
         response = requests.post(
             f"{service_url}/load/cpu/work",
             json={"iterations": iterations},
             headers=headers,
-            timeout=120,
+            timeout=CLUSTER_REQUEST_TIMEOUT,
         )
         if response.status_code == 200:
             data = response.json()
@@ -357,6 +376,31 @@ def _send_work_request(
             "request_id": request_id,
             "success": False,
             "error": f"HTTP {response.status_code}",
+        }
+    except Exception as e:
+        return {
+            "request_id": request_id,
+            "success": False,
+            "error": str(e),
+        }
+
+
+def _run_work_local(service, iterations: int, request_id: int) -> dict:
+    """Run one unit of CPU work in this process, no HTTP hop."""
+    try:
+        body, status = service.run_cpu_work(iterations)
+        if status == 200:
+            return {
+                "request_id": request_id,
+                "success": True,
+                "pod_name": body.get("pod_name", "unknown"),
+                "duration_ms": body.get("duration_ms", 0),
+                "iterations": body.get("iterations", 0),
+            }
+        return {
+            "request_id": request_id,
+            "success": False,
+            "error": body.get("error", f"HTTP {status}"),
         }
     except Exception as e:
         return {
@@ -389,17 +433,18 @@ def cluster_result():
             )
 
         service_url = _get_k8s_service_url()
-        auth_headers = _get_auth_headers()
+
+        if service_url:
+            api_key = current_app.config.get("API_KEY")
+            headers = {"X-API-Key": api_key} if api_key else {}
+            run = partial(_send_work_request, service_url, iterations, headers=headers)
+        else:
+            run = partial(_run_work_local, _service(), iterations)
 
         # Send concurrent requests using ThreadPoolExecutor
         results = []
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            futures = {
-                executor.submit(
-                    _send_work_request, service_url, iterations, i, auth_headers
-                ): i
-                for i in range(concurrency)
-            }
+            futures = {executor.submit(run, i): i for i in range(concurrency)}
             for future in as_completed(futures):
                 results.append(future.result())
 
@@ -463,20 +508,12 @@ def active_jobs():
     now uses client-side job tracking to avoid multi-pod polling issues.
     """
     try:
-        response = requests.get(
-            f"{_get_api_base_url()}/load/cpu/status",
-            headers=_get_auth_headers(),
-            timeout=5,
+        data = _service().get_cpu_status()
+        return render_template(
+            "partials/active_jobs.html",
+            jobs=data.get("jobs", []),
+            active_jobs_count=data.get("active_jobs", 0),
         )
-        if response.status_code == 200:
-            data = response.json()
-            jobs = data.get("jobs", [])
-            active_jobs_count = data.get("active_jobs", 0)
-            return render_template(
-                "partials/active_jobs.html",
-                jobs=jobs,
-                active_jobs_count=active_jobs_count,
-            )
     except Exception as e:
         current_app.logger.warning("Failed to fetch jobs status: %s", e)
 

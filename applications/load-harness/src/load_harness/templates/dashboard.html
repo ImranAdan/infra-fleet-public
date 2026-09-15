@@ -218,7 +218,7 @@
                                 Allocates memory in this container. Live Metrics show actual process memory as a percentage of system RAM (~{{ (system_info.memory_total_mb / 1024)|round(1) }} GB).
                                 {% else %}
                                 <span class="font-medium text-gray-700 dark:text-gray-200">Cluster Mode:</span>
-                                Allocates memory on a <em>single pod</em>. Pods have a <strong>1Gi memory limit</strong> with ~128Mi baseline usage. Max allocation capped at 800MB to prevent OOMKill. Live Metrics show <strong>avg</strong> and <strong>max</strong> memory across all pods.
+                                Allocates memory on a <em>single pod</em>. Pods have a <strong>1Gi memory limit</strong>; the maximum allocation is derived from that limit at runtime to prevent OOMKill. Live Metrics show <strong>avg</strong> and <strong>max</strong> memory across all pods.
                                 {% endif %}
                             </p>
                         </div>
@@ -227,14 +227,17 @@
                               hx-swap="innerHTML"
                               hx-indicator="#memory-loading"
                               class="space-y-4">
-                            {# Calculate dynamic memory limit based on environment #}
-                            {# Local: min of available memory and 2048MB API limit #}
-                            {# Cluster: 800MB (safe headroom within 1Gi pod limit minus ~128Mi baseline) #}
+                            {# The server derives its ceiling from the container
+                               memory limit and reports it as memory_limit_mb.
+                               Use that rather than a second hardcoded number:
+                               a slider offering more than the API accepts just
+                               turns a valid-looking choice into a 400. #}
+                            {% set server_max_mb = system_info.memory_limit_mb or 2048 %}
                             {% if is_local %}
-                                {% set available_mb = system_info.memory_available_mb or 2048 %}
-                                {% set max_memory_mb = [available_mb, 2048] | min %}
+                                {% set available_mb = system_info.memory_available_mb or server_max_mb %}
+                                {% set max_memory_mb = [available_mb, server_max_mb] | min %}
                             {% else %}
-                                {% set max_memory_mb = 800 %}
+                                {% set max_memory_mb = server_max_mb %}
                             {% endif %}
                             {% set half_max = (max_memory_mb / 2) | int %}
                             <div>
@@ -249,7 +252,7 @@
                                             {% if is_local %}
                                             Amount of memory to allocate. All pages are touched to ensure physical allocation. Limit: {{ max_memory_mb }} MB.
                                             {% else %}
-                                            Pod limit: 1Gi. Baseline: ~128Mi. Safe allocation: up to 800MB to avoid OOMKill.
+                                            Capped at {{ max_memory_mb }} MB, derived from the pod's memory limit with headroom for the web process, so an allocation cannot OOMKill the pod.
                                             {% endif %}
                                         </div>
                                     </div>

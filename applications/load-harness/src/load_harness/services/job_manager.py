@@ -135,10 +135,11 @@ class JobManager:
             if not job:
                 return False
 
-            self._terminate_job(job)
+            handles = self._detach(job)
             job["status"] = "stopped"
             job["stopped_at"] = datetime.now(timezone.utc).isoformat()
 
+        self._reap(*handles)
         self._logger.info("Stopped job: job_id=%s", job_id)
         return True
 
@@ -152,39 +153,67 @@ class JobManager:
             List of stopped job IDs
         """
         stopped = []
+        detached = []
         with self._lock:
             for job_id, job in self._jobs.items():
                 if job_type and job.get("type") != job_type:
                     continue
                 if job.get("status") == "running":
-                    self._terminate_job(job)
+                    detached.append(self._detach(job))
                     job["status"] = "stopped"
                     job["stopped_at"] = datetime.now(timezone.utc).isoformat()
                     stopped.append(job_id)
+
+        for handles in detached:
+            self._reap(*handles)
 
         for job_id in stopped:
             self._logger.info("Stopped job: job_id=%s", job_id)
 
         return stopped
 
-    def _terminate_job(self, job: Dict[str, Any]) -> None:
-        """Terminate all processes for a job.
+    @staticmethod
+    def _detach(job: Dict[str, Any]):
+        """Take the process handles off a job so they can be reaped unlocked.
 
-        Must be called with lock held.
+        Must be called with the lock held. Also leaves the job dictionary
+        JSON-serializable, which get_all_jobs relies on.
 
         Args:
             job: Job dictionary with processes and stop_event
+
+        Returns:
+            (processes, stop_event) for the caller to pass to _reap
         """
-        # Signal workers to stop
-        stop_event = job.get("stop_event")
+        return job.pop("processes", None) or [], job.pop("stop_event", None)
+
+    @staticmethod
+    def _reap(processes: List[Process], stop_event) -> None:
+        """Signal, terminate and join worker processes.
+
+        Must NOT be called with the lock held. Terminating a process can take
+        up to two PROCESS_TERMINATE_TIMEOUT waits, and a CPU job holds one
+        process per core - doing that under the lock blocked every status poll
+        and every new job for the duration.
+
+        Args:
+            processes: Worker process handles, already detached from the job
+            stop_event: Event the workers poll, or None
+        """
         if stop_event:
             stop_event.set()
 
-        # Terminate processes
-        for process in job.get("processes", []):
-            if process and process.is_alive():
+        for process in processes:
+            if not process:
+                continue
+            if process.is_alive():
                 process.terminate()
+            process.join(timeout=PROCESS_TERMINATE_TIMEOUT)
+            if process.is_alive():
+                process.kill()
                 process.join(timeout=PROCESS_TERMINATE_TIMEOUT)
+            if not process.is_alive():
+                process.close()
 
     def schedule_cleanup(
         self,
@@ -229,27 +258,18 @@ class JobManager:
             if not job:
                 return
 
-            # Ensure all processes are terminated
-            for process in job.get("processes", []):
-                if not process:
-                    continue
-                if process.is_alive():
-                    process.terminate()
-                process.join(timeout=PROCESS_TERMINATE_TIMEOUT)
-                if process.is_alive():
-                    process.kill()
-                    process.join(timeout=PROCESS_TERMINATE_TIMEOUT)
-                if not process.is_alive():
-                    process.close()
+            handles = self._detach(job)
 
             # Update status if still running
             if job.get("status") == "running":
                 job["status"] = "completed"
                 job["completed_at"] = datetime.now(timezone.utc).isoformat()
 
-            # Remove non-serializable objects
-            job.pop("processes", None)
-            job.pop("stop_event", None)
+        self._reap(*handles)
+
+        # Nothing else calls this, so finished jobs would accumulate for the
+        # life of the process and lengthen every locked get_all_jobs scan.
+        self.clear_completed()
 
         self._logger.debug("Cleaned up job: job_id=%s", job_id)
 

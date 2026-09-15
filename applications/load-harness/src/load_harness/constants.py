@@ -30,6 +30,10 @@ MEMORY_MAX_SIZE_MB = 2048
 MEMORY_MIN_SIZE_MB = 1
 MEMORY_DEFAULT_SIZE_MB = 50
 
+# Share of the container memory limit a single job may request. The rest is
+# headroom for the web process; see _get_memory_limit_mb.
+MEMORY_LIMIT_HEADROOM = 0.6
+
 MEMORY_MAX_DURATION_SECONDS = 300  # 5 minutes
 MEMORY_MIN_DURATION_SECONDS = 5
 MEMORY_DEFAULT_DURATION_SECONDS = 30
@@ -53,6 +57,15 @@ MEMORY_PAGE_SIZE_BYTES = 4096
 # =============================================================================
 CPU_JOB_PREFIX = "job_"
 MEMORY_JOB_PREFIX = "mem_"
+
+# =============================================================================
+# Login Throttle
+# =============================================================================
+# The login form guards one shared API key, so cap the guess rate.
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_LOCKOUT_SECONDS = 60
+# Limit memory retained by a burst of distinct active source addresses.
+LOGIN_FAILURE_CACHE_MAX_CLIENTS = 1024
 
 # =============================================================================
 # HTTP/API Settings

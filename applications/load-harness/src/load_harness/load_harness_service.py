@@ -7,11 +7,11 @@ and handles load generation for CPU and memory workloads.
 import math
 import os
 import time
+import uuid
 import logging
 import multiprocessing
-import threading
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional, Tuple
 
 import psutil
 from flask import jsonify, request
@@ -31,6 +31,7 @@ from load_harness.constants import (
     CPU_WORK_MIN_ITERATIONS,
     CPU_WORK_DEFAULT_ITERATIONS,
     MEMORY_MAX_SIZE_MB,
+    MEMORY_LIMIT_HEADROOM,
     MEMORY_MIN_SIZE_MB,
     MEMORY_DEFAULT_SIZE_MB,
     MEMORY_MAX_DURATION_SECONDS,
@@ -59,6 +60,7 @@ from load_harness.openapi_specs import (
     CPU_LOAD_WORK_SPEC,
 )
 from load_harness.services.job_manager import JobManager
+from load_harness.services.memory_budget import MemoryBudget
 from load_harness.workers.cpu_worker import cpu_worker_target
 from load_harness.workers.memory_worker import memory_worker_target
 
@@ -104,6 +106,73 @@ def _get_available_cpu_cores() -> int:
     return multiprocessing.cpu_count()
 
 
+def _get_memory_limit_mb() -> int:
+    """
+    Get the memory ceiling a single load job may request, respecting cgroups.
+
+    MEMORY_MAX_SIZE_MB alone is not safe: it is a static 2048 while the
+    container limit is 1Gi, so an in-range request allocated twice the cgroup
+    limit and the OOM killer ended the pod. Derive the real limit the way
+    _get_available_cpu_cores derives the CPU count, keeping headroom for the
+    web process itself.
+
+    This is the PER-JOB ceiling only. On its own it does not stop several
+    concurrent jobs summing past the container limit: three concurrent 600MB
+    requests in a 1Gi container were each individually valid and still drove
+    the cgroup to an OOM kill. MemoryBudget enforces the aggregate across
+    Gunicorn workers, and the same three requests now admit one and reject two
+    with a 409.
+
+    Returns:
+        The lower of MEMORY_MAX_SIZE_MB and this job's share of the cgroup limit
+    """
+    limit_bytes = None
+
+    # cgroup v2
+    try:
+        with open('/sys/fs/cgroup/memory.max', 'r') as f:
+            content = f.read().strip()
+            if content != 'max':
+                limit_bytes = int(content)
+    except (FileNotFoundError, ValueError, PermissionError):
+        pass
+
+    # cgroup v1. An unlimited cgroup reports a sentinel near 2^63, so treat an
+    # implausibly large value as "no limit" rather than as a real ceiling.
+    if limit_bytes is None:
+        try:
+            with open('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'r') as f:
+                value = int(f.read().strip())
+            if value < (1 << 62):
+                limit_bytes = value
+        except (FileNotFoundError, ValueError, PermissionError):
+            pass
+
+    if not limit_bytes or limit_bytes <= 0:
+        return MEMORY_MAX_SIZE_MB
+
+    budget_mb = int((limit_bytes // (1024 * 1024)) * MEMORY_LIMIT_HEADROOM)
+    return max(MEMORY_MIN_SIZE_MB, min(MEMORY_MAX_SIZE_MB, budget_mb))
+
+
+def _new_job_id(prefix: str) -> str:
+    """
+    Generate a unique job ID.
+
+    A millisecond timestamp alone collides: two jobs started in the same
+    millisecond produced the same ID, and register_job silently overwrote the
+    first, orphaning its worker processes. The timestamp stays because it keeps
+    IDs sortable in logs; the suffix is what makes them unique.
+
+    Args:
+        prefix: Job type prefix, e.g. CPU_JOB_PREFIX
+
+    Returns:
+        A unique, roughly sortable job identifier
+    """
+    return f"{prefix}{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+
+
 class LoadHarnessService:
     """
     Encapsulates all load-harness endpoints and related logic.
@@ -124,6 +193,13 @@ class LoadHarnessService:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.job_manager = job_manager or JobManager(logger=self.logger)
         self.available_cores = _get_available_cpu_cores()
+        self.memory_limit_mb = _get_memory_limit_mb()
+        self.memory_budget = MemoryBudget(self.memory_limit_mb)
+
+        # The dashboard blueprint runs in this same process and used to reach
+        # these endpoints over HTTP against 127.0.0.1, which deadlocked the
+        # gunicorn worker pool. It now calls the methods below directly.
+        app.extensions["load_harness"] = self
 
         self._register_routes()
 
@@ -198,9 +274,11 @@ class LoadHarnessService:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-    @swag_from(SYSTEM_INFO_SPEC)
-    def system_info(self):
-        """Return system information including available CPU cores."""
+    def get_system_info(self) -> Dict[str, Any]:
+        """Return system information including available CPU cores.
+
+        Callable directly by the dashboard; system_info wraps it for HTTP.
+        """
         cpu_cores = _get_available_cpu_cores()
 
         # Get memory info
@@ -212,34 +290,53 @@ class LoadHarnessService:
             memory_total_mb = None
             memory_available_mb = None
 
-        return jsonify({
+        return {
             "cpu_cores": cpu_cores,
             "cpu_cores_physical": multiprocessing.cpu_count(),
             "memory_total_mb": memory_total_mb,
             "memory_available_mb": memory_available_mb,
+            "memory_limit_mb": self.memory_limit_mb,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
 
-    @swag_from(MEMORY_LOAD_START_SPEC)
-    def memory_load(self):
-        """Start memory load using background worker process."""
-        data = request.get_json() or {}
-        size_mb = data.get("size_mb", MEMORY_DEFAULT_SIZE_MB)
-        duration_seconds = data.get("duration_seconds", MEMORY_DEFAULT_DURATION_SECONDS)
+    @swag_from(SYSTEM_INFO_SPEC)
+    def system_info(self):
+        """Return system information including available CPU cores."""
+        return jsonify(self.get_system_info())
 
-        # Validate inputs using constants
-        if not isinstance(size_mb, (int, float)) or size_mb < MEMORY_MIN_SIZE_MB or size_mb > MEMORY_MAX_SIZE_MB:
-            return jsonify({
-                "error": f"size_mb must be between {MEMORY_MIN_SIZE_MB} and {MEMORY_MAX_SIZE_MB}"
-            }), 400
+    def start_memory_load(
+        self, size_mb: Any, duration_seconds: Any
+    ) -> Tuple[Dict[str, Any], int]:
+        """Validate and start a memory load job.
 
-        if not isinstance(duration_seconds, (int, float)) or duration_seconds < MEMORY_MIN_DURATION_SECONDS or duration_seconds > MEMORY_MAX_DURATION_SECONDS:
-            return jsonify({
+        Callable directly by the dashboard; memory_load wraps it for HTTP.
+
+        Returns:
+            (response body, HTTP status code)
+        """
+        # Validate inputs. The ceiling is the cgroup-derived limit, not the
+        # static constant - allocating past the container limit OOM-kills the
+        # pod, and that was reachable with a documented in-range request.
+        if not isinstance(size_mb, (int, float)) or isinstance(size_mb, bool) \
+                or size_mb < MEMORY_MIN_SIZE_MB or size_mb > self.memory_limit_mb:
+            return {
+                "error": f"size_mb must be between {MEMORY_MIN_SIZE_MB} and {self.memory_limit_mb}"
+            }, 400
+
+        if not isinstance(duration_seconds, (int, float)) or isinstance(duration_seconds, bool) \
+                or duration_seconds < MEMORY_MIN_DURATION_SECONDS or duration_seconds > MEMORY_MAX_DURATION_SECONDS:
+            return {
                 "error": f"duration_seconds must be between {MEMORY_MIN_DURATION_SECONDS} and {MEMORY_MAX_DURATION_SECONDS}"
-            }), 400
+            }, 400
 
-        # Generate job ID
-        job_id = f"{MEMORY_JOB_PREFIX}{int(time.time() * 1000)}"
+        reserved_size_mb = int(size_mb)
+        reservation_id = self.memory_budget.reserve(reserved_size_mb)
+        if reservation_id is None:
+            return {
+                "error": "Requested memory exceeds the pod capacity remaining for load jobs"
+            }, 409
+
+        job_id = _new_job_id(MEMORY_JOB_PREFIX)
 
         self.logger.info(
             "Starting memory load: job_id=%s size_mb=%s duration=%ss",
@@ -249,40 +346,61 @@ class LoadHarnessService:
         # Create stop event for graceful termination
         stop_event = _PROCESS_CONTEXT.Event()
 
-        # Start memory worker process using the extracted worker target
-        process = _PROCESS_CONTEXT.Process(
-            target=memory_worker_target,
-            args=(job_id, int(size_mb), duration_seconds, stop_event),
-            name=job_id,
-        )
-        process.start()
+        try:
+            process = _PROCESS_CONTEXT.Process(
+                target=memory_worker_target,
+                args=(job_id, reserved_size_mb, duration_seconds, stop_event),
+                name=job_id,
+            )
+            process.start()
+            self.memory_budget.activate(reservation_id, process.pid)
 
-        # Register job with JobManager
-        config = {
-            "size_mb": int(size_mb),
-            "duration_seconds": duration_seconds,
-        }
-        self.job_manager.register_job(
-            job_id=job_id,
-            job_type="memory",
-            config=config,
-            processes=[process],
-            stop_event=stop_event,
-        )
+            config = {
+                "size_mb": reserved_size_mb,
+                "duration_seconds": duration_seconds,
+                "memory_reservation_id": reservation_id,
+            }
+            self.job_manager.register_job(
+                job_id=job_id,
+                job_type="memory",
+                config=config,
+                processes=[process],
+                stop_event=stop_event,
+            )
 
-        # Schedule automatic cleanup
-        self.job_manager.schedule_cleanup(job_id, duration_seconds)
+            # JobManager invokes callbacks after the child has been reaped.
+            self.job_manager.schedule_cleanup(
+                job_id,
+                duration_seconds,
+                callback=lambda: self.memory_budget.release(reservation_id),
+            )
+        except BaseException:
+            self.memory_budget.release(reservation_id)
+            if "process" in locals() and process.is_alive():
+                process.terminate()
+                process.join()
+            raise
 
-        return jsonify({
+        return {
             "status": "started",
             "job_id": job_id,
-            "size_mb": int(size_mb),
+            "size_mb": reserved_size_mb,
             "duration_seconds": duration_seconds,
             "message": f"Memory load started: {int(size_mb)}MB for {duration_seconds}s. Health probes remain responsive.",
             "check_status": "/load/memory/status",
             "stop_endpoint": "/load/memory/stop",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }, 200
+
+    @swag_from(MEMORY_LOAD_START_SPEC)
+    def memory_load(self):
+        """Start memory load using background worker process."""
+        data = request.get_json() or {}
+        body, status = self.start_memory_load(
+            data.get("size_mb", MEMORY_DEFAULT_SIZE_MB),
+            data.get("duration_seconds", MEMORY_DEFAULT_DURATION_SECONDS),
+        )
+        return jsonify(body), status
 
     @swag_from(MEMORY_LOAD_STATUS_SPEC)
     def memory_load_status(self):
@@ -317,13 +435,23 @@ class LoadHarnessService:
 
         if target_job_id:
             # Stop specific job
+            job = self.job_manager.get_job(target_job_id)
             success = self.job_manager.stop_job(target_job_id)
             if not success:
                 return jsonify({"error": f"Job {target_job_id} not found"}), 404
+            self.memory_budget.release(
+                job.get("config", {}).get("memory_reservation_id")
+            )
             stopped_jobs = [target_job_id]
         else:
             # Stop all memory jobs
+            jobs = self.job_manager.get_all_jobs(job_type="memory")
             stopped_jobs = self.job_manager.stop_all_jobs(job_type="memory")
+            for job in jobs:
+                if job.get("job_id") in stopped_jobs:
+                    self.memory_budget.release(
+                        job.get("config", {}).get("memory_reservation_id")
+                    )
 
         return jsonify({
             "status": "stopped",
@@ -339,12 +467,17 @@ class LoadHarnessService:
         size_mb = data.get("size_mb", MEMORY_DEFAULT_SIZE_MB)
         duration_ms = data.get("duration_ms", MEMORY_SYNC_DEFAULT_DURATION_MS)
 
-        if not isinstance(size_mb, (int, float)) or size_mb < MEMORY_MIN_SIZE_MB or size_mb > MEMORY_MAX_SIZE_MB:
+        # This endpoint allocates in the web worker itself rather than a child
+        # process, so exceeding the cgroup limit kills the process serving the
+        # request. Same ceiling as the async path.
+        if not isinstance(size_mb, (int, float)) or isinstance(size_mb, bool) \
+                or size_mb < MEMORY_MIN_SIZE_MB or size_mb > self.memory_limit_mb:
             return jsonify({
-                "error": f"size_mb must be between {MEMORY_MIN_SIZE_MB} and {MEMORY_MAX_SIZE_MB}"
+                "error": f"size_mb must be between {MEMORY_MIN_SIZE_MB} and {self.memory_limit_mb}"
             }), 400
 
-        if not isinstance(duration_ms, (int, float)) or duration_ms < MEMORY_SYNC_MIN_DURATION_MS or duration_ms > MEMORY_SYNC_MAX_DURATION_MS:
+        if not isinstance(duration_ms, (int, float)) or isinstance(duration_ms, bool) \
+                or duration_ms < MEMORY_SYNC_MIN_DURATION_MS or duration_ms > MEMORY_SYNC_MAX_DURATION_MS:
             return jsonify({
                 "error": f"duration_ms must be between {MEMORY_SYNC_MIN_DURATION_MS} and {MEMORY_SYNC_MAX_DURATION_MS}"
             }), 400
@@ -355,20 +488,26 @@ class LoadHarnessService:
             duration_ms,
         )
 
+        reservation_id = self.memory_budget.reserve(int(size_mb))
+        if reservation_id is None:
+            return jsonify({
+                "error": "Requested memory exceeds the pod capacity remaining for load jobs"
+            }), 409
+
         start_time = time.time()
+        try:
+            bytes_to_allocate = int(size_mb * 1024 * 1024)
+            memory_block = bytearray(bytes_to_allocate)
 
-        bytes_to_allocate = int(size_mb * 1024 * 1024)
-        memory_block = bytearray(bytes_to_allocate)
+            # Touch all pages using constant page size
+            for i in range(0, len(memory_block), MEMORY_PAGE_SIZE_BYTES):
+                memory_block[i] = i % 256
 
-        # Touch all pages using constant page size
-        for i in range(0, len(memory_block), MEMORY_PAGE_SIZE_BYTES):
-            memory_block[i] = i % 256
-
-        allocation_time_ms = (time.time() - start_time) * 1000.0
-
-        time.sleep(duration_ms / 1000.0)
-
-        actual_duration_ms = (time.time() - start_time) * 1000.0
+            allocation_time_ms = (time.time() - start_time) * 1000.0
+            time.sleep(duration_ms / 1000.0)
+            actual_duration_ms = (time.time() - start_time) * 1000.0
+        finally:
+            self.memory_budget.release(reservation_id)
 
         self.logger.info(
             "Completed sync memory load: size_mb=%s requested=%sms actual=%sms",
@@ -387,37 +526,41 @@ class LoadHarnessService:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-    @swag_from(CPU_LOAD_START_SPEC)
-    def cpu_load(self):
-        """Start CPU load using background worker processes."""
-        data = request.get_json() or {}
-        cores = data.get("cores", CPU_DEFAULT_CORES)
-        duration_seconds = data.get("duration_seconds", CPU_DEFAULT_DURATION_SECONDS)
-        intensity = data.get("intensity", CPU_DEFAULT_INTENSITY)
+    def start_cpu_load(
+        self, cores: Any, duration_seconds: Any, intensity: Any
+    ) -> Tuple[Dict[str, Any], int]:
+        """Validate and start a CPU load job.
 
+        Callable directly by the dashboard; cpu_load wraps it for HTTP.
+
+        Returns:
+            (response body, HTTP status code)
+        """
         # Validate inputs using constants
-        if not isinstance(cores, int) or cores < CPU_MIN_CORES or cores > CPU_MAX_CORES:
-            return jsonify({
+        if not isinstance(cores, int) or isinstance(cores, bool) \
+                or cores < CPU_MIN_CORES or cores > CPU_MAX_CORES:
+            return {
                 "error": f"cores must be between {CPU_MIN_CORES} and {CPU_MAX_CORES}"
-            }), 400
+            }, 400
 
         if cores > self.available_cores:
-            return jsonify({
+            return {
                 "error": f"cores ({cores}) exceeds available cores ({self.available_cores})"
-            }), 400
+            }, 400
 
-        if not isinstance(duration_seconds, (int, float)) or duration_seconds < CPU_MIN_DURATION_SECONDS or duration_seconds > CPU_MAX_DURATION_SECONDS:
-            return jsonify({
+        if not isinstance(duration_seconds, (int, float)) or isinstance(duration_seconds, bool) \
+                or duration_seconds < CPU_MIN_DURATION_SECONDS or duration_seconds > CPU_MAX_DURATION_SECONDS:
+            return {
                 "error": f"duration_seconds must be between {CPU_MIN_DURATION_SECONDS} and {CPU_MAX_DURATION_SECONDS}"
-            }), 400
+            }, 400
 
-        if not isinstance(intensity, int) or intensity < CPU_MIN_INTENSITY or intensity > CPU_MAX_INTENSITY:
-            return jsonify({
+        if not isinstance(intensity, int) or isinstance(intensity, bool) \
+                or intensity < CPU_MIN_INTENSITY or intensity > CPU_MAX_INTENSITY:
+            return {
                 "error": f"intensity must be between {CPU_MIN_INTENSITY} and {CPU_MAX_INTENSITY}"
-            }), 400
+            }, 400
 
-        # Generate job ID
-        job_id = f"{CPU_JOB_PREFIX}{int(time.time() * 1000)}"
+        job_id = _new_job_id(CPU_JOB_PREFIX)
 
         self.logger.info(
             "Starting CPU load: job_id=%s cores=%s duration=%ss intensity=%s",
@@ -456,7 +599,7 @@ class LoadHarnessService:
         # Schedule automatic cleanup
         self.job_manager.schedule_cleanup(job_id, duration_seconds)
 
-        return jsonify({
+        return {
             "status": "started",
             "job_id": job_id,
             "cores": cores,
@@ -466,11 +609,24 @@ class LoadHarnessService:
             "check_status": "/load/cpu/status",
             "stop_endpoint": "/load/cpu/stop",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }, 200
 
-    @swag_from(CPU_LOAD_STATUS_SPEC)
-    def cpu_load_status(self):
-        """Get status of CPU load jobs."""
+    @swag_from(CPU_LOAD_START_SPEC)
+    def cpu_load(self):
+        """Start CPU load using background worker processes."""
+        data = request.get_json() or {}
+        body, status = self.start_cpu_load(
+            data.get("cores", CPU_DEFAULT_CORES),
+            data.get("duration_seconds", CPU_DEFAULT_DURATION_SECONDS),
+            data.get("intensity", CPU_DEFAULT_INTENSITY),
+        )
+        return jsonify(body), status
+
+    def get_cpu_status(self) -> Dict[str, Any]:
+        """Get status of CPU load jobs.
+
+        Callable directly by the dashboard; cpu_load_status wraps it for HTTP.
+        """
         jobs = self.job_manager.get_all_jobs(job_type="cpu")
 
         # Format jobs for API response (JobManager already provides cores_active)
@@ -488,12 +644,17 @@ class LoadHarnessService:
                 "stopped_at": job.get("stopped_at"),
             })
 
-        return jsonify({
+        return {
             "active_jobs": len([j for j in formatted_jobs if j["status"] == "running"]),
             "total_jobs": len(formatted_jobs),
             "jobs": formatted_jobs,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+
+    @swag_from(CPU_LOAD_STATUS_SPEC)
+    def cpu_load_status(self):
+        """Get status of CPU load jobs."""
+        return jsonify(self.get_cpu_status())
 
     @swag_from(CPU_LOAD_STOP_SPEC)
     def cpu_load_stop(self):
@@ -518,24 +679,20 @@ class LoadHarnessService:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-    @swag_from(CPU_LOAD_WORK_SPEC)
-    def cpu_load_work(self):
-        """
-        Synchronous CPU work endpoint for distributed load testing.
+    def run_cpu_work(self, iterations: Any) -> Tuple[Dict[str, Any], int]:
+        """Run synchronous CPU work and return the result.
 
-        Unlike /load/cpu which starts background workers and returns immediately,
-        this endpoint blocks until the work is complete. This allows external load
-        generators (hey, k6, wrk) to distribute requests across pods via the
-        Kubernetes Service load balancer.
-        """
-        data = request.get_json() or {}
-        iterations = data.get("iterations", CPU_WORK_DEFAULT_ITERATIONS)
+        Callable directly by the dashboard; cpu_load_work wraps it for HTTP.
 
+        Returns:
+            (response body, HTTP status code)
+        """
         # Validate iterations using constants
-        if not isinstance(iterations, int) or iterations < CPU_WORK_MIN_ITERATIONS or iterations > CPU_WORK_MAX_ITERATIONS:
-            return jsonify({
+        if not isinstance(iterations, int) or isinstance(iterations, bool) \
+                or iterations < CPU_WORK_MIN_ITERATIONS or iterations > CPU_WORK_MAX_ITERATIONS:
+            return {
                 "error": f"iterations must be between {CPU_WORK_MIN_ITERATIONS:,} and {CPU_WORK_MAX_ITERATIONS:,}"
-            }), 400
+            }, 400
 
         start_time = time.time()
 
@@ -550,11 +707,27 @@ class LoadHarnessService:
         # Get pod name for visibility into load distribution
         pod_name = os.environ.get("HOSTNAME", "unknown")
 
-        return jsonify({
+        return {
             "status": "completed",
             "iterations": iterations,
             "duration_ms": round(duration_ms, 2),
             "result": round(result, 4),
             "pod_name": pod_name,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        }, 200
+
+    @swag_from(CPU_LOAD_WORK_SPEC)
+    def cpu_load_work(self):
+        """
+        Synchronous CPU work endpoint for distributed load testing.
+
+        Unlike /load/cpu which starts background workers and returns immediately,
+        this endpoint blocks until the work is complete. This allows external load
+        generators (hey, k6, wrk) to distribute requests across pods via the
+        Kubernetes Service load balancer.
+        """
+        data = request.get_json() or {}
+        body, status = self.run_cpu_work(
+            data.get("iterations", CPU_WORK_DEFAULT_ITERATIONS)
+        )
+        return jsonify(body), status

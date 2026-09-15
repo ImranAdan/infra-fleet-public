@@ -25,6 +25,17 @@ from load_harness.middleware import init_auth, init_chaos, init_security_headers
 from load_harness.swagger_config import init_swagger
 
 
+def _configured_api_key(config_override: dict | None) -> str | None:
+    """Resolve the API key the same way init_auth does.
+
+    An explicit API_KEY in config_override wins even when it is None, so tests
+    can still build an unauthenticated app.
+    """
+    if config_override is not None and "API_KEY" in config_override:
+        return config_override["API_KEY"]
+    return os.getenv("API_KEY")
+
+
 def create_app(config_override: dict | None = None):
     """Application factory for creating the Flask app.
 
@@ -86,6 +97,17 @@ def create_app(config_override: dict | None = None):
 
     # Initialize Swagger/OpenAPI documentation
     init_swagger(app)
+
+    # Fail closed outside local development. The Kubernetes Secret holding
+    # API_KEY is mounted with optional: true, so a renamed or missing Secret
+    # used to start the app with authentication silently disabled and every
+    # load endpoint reachable through the ingress. Crash-looping is visible;
+    # serving openly is not.
+    if environment != "local" and not _configured_api_key(config_override):
+        raise RuntimeError(
+            "API_KEY must be set when ENVIRONMENT is not 'local'. "
+            "Refusing to start with authentication disabled."
+        )
 
     # Initialize middleware (order matters: auth runs before chaos)
     init_auth(app, config_override)
