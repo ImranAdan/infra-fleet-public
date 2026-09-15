@@ -52,11 +52,18 @@ local_revision() {
 }
 
 local_publish_snapshot() {
+  local published_sha
   mkdir -p "$FLEET_STATE/source"
   if [ ! -d "$FLEET_STATE/source/fleet.git" ]; then
     git init --bare --initial-branch=fleet-local "$FLEET_STATE/source/fleet.git" >/dev/null
   fi
-  git --git-dir="$FLEET_STATE/source/fleet.git" fetch --quiet --force "$fleet_root" "$FLEET_SHA:refs/heads/fleet-local"
+  # actions/checkout and many template consumers use a shallow clone. Permit
+  # the destination's shallow boundary to follow that verified source commit.
+  git --git-dir="$FLEET_STATE/source/fleet.git" fetch \
+    --quiet --force --update-shallow \
+    "file://$fleet_root" "$FLEET_SHA:refs/heads/fleet-local"
+  published_sha=$(git --git-dir="$FLEET_STATE/source/fleet.git" rev-parse refs/heads/fleet-local)
+  [ "$published_sha" = "$FLEET_SHA" ] || fail 'Local Git source did not publish the selected revision.'
 }
 
 local_build_image() {
