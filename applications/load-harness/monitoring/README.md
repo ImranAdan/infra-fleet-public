@@ -163,7 +163,7 @@ These panels show the underlying Kubernetes node health:
 
 ## Metrics Reference
 
-### Application Metrics (from Flask app via ServiceMonitor)
+### Application Metrics (from Flask app via PodMonitor)
 
 These metrics are exposed by the Flask application at `/metrics` endpoint:
 

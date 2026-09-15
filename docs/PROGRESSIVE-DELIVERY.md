@@ -1,9 +1,9 @@
 # Progressive Delivery with Flagger
 
-> **Deployment preview:** this implementation depends on retired community
-> `ingress-nginx`, which no longer receives security fixes. The behavior below
-> documents the current lab; do not treat it as a production rollout design.
-> See [../SECURITY.md](../SECURITY.md).
+> **Deployment preview:** the local profile uses Envoy Gateway. AWS staging
+> retains retired community `ingress-nginx`, which no longer receives security
+> fixes, so that route is a private preview. See
+> [../SECURITY.md](../SECURITY.md).
 
 **Status**: Implemented (2025-12-26)
 **Last Updated**: 2026-01-01
@@ -85,7 +85,7 @@ The Flagger controller runs in the `flux-system` namespace and watches for Canar
 
 | Setting | Value | Description |
 |---------|-------|-------------|
-| `meshProvider` | `nginx` | Weighted traffic through NGINX Ingress |
+| `meshProvider` | Profile value | `gatewayapi:v1` locally; `nginx` in AWS staging |
 | `metricsServer` | `http://kube-prometheus-stack-prometheus.observability:9090` | Prometheus endpoint |
 
 ### 2. Canary Resource
@@ -107,12 +107,11 @@ The Canary CRD tells Flagger how to manage the load-harness deployment.
 
 ### 3. Metrics
 
-Flagger uses **custom MetricTemplates** that query NGINX ingress metrics. This
-is required because prometheus-operator relabels the application namespace to
-`exported_namespace`, while the ingress controller keeps `namespace` set to
-`ingress-nginx`. The templates live in
-`k8s/profiles/aws-staging/applications/metrictemplate.yaml`. The local profile
-uses its application metric templates instead.
+Flagger uses profile-specific **custom MetricTemplates**. Local templates query
+application metrics from the PodMonitor. AWS templates query NGINX ingress
+metrics and account for prometheus-operator relabelling the application
+namespace to `exported_namespace`. The templates live under each profile's
+`applications/` directory.
 
 | Metric | Threshold | Template |
 |--------|-----------|----------|
@@ -328,16 +327,16 @@ kubectl annotate deployment load-harness -n applications \
 Check if metrics are available:
 
 ```bash
-# Verify ServiceMonitor is working
-kubectl get servicemonitor -n applications
+# Verify the application PodMonitor is present
+kubectl get podmonitor -n applications
 
 # Check Prometheus targets
 # Port-forward and check Status > Targets
 ```
 
-Also verify that traffic goes through the NGINX ingress with the correct
-`Host` header; direct service calls bypass ingress metrics and result in
-"no values found" during analysis (see
+For AWS staging, also verify that traffic goes through NGINX with the correct
+`Host` header; direct service calls bypass ingress metrics. For local, verify
+that the primary and canary pods are `UP` Prometheus targets (see
 `k8s/applications/load-harness/canary.yaml`).
 
 ### Canary Never Promotes

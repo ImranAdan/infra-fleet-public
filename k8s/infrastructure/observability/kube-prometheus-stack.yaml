@@ -6,7 +6,7 @@
 # Components Enabled:
 #   ✅ Prometheus: Metrics collection and time-series database
 #   ✅ Prometheus Operator: Manages Prometheus instances via CRDs
-#   ✅ ServiceMonitors: Auto-discovery of application metrics
+#   ✅ PodMonitors and ServiceMonitors: Auto-discovery of workload metrics
 #   ✅ Grafana: Metrics visualization and dashboards
 #   ✅ kube-state-metrics: Kubernetes metrics
 #   ✅ node-exporter: Node-level metrics (CPU, memory, etc.)
@@ -69,8 +69,7 @@ spec:
             cpu: 500m
             memory: 512Mi
 
-        # ServiceMonitor discovery
-        # These settings allow Prometheus to discover all ServiceMonitors in any namespace
+        # Monitor discovery across all namespaces
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
         podMonitorSelectorNilUsesHelmValues: false

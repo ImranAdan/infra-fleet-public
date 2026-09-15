@@ -1,8 +1,9 @@
 # Multi-Environment Promotion Strategy Design
 
-> **Status: WIP** - Initial design captured, needs further refinement before implementation.
+> **Status: Future design** - The local/AWS profile foundation is implemented;
+> production promotion remains deferred.
 
-**Last Updated**: 2025-12-25
+**Last Updated**: 2026-09-15
 
 ---
 
@@ -24,7 +25,7 @@ This document outlines the design for a staging → production promotion strateg
 | Component | Current State | Environment-Aware? |
 |-----------|--------------|-------------------|
 | **Terraform** | `infrastructure/staging/` and `infrastructure/permanent/` | Partially (permanent is shared) |
-| **GitOps** | Flat structure in `k8s/applications/` | No - hardcoded "staging" |
+| **GitOps** | Shared application base with explicit `local` and `aws-staging` profiles | Yes - selected through `./fleet` |
 | **CI/CD** | Single workflow per resource type | No - assumes staging |
 | **GitHub Environments** | Not configured | N/A |
 | **ECR** | Single repository `load-harness` | No |
@@ -35,8 +36,8 @@ This document outlines the design for a staging → production promotion strateg
 - EKS cluster name: `"staging"` (eks.tf)
 - VPC CIDR: `10.0.0.0/16` (vpc.tf)
 - Region: `eu-west-2` (throughout)
-- Ingress ALB group: `infra-fleet-staging` (ingress.yaml)
-- ENVIRONMENT env var: `"staging"` (deployment.yaml)
+- AWS ingress and hostname configuration (`k8s/profiles/aws-staging/`)
+- AWS environment configuration (`k8s/profiles/aws-staging/configuration/`)
 - Terraform Cloud workspace: `infra-fleet-staging` (main.tf)
 
 ---

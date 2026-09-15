@@ -131,7 +131,7 @@ review current AWS pricing before deployment.
 ### Observability
 | Document | Description |
 |----------|-------------|
-| [Monitoring Setup](MONITORING-SETUP.md) | Prometheus, Grafana, ServiceMonitors |
+| [Monitoring Setup](MONITORING-SETUP.md) | Prometheus, Grafana, PodMonitors and ServiceMonitors |
 | [DORA Metrics](DORA-METRICS.md) | Engineering metrics collection |
 
 ### CI/CD & Development

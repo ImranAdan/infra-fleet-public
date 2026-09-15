@@ -294,7 +294,7 @@ Automated certificate management:
 | Prometheus | Metrics collection |
 | Grafana | Dashboards and visualization |
 | Pushgateway | DORA metrics collection |
-| ServiceMonitors | Auto-discovery of scrape targets |
+| PodMonitors / ServiceMonitors | Auto-discovery of scrape targets |
 
 ### CI/CD
 | Component | Purpose |

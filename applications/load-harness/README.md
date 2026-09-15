@@ -490,7 +490,7 @@ docker run -p 8080:8080 -e ENVIRONMENT=production load-harness:local
 
 ### Live Metrics Show "--"
 - **Local:** Prometheus not running (start with `--profile observability`)
-- **Cluster:** Check ServiceMonitor and Prometheus scraping
+- **Cluster:** Check the load-harness PodMonitor and Prometheus targets
 
 ### Cluster Load Shows All Requests to Same Pod
 - **Local:** Expected - single container
