@@ -4,11 +4,15 @@ set -euo pipefail
 fleet_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 action=${1:-help}
 if [ "$#" -gt 0 ]; then shift; fi
+# The flag loop below maps --help, but only when it follows an action.
+case "$action" in --help|-h) action=help ;; esac
 profile=''
 revision=''
 service=app
+apply=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --apply) apply=true; shift ;;
     --profile|--revision|--service)
       if [ "$#" -lt 2 ]; then echo "Missing value for $1" >&2; exit 2; fi
       case "$1" in
@@ -26,6 +30,7 @@ if [ "$action" = help ]; then
 Usage: ./fleet ACTION --profile local|aws-staging
 
   render       Print the effective infrastructure, policies and application
+  setup        Prepare and validate the target before the first up
   up           Create/reconcile local Kubernetes, or dispatch the AWS rebuild
   sync         Reconcile a committed local revision (--revision FULL_SHA)
   status       Show local controllers, or recent AWS rebuild runs
@@ -34,15 +39,27 @@ Usage: ./fleet ACTION --profile local|aws-staging
   credentials  Print local application and Grafana credentials on request
   test         Prove local drift correction, admission and canary delivery
 
+Every profile supports the same three lifecycle phases: setup, up and down.
+Each is safe to repeat and reports its target before changing anything.
+
+setup --profile local checks the tools the local profile needs and creates its
+state directory. setup --profile aws-staging validates your configuration and
+AWS session and plans the OIDC foundation; it only reads until you add --apply.
+
 Local up/sync use a committed Git snapshot and require a clean tracked checkout.
 AWS up/down dispatch the existing main-branch workflows; AWS resources cost money.
 EOF
   exit 0
 fi
 case "$profile" in local|aws-staging) ;; *) echo 'Choose --profile local or aws-staging.' >&2; exit 2 ;; esac
-case "$action" in render|up|sync|status|down|access|credentials|test) ;; *) echo "Unknown action: $action" >&2; exit 2 ;; esac
+case "$action" in render|setup|up|sync|status|down|access|credentials|test) ;; *) echo "Unknown action: $action" >&2; exit 2 ;; esac
 if [ -n "$revision" ] && { [ "$profile" != local ] || { [ "$action" != up ] && [ "$action" != sync ]; }; }; then
   echo '--revision is supported only by local up/sync.' >&2; exit 2
+fi
+# --apply is the only flag that authorises a mutation from setup, so it is
+# accepted for exactly one action and profile.
+if [ "$apply" = true ] && { [ "$action" != setup ] || [ "$profile" != aws-staging ]; }; then
+  echo '--apply is supported only by setup --profile aws-staging.' >&2; exit 2
 fi
 cd "$fleet_root"
 if [ "$action" = render ]; then
@@ -50,6 +67,13 @@ if [ "$action" = render ]; then
 fi
 if [ "$profile" = aws-staging ]; then
   case "$action" in
+    setup)
+      # Reads and plans by default; bootstrap-permanent.sh validates the
+      # adopter configuration and prints the AWS identity before any change.
+      if [ "$apply" = true ]; then
+        exec "$fleet_root/scripts/bootstrap-permanent.sh" --apply
+      fi
+      exec "$fleet_root/scripts/bootstrap-permanent.sh" plan ;;
     up) exec gh workflow run rebuild-stack.yml --ref main ;;
     down) exec gh workflow run nightly-destroy.yml --ref main --field 'confirm_destroy=destroy staging' ;;
     status) exec gh run list --workflow rebuild-stack.yml --limit 5 ;;

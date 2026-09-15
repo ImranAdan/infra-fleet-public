@@ -25,6 +25,56 @@ local_prerequisites() {
   chmod 700 "$FLEET_STATE"
 }
 
+# Pinned by this profile; setup reports drift so a surprise is found before up.
+FLEET_FLUX_VERSION=2.7.5
+
+local_setup() {
+  local binary path missing=() flux_version
+  echo "Profile: local"
+  echo "Target:  kind cluster $FLEET_CLUSTER (context $FLEET_CONTEXT)"
+  echo "State:   $FLEET_STATE"
+  echo
+  echo 'Required tools:'
+  for binary in docker kind kubectl flux git openssl curl; do
+    if path=$(command -v "$binary" 2>/dev/null); then
+      printf '  %-7s %s\n' "$binary" "$path"
+    else
+      printf '  %-7s MISSING\n' "$binary"
+      missing+=("$binary")
+    fi
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    echo >&2
+    fail "Install ${missing[*]} and run setup again; see docs/LOCAL-KUBERNETES.md."
+    return 1
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo >&2
+    fail 'Docker is installed but not responding. Start Docker and run setup again.'
+    return 1
+  fi
+
+  flux_version=$(flux --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  if [ -n "$flux_version" ] && [ "$flux_version" != "$FLEET_FLUX_VERSION" ]; then
+    echo
+    echo "  Note: flux CLI is $flux_version; this profile installs Flux $FLEET_FLUX_VERSION."
+    echo '        The installed version is pinned regardless, so this is safe to ignore.'
+  fi
+
+  # The only change setup makes, and it is idempotent.
+  mkdir -p "$FLEET_STATE"
+  chmod 700 "$FLEET_STATE"
+
+  echo
+  if local_cluster_exists; then
+    echo "Local profile ready. Cluster $FLEET_CLUSTER already exists."
+    echo 'Next: ./fleet up --profile local to reconcile it, or ./fleet status --profile local.'
+  else
+    echo 'Local profile ready. No cluster yet.'
+    echo 'Next: ./fleet up --profile local'
+  fi
+}
+
 local_cluster_exists() { kind get clusters 2>/dev/null | grep -Fxq "$FLEET_CLUSTER"; }
 
 local_cluster_fingerprint() {
@@ -313,6 +363,12 @@ local_down() {
 
 local_main() {
   local action=$1 revision=$2 service=$3
+  # setup is the phase that reports missing tools, so it cannot be gated on the
+  # check that assumes they are already there.
+  if [ "$action" = setup ]; then
+    local_setup
+    return
+  fi
   local_prerequisites
   case "$action" in
     up) local_up "$revision" ;;
