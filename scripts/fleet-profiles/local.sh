@@ -248,6 +248,10 @@ local_sync() {
   local_publish_snapshot
   local_configuration "$(local_gateway_service).envoy-gateway-system"
   fctl reconcile kustomization fleet-root --with-source --timeout=5m
+  fctl reconcile kustomization infrastructure --timeout=15m
+  local_wait_gateway
+  fctl reconcile kustomization routing --timeout=15m
+  fctl reconcile kustomization policies --timeout=15m
   fctl reconcile kustomization applications --timeout=15m
 }
 

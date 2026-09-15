@@ -73,6 +73,7 @@ spec:
         # These settings allow Prometheus to discover all ServiceMonitors in any namespace
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
+        podMonitorSelectorNilUsesHelmValues: false
         podMonitorSelector: {}
 
     # ============================================================================
