@@ -41,6 +41,9 @@ EOF
 fi
 case "$profile" in local|aws-staging) ;; *) echo 'Choose --profile local or aws-staging.' >&2; exit 2 ;; esac
 case "$action" in render|up|sync|status|down|access|credentials|test) ;; *) echo "Unknown action: $action" >&2; exit 2 ;; esac
+if [ -n "$revision" ] && { [ "$profile" != local ] || { [ "$action" != up ] && [ "$action" != sync ]; }; }; then
+  echo '--revision is supported only by local up/sync.' >&2; exit 2
+fi
 cd "$fleet_root"
 if [ "$action" = render ]; then
   exec "$fleet_root/scripts/render-profile.sh" "$profile"
@@ -48,7 +51,7 @@ fi
 if [ "$profile" = aws-staging ]; then
   case "$action" in
     up) exec gh workflow run rebuild-stack.yml --ref main ;;
-    down) exec gh workflow run nightly-destroy.yml --ref main ;;
+    down) exec gh workflow run nightly-destroy.yml --ref main --field 'confirm_destroy=destroy staging' ;;
     status) exec gh run list --workflow rebuild-stack.yml --limit 5 ;;
     *) echo "$action is available only for the local profile." >&2; exit 2 ;;
   esac
