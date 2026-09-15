@@ -6,8 +6,12 @@ fleet_root=${fleet_root:?Local profile requires the fleet root}
 FLEET_CONTEXT=kind-infra-fleet-local
 FLEET_REGISTRY=fleet-local-registry
 FLEET_GIT=fleet-local-git
-FLEET_STATE="$(git rev-parse --path-format=absolute --git-common-dir)/fleet/local"
-FLEET_OWNER=$(printf '%s' "$(git rev-parse --path-format=absolute --git-common-dir)" | git hash-object --stdin)
+# Set by local_init_state rather than at source time. ./fleet setup has to be
+# able to report a missing or broken git alongside every other tool; running
+# these here killed the shell with a raw "git: command not found" before setup
+# could say anything useful.
+FLEET_STATE=''
+FLEET_OWNER=''
 FLEET_NODE_IMAGE='kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f'
 FLEET_REGISTRY_IMAGE='registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e'
 FLEET_GIT_IMAGE=infra-fleet-local-git:2.49.1
@@ -16,13 +20,133 @@ kctl() { kubectl --kubeconfig "$FLEET_STATE/kubeconfig" --context "$FLEET_CONTEX
 fctl() { flux --kubeconfig "$FLEET_STATE/kubeconfig" --context "$FLEET_CONTEXT" "$@"; }
 fail() { echo "$*" >&2; return 1; }
 
+local_init_state() {
+  local common_dir
+  common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+    fail 'Run this from a Git checkout of the template; the local profile keeps its state there.' ||
+    return 1
+  FLEET_STATE="$common_dir/fleet/local"
+  FLEET_OWNER=$(printf '%s' "$common_dir" | git hash-object --stdin)
+}
+
 local_prerequisites() {
   for binary in docker kind kubectl flux git openssl curl; do
     command -v "$binary" >/dev/null || fail "Missing $binary; see docs/LOCAL-KUBERNETES.md." || return 1
   done
   docker info >/dev/null
+  local_init_state || return 1
   mkdir -p "$FLEET_STATE"
   chmod 700 "$FLEET_STATE"
+}
+
+# The minimums documented in docs/DEPLOYMENT-PROFILES.md. setup enforces them so
+# a ready report means up can actually run, rather than deferring the failure to
+# an unsupported client halfway through a cluster build.
+FLEET_MIN_KIND=0.31.0
+FLEET_MIN_KUBECTL=1.35.0
+FLEET_MIN_FLUX=2.7.5
+
+# Dotted-version comparison. sort -V is absent from some userlands this runs in,
+# and these three tools only ever report MAJOR.MINOR.PATCH.
+local_version_at_least() {
+  local have=$1 want=$2 index have_part want_part
+  local -a have_parts want_parts
+  IFS=. read -r -a have_parts <<< "$have"
+  IFS=. read -r -a want_parts <<< "$want"
+  for index in 0 1 2; do
+    have_part=${have_parts[index]:-0}; have_part=${have_part//[!0-9]/}
+    want_part=${want_parts[index]:-0}; want_part=${want_part//[!0-9]/}
+    [ "$((10#${have_part:-0}))" -gt "$((10#${want_part:-0}))" ] && return 0
+    [ "$((10#${have_part:-0}))" -lt "$((10#${want_part:-0}))" ] && return 1
+  done
+  return 0
+}
+
+local_tool_version() {
+  local output
+  case "$1" in
+    kind) output=$(kind version 2>/dev/null) ;;
+    kubectl) output=$(kubectl version --client 2>/dev/null) ;;
+    flux) output=$(flux --version 2>/dev/null) ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$output" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+}
+
+local_setup() {
+  local binary path version minimum
+  local -a missing=() stale=() unverified=()
+  echo "Profile: local"
+  echo "Target:  kind cluster $FLEET_CLUSTER (context $FLEET_CONTEXT)"
+  echo
+  echo 'Required tools:'
+  for binary in docker kind kubectl flux git openssl curl; do
+    if ! path=$(command -v "$binary" 2>/dev/null); then
+      printf '  %-7s MISSING\n' "$binary"
+      missing+=("$binary")
+      continue
+    fi
+    case "$binary" in
+      kind) minimum=$FLEET_MIN_KIND ;;
+      kubectl) minimum=$FLEET_MIN_KUBECTL ;;
+      flux) minimum=$FLEET_MIN_FLUX ;;
+      *) minimum='' ;;
+    esac
+    if [ -z "$minimum" ]; then
+      printf '  %-7s %s\n' "$binary" "$path"
+      continue
+    fi
+    version=$(local_tool_version "$binary" || true)
+    if [ -z "$version" ]; then
+      printf '  %-7s %s (version not reported, needs %s+)\n' "$binary" "$path" "$minimum"
+      unverified+=("$binary")
+    elif local_version_at_least "$version" "$minimum"; then
+      printf '  %-7s %s (%s)\n' "$binary" "$path" "$version"
+    else
+      printf '  %-7s %s (%s, needs %s+)\n' "$binary" "$path" "$version" "$minimum"
+      stale+=("$binary $version < $minimum")
+    fi
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    echo >&2
+    fail "Install ${missing[*]} and run setup again; see docs/LOCAL-KUBERNETES.md."
+    return 1
+  fi
+  if [ "${#stale[@]}" -gt 0 ]; then
+    echo >&2
+    for binary in "${stale[@]}"; do echo "  $binary" >&2; done
+    fail 'Upgrade the tools above and run setup again; see docs/DEPLOYMENT-PROFILES.md.'
+    return 1
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo >&2
+    fail 'Docker is installed but not responding. Start Docker and run setup again.'
+    return 1
+  fi
+
+  # Needs git, so it runs only after the scan above could report git missing.
+  local_init_state || return 1
+
+  # The only change setup makes, and it is idempotent.
+  mkdir -p "$FLEET_STATE"
+  chmod 700 "$FLEET_STATE"
+
+  echo "State:   $FLEET_STATE"
+  echo
+  # Not a failure - a tool that changes its version output should not block
+  # setup - but readiness is not claimed for something that was never confirmed.
+  if [ "${#unverified[@]}" -gt 0 ]; then
+    echo "Could not read a version for: ${unverified[*]}."
+    echo 'Check those against docs/DEPLOYMENT-PROFILES.md before relying on this.'
+    echo
+  fi
+  if local_cluster_exists; then
+    echo "Local profile ready. Cluster $FLEET_CLUSTER already exists."
+    echo 'Next: ./fleet up --profile local to reconcile it, or ./fleet status --profile local.'
+  else
+    echo 'Local profile ready. No cluster yet.'
+    echo 'Next: ./fleet up --profile local'
+  fi
 }
 
 local_cluster_exists() { kind get clusters 2>/dev/null | grep -Fxq "$FLEET_CLUSTER"; }
@@ -313,6 +437,12 @@ local_down() {
 
 local_main() {
   local action=$1 revision=$2 service=$3
+  # setup is the phase that reports missing tools, so it cannot be gated on the
+  # check that assumes they are already there.
+  if [ "$action" = setup ]; then
+    local_setup
+    return
+  fi
   local_prerequisites
   case "$action" in
     up) local_up "$revision" ;;

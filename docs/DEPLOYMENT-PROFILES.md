@@ -2,6 +2,11 @@
 
 [Documentation index](README.md) · [Architecture decision](DEPLOYMENT-PROFILES-DDR.md)
 
+Every profile exposes the same three lifecycle phases. `setup` prepares and
+validates the target, `up` brings it to a ready state, and `down` removes what
+that profile owns. Each phase reports its target before changing anything, is
+safe to repeat, and ends either ready or with an actionable failure.
+
 `./fleet` selects `local` or `aws-staging`. Both compose the same application
 base and delivery controls. Their bootstrap, registry, networking and policies
 are explicit profile resources under `k8s/profiles/` and `k8s/clusters/`.
@@ -19,6 +24,7 @@ network; it does not publish the repository or create a GitHub deploy key.
 
 ```bash
 ./fleet render --profile local   # inspect effective resources; fixtures only
+./fleet setup --profile local    # enforce the tool versions above, prepare local state
 ./fleet up --profile local
 ./fleet status --profile local
 ./fleet test --profile local
@@ -64,6 +70,8 @@ checkout; provisioning and teardown remain reviewed main-branch workflows.
 
 ```bash
 ./fleet render --profile aws-staging
+./fleet setup --profile aws-staging    # validate config.env and the AWS session, plan the OIDC foundation
+./fleet setup --profile aws-staging --apply   # create it, after reviewing that plan
 ./fleet up --profile aws-staging       # dispatch rebuild-stack.yml
 ./fleet status --profile aws-staging
 ./fleet down --profile aws-staging     # dispatch nightly-destroy.yml

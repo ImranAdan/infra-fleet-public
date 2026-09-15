@@ -45,6 +45,7 @@ resources and delivery controls with AWS staging.
 ```bash
 git clone https://github.com/ImranAdan/infra-fleet-public.git
 cd infra-fleet-public
+./fleet setup --profile local
 ./fleet up --profile local
 ./fleet access --profile local --service app
 ```
