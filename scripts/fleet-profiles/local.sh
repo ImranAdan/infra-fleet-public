@@ -89,7 +89,8 @@ local_configuration() {
 local_secrets() {
   local secret filename namespace key credential
   for namespace in flux-system applications observability; do
-    kctl create namespace "$namespace" --dry-run=client -o yaml | kctl apply -f - >/dev/null
+    kctl create namespace "$namespace" --dry-run=client -o yaml | \
+      kctl apply --server-side --field-manager=fleet-local-facade -f - >/dev/null
   done
   for secret in load-harness-api-key load-harness-secret-key grafana-admin-credentials; do
     case "$secret" in
@@ -108,10 +109,12 @@ local_secrets() {
     if [ "$secret" = grafana-admin-credentials ]; then
       kctl create secret generic "$secret" -n "$namespace" \
         --from-literal=admin-user=admin --from-literal="$key=$credential" \
-        --dry-run=client -o yaml | kctl apply -f - >/dev/null
+        --dry-run=client -o yaml | \
+        kctl apply --server-side --field-manager=fleet-local-facade -f - >/dev/null
     else
       kctl create secret generic "$secret" -n "$namespace" \
-        --from-literal="$key=$credential" --dry-run=client -o yaml | kctl apply -f - >/dev/null
+        --from-literal="$key=$credential" --dry-run=client -o yaml | \
+        kctl apply --server-side --field-manager=fleet-local-facade -f - >/dev/null
     fi
   done
 }
