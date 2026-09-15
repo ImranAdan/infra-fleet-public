@@ -32,11 +32,15 @@ spec:
         object.spec.strategy.type == 'RollingUpdate' &&
         has(object.spec.strategy.rollingUpdate) &&
         has(object.spec.strategy.rollingUpdate.maxUnavailable) &&
-        type(object.spec.strategy.rollingUpdate.maxUnavailable) == double &&
-        object.spec.strategy.rollingUpdate.maxUnavailable == 0 &&
+        ((type(object.spec.strategy.rollingUpdate.maxUnavailable) == int &&
+          object.spec.strategy.rollingUpdate.maxUnavailable == 0) ||
+         (type(object.spec.strategy.rollingUpdate.maxUnavailable) == double &&
+          object.spec.strategy.rollingUpdate.maxUnavailable == 0.0)) &&
         has(object.spec.strategy.rollingUpdate.maxSurge) &&
-        type(object.spec.strategy.rollingUpdate.maxSurge) == double &&
-        object.spec.strategy.rollingUpdate.maxSurge > 0
+        ((type(object.spec.strategy.rollingUpdate.maxSurge) == int &&
+          object.spec.strategy.rollingUpdate.maxSurge > 0) ||
+         (type(object.spec.strategy.rollingUpdate.maxSurge) == double &&
+          object.spec.strategy.rollingUpdate.maxSurge > 0.0))
       message: >-
         Application Deployments must use RollingUpdate with maxUnavailable 0
         and a positive integer maxSurge.
