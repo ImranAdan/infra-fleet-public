@@ -116,20 +116,22 @@ uses its application metric templates instead.
 
 | Metric | Threshold | Template |
 |--------|-----------|----------|
-| `request-success-rate` | > 99% | `nginx-request-success-rate` |
-| `request-duration` | p99 < 500ms | `nginx-request-duration` |
+| `workload-request-success-rate` | > 99% | Local application or AWS NGINX success template |
+| `workload-request-duration` | p99 < 500ms | Local application or AWS NGINX latency template |
 
 ---
 
 ## How Traffic Shifting Works
 
-Without a service mesh, Flagger uses **pod scaling** for traffic splitting:
+Flagger delegates weighted routing to the selected profile: Envoy Gateway
+locally and NGINX in AWS staging. It also coordinates the canary and primary
+Deployment replica counts:
 
-1. **Initial state**: Primary has all replicas, canary has 0
-2. **Step 1 (10%)**: Scale canary to ~10% of total pods
-3. **Step 2 (20%)**: Scale canary to ~20% of total pods
-4. ...continues until maxWeight (50%)...
-5. **Promotion**: Canary becomes new primary, old primary scaled down
+1. **Initial state**: Primary receives all traffic and the canary has 0 replicas.
+2. **Analysis starts**: Flagger starts the canary and assigns it 10% route weight.
+3. **Passing checks**: The selected router advances weight in 10% increments.
+4. **Maximum analysis**: The canary receives 50% while the last checks run.
+5. **Promotion**: The tested revision becomes primary and the canary scales down.
 
 ```
 Timeline:
@@ -236,7 +238,7 @@ Timeline with FAIL_RATE=0.3:
 ─────────────────────────────────────────────────────────────────────
 
 Flagger logs:
-Halt advancement load-harness.applications request-success-rate 70.00 < 99
+Halt advancement load-harness.applications workload-request-success-rate 70.00 < 99
 Rolling back load-harness.applications failed checks threshold reached 1
 Canary failed! Scaling down load-harness.applications
 ```

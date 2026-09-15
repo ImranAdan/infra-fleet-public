@@ -22,14 +22,17 @@ spec:
     stepWeight: 10
     threshold: 3
     metrics:
-      - name: request-success-rate
+      # Reserved Flagger metric names invoke provider-specific built-ins before
+      # a template. These distinct names always evaluate the selected profile's
+      # explicit MetricTemplate.
+      - name: workload-request-success-rate
         templateRef:
           name: request-success-rate
           namespace: applications
         thresholdRange:
           min: 99
         interval: 1m
-      - name: request-duration
+      - name: workload-request-duration
         templateRef:
           name: request-duration
           namespace: applications

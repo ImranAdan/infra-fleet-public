@@ -26,6 +26,8 @@ def test_shared_workload_contract_is_preserved_in_both_profiles():
         assert "replicas" not in deployment["spec"]
         assert container["readinessProbe"]
         assert {entry["name"]: entry.get("value") for entry in container["env"]}["METRICS_BACKEND"] == "kubernetes"
+        metric_names = {metric["name"] for metric in one(resources, "Canary", "load-harness")["spec"]["analysis"]["metrics"]}
+        assert metric_names == {"workload-request-success-rate", "workload-request-duration"}
         one(resources, "ValidatingPolicy", "require-rollout-capacity")
         one(resources, "PodMonitor", "load-harness")
 

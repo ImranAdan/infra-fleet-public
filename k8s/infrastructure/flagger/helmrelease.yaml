@@ -7,16 +7,10 @@
 # 3. Rolling back automatically on failures
 #
 # =============================================================================
-# MESH PROVIDER: nginx
+# TRAFFIC PROVIDER: SELECTED BY THE DEPLOYMENT PROFILE
 # =============================================================================
-# Changed from: meshProvider: kubernetes (iteration-based, no traffic splitting)
-# Changed to:   meshProvider: nginx (weighted traffic via ingress annotations)
-#
-# Why the change:
-#   - meshProvider: kubernetes only supports pod selector routing
-#   - No actual percentage-based traffic splitting occurs
-#   - meshProvider: nginx uses canary-weight annotation for true splitting
-#   - Enables the stepWeight progression: 10% -> 20% -> 30% -> 40% -> 50%
+# Local uses gatewayapi:v1 with Envoy Gateway. AWS staging uses nginx. Both
+# providers support the configured weighted progression from 10% through 50%.
 #
 # Metrics: Prometheus via kube-prometheus-stack
 # =============================================================================
@@ -44,8 +38,7 @@ spec:
     # Prometheus for metrics analysis
     metricsServer: http://kube-prometheus-stack-prometheus.observability:9090
 
-    # NGINX Ingress - enables weighted traffic splitting
-    # Flagger will manage nginx.ingress.kubernetes.io/canary-weight annotation
+    # The profile selects Gateway API or NGINX weighted routing.
     meshProvider: ${TRAFFIC_PROVIDER}
 
     # Resource limits for t3.large node

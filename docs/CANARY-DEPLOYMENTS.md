@@ -75,12 +75,12 @@ is the failed-check limit before rollback, not three required successes.
 
 Flagger evaluates two metrics during canary analysis:
 
-### Success Rate (nginx-request-success-rate)
+### Success Rate (`workload-request-success-rate`)
 - **Measures**: Percentage of HTTP requests that don't return 5xx errors
 - **Threshold**: Must be >= 99% (allows only 1% error rate)
 - **Rollback if**: Error rate exceeds 1%
 
-### Latency (nginx-request-duration)
+### Latency (`workload-request-duration`)
 - **Measures**: 99th percentile response time in milliseconds
 - **Threshold**: Must be <= 500ms
 - **Rollback if**: Slowest 1% of requests exceed 500ms
@@ -93,9 +93,8 @@ Without traffic during canary analysis, Flagger's metrics return NaN or pass by 
 
 ### Components
 
-1. **flagger-loadtester** - Helm chart deployed in `applications` namespace
+1. **flagger-loadtester** - Helm chart deployed in `flux-system`
    - Based on `hey` (HTTP load generator)
-   - Mounted with API key secret for authenticated requests
    - Triggered via webhooks during canary analysis
 
 2. **Webhooks in Canary Resource**:
@@ -104,22 +103,13 @@ Without traffic during canary analysis, Flagger's metrics return NaN or pass by 
 
 ### Traffic Flow
 
-```
-flagger-loadtester
-       │
-       │ hey command with X-API-Key header
-       ▼
-NGINX Ingress Controller (ingress-nginx namespace)
-       │
-       │ canary-weight annotation determines routing
-       ▼
-load-harness-canary service
-       │
-       ▼
-Canary pods
+```text
+flagger-loadtester -> selected route -> weighted primary/canary services -> pods
 ```
 
-**IMPORTANT**: Traffic must route through NGINX Ingress Controller for metrics to be captured. Direct service calls bypass NGINX and won't populate `nginx_ingress_controller_requests` metrics.
+The local route is Envoy Gateway and its MetricTemplates read application
+metrics. AWS staging routes through NGINX and its templates read ingress
+metrics, so AWS analysis traffic must traverse that ingress.
 
 ## Automatic Rollback
 
@@ -155,9 +145,9 @@ To test the rollback mechanism:
 Advance load-harness.applications canary weight 10
 Advance load-harness.applications canary weight 20
 Advance load-harness.applications canary weight 30
-Halt load-harness.applications advancement nginx-request-success-rate 10.95 < 99
-Halt load-harness.applications advancement nginx-request-success-rate 11.62 < 99
-Halt load-harness.applications advancement nginx-request-success-rate 11.07 < 99
+Halt load-harness.applications advancement workload-request-success-rate 10.95 < 99
+Halt load-harness.applications advancement workload-request-success-rate 11.62 < 99
+Halt load-harness.applications advancement workload-request-success-rate 11.07 < 99
 Rolling back load-harness.applications failed checks threshold reached 3
 Canary failed! Scaling down load-harness.applications
 ```

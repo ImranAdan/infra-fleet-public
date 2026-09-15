@@ -182,10 +182,10 @@ analysis:
   maxWeight: 50        # Max 50% traffic to canary
   stepWeight: 10       # 10% increments
   metrics:
-    - name: nginx-request-success-rate
+    - name: workload-request-success-rate
       thresholdRange:
         min: 99        # Requires 99% success rate
-    - name: nginx-request-duration
+    - name: workload-request-duration
       thresholdRange:
         max: 500       # p99 latency < 500ms
 ```
