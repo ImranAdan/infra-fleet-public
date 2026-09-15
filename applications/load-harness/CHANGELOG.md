@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.5...v1.7.0) (2026-09-15)
+
+
+### Features
+
+* add local and AWS deployment profiles ([04a7ccc](https://github.com/ImranAdan/infra-fleet-public/commit/04a7ccc9fa87e7a0aad0b9b50c5d1e984be43359))
+* compose shared platform with local and AWS profiles ([b68fe25](https://github.com/ImranAdan/infra-fleet-public/commit/b68fe2551f6f930d3ac2fe34fa85136aab006f99))
+
 ## [1.6.5](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.4...v1.6.5) (2026-09-14)
 
 
