@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.1](https://github.com/ImranAdan/infra-fleet-public/compare/v1.7.0...v1.7.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **load-harness:** bound login tracking state ([4fb3ed1](https://github.com/ImranAdan/infra-fleet-public/commit/4fb3ed1721de7b9d1fdd52102ffc12f3d8904144))
+* **load-harness:** carry job IDs and memory limits through ([58a1db1](https://github.com/ImranAdan/infra-fleet-public/commit/58a1db1c0a0fa9052b11dc661aeb8cf9f53537ea))
+* **load-harness:** enforce pod memory reservations ([9d23577](https://github.com/ImranAdan/infra-fleet-public/commit/9d23577a44459f5c208661f4d07030cdeffc6d56))
+* **load-harness:** pin test environment and record the aggregate memory gap ([52fe8cc](https://github.com/ImranAdan/infra-fleet-public/commit/52fe8cc09f2627afa2273978dfe1fc637c158f84))
+* **load-harness:** remove dashboard self-HTTP deadlock and related defects ([99d08b4](https://github.com/ImranAdan/infra-fleet-public/commit/99d08b4e72bc83b977f95c3eae2d524136e9f730))
+* **load-harness:** remove dashboard self-HTTP deadlock and related defects ([ab3509d](https://github.com/ImranAdan/infra-fleet-public/commit/ab3509da1123330ae916437bde9bc29ec7f90577))
+
 ## [1.7.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.6.5...v1.7.0) (2026-09-15)
 
 
