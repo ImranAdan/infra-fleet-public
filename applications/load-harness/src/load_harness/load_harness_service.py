@@ -60,6 +60,7 @@ from load_harness.openapi_specs import (
     CPU_LOAD_WORK_SPEC,
 )
 from load_harness.services.job_manager import JobManager
+from load_harness.services.memory_budget import MemoryBudget
 from load_harness.workers.cpu_worker import cpu_worker_target
 from load_harness.workers.memory_worker import memory_worker_target
 
@@ -198,6 +199,7 @@ class LoadHarnessService:
         self.job_manager = job_manager or JobManager(logger=self.logger)
         self.available_cores = _get_available_cpu_cores()
         self.memory_limit_mb = _get_memory_limit_mb()
+        self.memory_budget = MemoryBudget(self.memory_limit_mb)
 
         # The dashboard blueprint runs in this same process and used to reach
         # these endpoints over HTTP against 127.0.0.1, which deadlocked the
@@ -332,6 +334,13 @@ class LoadHarnessService:
                 "error": f"duration_seconds must be between {MEMORY_MIN_DURATION_SECONDS} and {MEMORY_MAX_DURATION_SECONDS}"
             }, 400
 
+        reserved_size_mb = int(size_mb)
+        reservation_id = self.memory_budget.reserve(reserved_size_mb)
+        if reservation_id is None:
+            return {
+                "error": "Requested memory exceeds the pod capacity remaining for load jobs"
+            }, 409
+
         job_id = _new_job_id(MEMORY_JOB_PREFIX)
 
         self.logger.info(
@@ -342,34 +351,45 @@ class LoadHarnessService:
         # Create stop event for graceful termination
         stop_event = _PROCESS_CONTEXT.Event()
 
-        # Start memory worker process using the extracted worker target
-        process = _PROCESS_CONTEXT.Process(
-            target=memory_worker_target,
-            args=(job_id, int(size_mb), duration_seconds, stop_event),
-            name=job_id,
-        )
-        process.start()
+        try:
+            process = _PROCESS_CONTEXT.Process(
+                target=memory_worker_target,
+                args=(job_id, reserved_size_mb, duration_seconds, stop_event),
+                name=job_id,
+            )
+            process.start()
+            self.memory_budget.activate(reservation_id, process.pid)
 
-        # Register job with JobManager
-        config = {
-            "size_mb": int(size_mb),
-            "duration_seconds": duration_seconds,
-        }
-        self.job_manager.register_job(
-            job_id=job_id,
-            job_type="memory",
-            config=config,
-            processes=[process],
-            stop_event=stop_event,
-        )
+            config = {
+                "size_mb": reserved_size_mb,
+                "duration_seconds": duration_seconds,
+                "memory_reservation_id": reservation_id,
+            }
+            self.job_manager.register_job(
+                job_id=job_id,
+                job_type="memory",
+                config=config,
+                processes=[process],
+                stop_event=stop_event,
+            )
 
-        # Schedule automatic cleanup
-        self.job_manager.schedule_cleanup(job_id, duration_seconds)
+            # JobManager invokes callbacks after the child has been reaped.
+            self.job_manager.schedule_cleanup(
+                job_id,
+                duration_seconds,
+                callback=lambda: self.memory_budget.release(reservation_id),
+            )
+        except BaseException:
+            self.memory_budget.release(reservation_id)
+            if "process" in locals() and process.is_alive():
+                process.terminate()
+                process.join()
+            raise
 
         return {
             "status": "started",
             "job_id": job_id,
-            "size_mb": int(size_mb),
+            "size_mb": reserved_size_mb,
             "duration_seconds": duration_seconds,
             "message": f"Memory load started: {int(size_mb)}MB for {duration_seconds}s. Health probes remain responsive.",
             "check_status": "/load/memory/status",
@@ -420,13 +440,23 @@ class LoadHarnessService:
 
         if target_job_id:
             # Stop specific job
+            job = self.job_manager.get_job(target_job_id)
             success = self.job_manager.stop_job(target_job_id)
             if not success:
                 return jsonify({"error": f"Job {target_job_id} not found"}), 404
+            self.memory_budget.release(
+                job.get("config", {}).get("memory_reservation_id")
+            )
             stopped_jobs = [target_job_id]
         else:
             # Stop all memory jobs
+            jobs = self.job_manager.get_all_jobs(job_type="memory")
             stopped_jobs = self.job_manager.stop_all_jobs(job_type="memory")
+            for job in jobs:
+                if job.get("job_id") in stopped_jobs:
+                    self.memory_budget.release(
+                        job.get("config", {}).get("memory_reservation_id")
+                    )
 
         return jsonify({
             "status": "stopped",
@@ -463,20 +493,26 @@ class LoadHarnessService:
             duration_ms,
         )
 
+        reservation_id = self.memory_budget.reserve(int(size_mb))
+        if reservation_id is None:
+            return jsonify({
+                "error": "Requested memory exceeds the pod capacity remaining for load jobs"
+            }), 409
+
         start_time = time.time()
+        try:
+            bytes_to_allocate = int(size_mb * 1024 * 1024)
+            memory_block = bytearray(bytes_to_allocate)
 
-        bytes_to_allocate = int(size_mb * 1024 * 1024)
-        memory_block = bytearray(bytes_to_allocate)
+            # Touch all pages using constant page size
+            for i in range(0, len(memory_block), MEMORY_PAGE_SIZE_BYTES):
+                memory_block[i] = i % 256
 
-        # Touch all pages using constant page size
-        for i in range(0, len(memory_block), MEMORY_PAGE_SIZE_BYTES):
-            memory_block[i] = i % 256
-
-        allocation_time_ms = (time.time() - start_time) * 1000.0
-
-        time.sleep(duration_ms / 1000.0)
-
-        actual_duration_ms = (time.time() - start_time) * 1000.0
+            allocation_time_ms = (time.time() - start_time) * 1000.0
+            time.sleep(duration_ms / 1000.0)
+            actual_duration_ms = (time.time() - start_time) * 1000.0
+        finally:
+            self.memory_budget.release(reservation_id)
 
         self.logger.info(
             "Completed sync memory load: size_mb=%s requested=%sms actual=%sms",

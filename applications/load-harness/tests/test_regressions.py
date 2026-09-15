@@ -17,6 +17,7 @@ from load_harness.load_harness_service import (
     _new_job_id,
 )
 from load_harness.services.job_manager import JobManager
+from load_harness.services.memory_budget import MemoryBudget
 
 
 def _stop_jobs(client):
@@ -146,6 +147,44 @@ class TestMemoryCeiling:
         response = client.post("/load/memory/sync", json={"size_mb": 500})
 
         assert response.status_code == 400
+
+    def test_memory_budget_is_shared_between_service_processes(self, tmp_path):
+        """Two Gunicorn workers cannot each reserve the full pod budget."""
+        first_worker = MemoryBudget(100, str(tmp_path))
+        second_worker = MemoryBudget(100, str(tmp_path))
+
+        first_reservation = first_worker.reserve(60)
+        assert first_reservation
+        assert second_worker.reserve(50) is None
+
+        first_worker.release(first_reservation)
+        second_reservation = second_worker.reserve(50)
+        assert second_reservation
+        second_worker.release(second_reservation)
+
+    def test_service_rejects_memory_beyond_remaining_budget(self, tmp_path, app):
+        """The endpoint participates in the shared budget before spawning."""
+        service = app.extensions["load_harness"]
+        service.memory_limit_mb = 100
+        service.memory_budget = MemoryBudget(100, str(tmp_path))
+        reservation = service.memory_budget.reserve(60)
+
+        body, status = service.start_memory_load(size_mb=50, duration_seconds=5)
+
+        assert status == 409
+        assert "capacity remaining" in body["error"]
+        service.memory_budget.release(reservation)
+
+    def test_dead_memory_worker_reservation_is_reclaimed(self, tmp_path):
+        """A crashed worker cannot leave the pod budget permanently reserved."""
+        first_worker = MemoryBudget(100, str(tmp_path))
+        reservation = first_worker.reserve(100)
+        first_worker.activate(reservation, 2_000_000_000)
+
+        second_worker = MemoryBudget(100, str(tmp_path))
+        replacement = second_worker.reserve(100)
+        assert replacement
+        second_worker.release(replacement)
 
 
 # =============================================================================

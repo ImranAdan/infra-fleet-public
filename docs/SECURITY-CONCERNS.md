@@ -144,6 +144,18 @@ spec:
 
 ---
 
+### Internal Service Transport (High)
+
+**Finding:** Distributed CPU tests send the shared API key between application
+pods over the cluster Service using HTTP. NetworkPolicy limits the permitted
+paths but does not encrypt traffic.
+
+**Status:** Open architecture gap. Closing it requires authenticated service
+TLS or a mesh workload identity. Until then, the template must not describe
+east-west requests as confidential merely because a NetworkPolicy is present.
+
+---
+
 ### H6: Flux Installation (High)
 
 **Finding:** Flux installed via unverified `curl | bash` pattern.
