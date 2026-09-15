@@ -87,7 +87,7 @@ local_configuration() {
 }
 
 local_secrets() {
-  local secret filename namespace key
+  local secret filename namespace key credential
   for namespace in flux-system applications observability; do
     kctl create namespace "$namespace" --dry-run=client -o yaml | kctl apply -f - >/dev/null
   done
@@ -98,18 +98,20 @@ local_secrets() {
       grafana-admin-credentials) filename=grafana-password; namespace=observability; key=admin-password ;;
     esac
     if [ ! -f "$FLEET_STATE/$filename" ]; then
-      openssl rand -hex 32 > "$FLEET_STATE/$filename"
+      openssl rand -hex 32 | tr -d '\r\n' > "$FLEET_STATE/$filename"
       chmod 600 "$FLEET_STATE/$filename"
     fi
-    # Existing runtime credentials are retained across repeated up/sync calls.
-    if ! kctl get secret "$secret" -n "$namespace" >/dev/null 2>&1; then
-      if [ "$secret" = grafana-admin-credentials ]; then
-        kctl create secret generic "$secret" -n "$namespace" \
-          --from-literal=admin-user=admin --from-file="$key=$FLEET_STATE/$filename" >/dev/null
-      else
-        kctl create secret generic "$secret" -n "$namespace" \
-          --from-file="$key=$FLEET_STATE/$filename" >/dev/null
-      fi
+    # Normalize credentials created by older facade versions without rotating them.
+    credential=$(tr -d '\r\n' < "$FLEET_STATE/$filename")
+    [[ "$credential" =~ ^[0-9a-f]{64}$ ]] || fail "Invalid cached credential: $filename" || return 1
+    printf '%s' "$credential" > "$FLEET_STATE/$filename"
+    if [ "$secret" = grafana-admin-credentials ]; then
+      kctl create secret generic "$secret" -n "$namespace" \
+        --from-literal=admin-user=admin --from-literal="$key=$credential" \
+        --dry-run=client -o yaml | kctl apply -f - >/dev/null
+    else
+      kctl create secret generic "$secret" -n "$namespace" \
+        --from-literal="$key=$credential" --dry-run=client -o yaml | kctl apply -f - >/dev/null
     fi
   done
 }
@@ -246,6 +248,7 @@ local_sync() {
   local_revision "$1"
   local_build_image
   local_publish_snapshot
+  local_secrets
   local_configuration "$(local_gateway_service).envoy-gateway-system"
   fctl reconcile kustomization fleet-root --with-source --timeout=5m
   fctl reconcile kustomization infrastructure --timeout=15m
