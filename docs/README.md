@@ -117,7 +117,7 @@ review current AWS pricing before deployment.
 | [Terraform Cloud Setup](TERRAFORM-CLOUD-SETUP.md) | Backend and workspace configuration |
 | [GitHub OIDC Setup](GITHUB-OIDC-SETUP.md) | Secure CI/CD authentication |
 | [EKS Access Guide](EKS-ACCESS.md) | Cluster access methods |
-| [GitHub Environments](GITHUB-ENVIRONMENTS.md) | Environment protection rules |
+| [GitHub Environments](GITHUB-ENVIRONMENTS.md) | Local and AWS deployment records, gates and protection rules |
 
 ### GitOps & Deployment
 | Document | Description |

@@ -4,7 +4,8 @@ Reviewed 15 September 2026. The adoption baseline, dependency updates, IAM
 action scoping, public messaging, advisor delivery fixes and explicit local/AWS
 deployment profiles have landed. The platform is ready for a fresh advisor
 review of the merged desired state. It remains a staging template with explicit
-deployment gates.
+deployment gates. Fast pull-request validation is separate from the deliberate
+and scheduled `local` Environment deployment.
 
 ## Readiness decision
 
@@ -44,13 +45,13 @@ Gateway instead.
 | Advisor local review | JSON and Markdown are produced from the verified merged fleet with `stub`. Workflow and Deployment collection are complete. IAM collection is explicitly partial for four unsupported policy resources or expressions; it does not execute Terraform or fetch policy URLs. |
 | Publication plan | The approved report validates one active fleet recommendation and one resolution action. Two historical IAM recommendations are deferred because their current collector is incomplete. Every new issue links to the approving report PR; unknown intent remains coverage without automatic advisor tickets. |
 | Load Harness | All 112 tests pass in the container with deprecation warnings treated as errors, alongside container and image-security checks. |
-| Local Kubernetes | A real kind cycle passed Flux drift repair, Kyverno negative cases, Calico isolation, Prometheus discovery, healthy canary promotion and forced-failure rollback. Authenticated app/UI, Grafana and Prometheus smoke checks also passed. |
+| Local Kubernetes | A real kind cycle passed Flux drift repair, Kyverno negative cases, Calico isolation, Prometheus discovery, healthy canary promotion and forced-failure rollback. The full cycle is now a manual `local` Environment gate plus a weekly `main` confidence run, rather than duplicate PR and post-merge checks. |
 | Deployment profiles | Both effective roots render; 81 resources pass Kubernetes 1.35 schema checks, 20 policy regression cases pass, and each profile's policies accept its rendered resources. AWS was not invoked. |
 | Template contract | CI passes. Isolated checks accept release/deployment tag advances and reject a full-image Flux setter. |
 | Infrastructure | Current permanent and staging validation and scans pass. Backend-free, readonly-lock initialization and Terraform validation were exercised locally. No live AWS plan or infrastructure change was performed. |
 | IAM policy quota | The reviewed rendered documents fit within the 6,144-character managed-policy quota. This establishes size compatibility, not privilege safety. |
 | Workflow checks | Advisor Actionlint passes with ShellCheck. Fleet passes its configured syntax gate; enabling ShellCheck surfaces thirteen existing warnings across six workflows. |
-| Main CI | Applicable post-merge workflows were checked through completion. The optional infrastructure apply job remained gated; successful static workflows do not establish deployment success. |
+| Main CI | Fast applicable workflows remain automatic. The local cluster cycle is no longer repeated automatically after an identical candidate revision passed; successful static workflows do not establish deployment success. |
 
 Approved report [#47](https://github.com/ImranAdan/infra-fleet-advisor-public/pull/47)
 triggered the App-authenticated publisher and created fleet issue
