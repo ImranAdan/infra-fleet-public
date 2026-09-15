@@ -64,13 +64,6 @@ SWAGGER_TEMPLATE = {
 
 
 def init_swagger(app):
-    """Initialize Swagger documentation for the app.
-
-    Args:
-        app: Flask application instance
-
-    Returns:
-        Swagger instance
-    """
+    """Initialize Swagger documentation for the app."""
     app.config["SWAGGER"] = SWAGGER_CONFIG
     return Swagger(app, template=SWAGGER_TEMPLATE)

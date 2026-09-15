@@ -594,16 +594,10 @@ def test_metrics_no_auth_required(client_with_auth):
     assert response.status_code == 200
 
 
-def test_apidocs_no_auth_required(client_with_auth):
-    """Test /apidocs endpoint is public (browser accessible)."""
-    response = client_with_auth.get('/apidocs')
-    assert response.status_code == 200
-
-
-def test_apispec_no_auth_required(client_with_auth):
-    """Test /apispec.json endpoint is public."""
-    response = client_with_auth.get('/apispec.json')
-    assert response.status_code == 200
+@pytest.mark.parametrize("path", ['/apidocs', '/apispec.json', '/ui/login'])
+def test_public_endpoints_need_no_auth(client_with_auth, path):
+    """Endpoints reachable without a key: docs, spec and the login page itself."""
+    assert client_with_auth.get(path).status_code == 200
 
 
 def test_ui_redirects_to_login(client_with_auth):
@@ -612,12 +606,6 @@ def test_ui_redirects_to_login(client_with_auth):
     # Should redirect to login page (302) not return 401
     assert response.status_code == 302
     assert '/ui/login' in response.location
-
-
-def test_login_page_accessible(client_with_auth):
-    """Test /ui/login is accessible without authentication."""
-    response = client_with_auth.get('/ui/login')
-    assert response.status_code == 200
 
 
 def test_login_with_valid_key(client_with_auth):

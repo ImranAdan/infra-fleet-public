@@ -5,7 +5,28 @@ OpenAPI/Swagger specifications for LoadHarness API endpoints.
 Each spec is a dictionary that can be used with flasgger's swag_from decorator.
 """
 
-from load_harness.constants import MEMORY_MAX_SIZE_MB
+from load_harness.constants import (
+    CPU_DEFAULT_CORES,
+    CPU_DEFAULT_DURATION_SECONDS,
+    CPU_DEFAULT_INTENSITY,
+    CPU_MAX_CORES,
+    CPU_MAX_DURATION_SECONDS,
+    CPU_MAX_INTENSITY,
+    CPU_MIN_CORES,
+    CPU_MIN_DURATION_SECONDS,
+    CPU_MIN_INTENSITY,
+    CPU_WORK_MAX_ITERATIONS,
+    CPU_WORK_MIN_ITERATIONS,
+    MEMORY_DEFAULT_DURATION_SECONDS,
+    MEMORY_DEFAULT_SIZE_MB,
+    MEMORY_MAX_DURATION_SECONDS,
+    MEMORY_MAX_SIZE_MB,
+    MEMORY_MIN_DURATION_SECONDS,
+    MEMORY_MIN_SIZE_MB,
+    MEMORY_SYNC_DEFAULT_DURATION_MS,
+    MEMORY_SYNC_MAX_DURATION_MS,
+    MEMORY_SYNC_MIN_DURATION_MS,
+)
 
 # ---- Health Endpoints ----
 
@@ -168,9 +189,9 @@ MEMORY_LOAD_START_SPEC = {
                 "properties": {
                     "size_mb": {
                         "type": "integer",
-                        "minimum": 1,
+                        "minimum": MEMORY_MIN_SIZE_MB,
                         "maximum": MEMORY_MAX_SIZE_MB,
-                        "default": 50,
+                        "default": MEMORY_DEFAULT_SIZE_MB,
                         "description": (
                             "Amount of memory to allocate (megabytes). This is the "
                             "absolute cap; the effective maximum is derived from the "
@@ -180,9 +201,9 @@ MEMORY_LOAD_START_SPEC = {
                     },
                     "duration_seconds": {
                         "type": "integer",
-                        "minimum": 5,
-                        "maximum": 300,
-                        "default": 30,
+                        "minimum": MEMORY_MIN_DURATION_SECONDS,
+                        "maximum": MEMORY_MAX_DURATION_SECONDS,
+                        "default": MEMORY_DEFAULT_DURATION_SECONDS,
                         "description": "How long to hold the memory (seconds)",
                     },
                 },
@@ -332,9 +353,9 @@ MEMORY_LOAD_SPEC = {
                     },
                     "duration_ms": {
                         "type": "integer",
-                        "minimum": 1,
-                        "maximum": 120000,
-                        "default": 1000,
+                        "minimum": MEMORY_SYNC_MIN_DURATION_MS,
+                        "maximum": MEMORY_SYNC_MAX_DURATION_MS,
+                        "default": MEMORY_SYNC_DEFAULT_DURATION_MS,
                         "description": "How long to hold the memory (milliseconds)",
                     },
                 },
@@ -388,23 +409,23 @@ CPU_LOAD_START_SPEC = {
                 "properties": {
                     "cores": {
                         "type": "integer",
-                        "minimum": 1,
-                        "maximum": 16,
-                        "default": 1,
+                        "minimum": CPU_MIN_CORES,
+                        "maximum": CPU_MAX_CORES,
+                        "default": CPU_DEFAULT_CORES,
                         "description": "Number of CPU cores to load (one worker per core)",
                     },
                     "duration_seconds": {
                         "type": "integer",
-                        "minimum": 10,
-                        "maximum": 900,
-                        "default": 60,
+                        "minimum": CPU_MIN_DURATION_SECONDS,
+                        "maximum": CPU_MAX_DURATION_SECONDS,
+                        "default": CPU_DEFAULT_DURATION_SECONDS,
                         "description": "How long workers run (seconds, 10s to 15min)",
                     },
                     "intensity": {
                         "type": "integer",
-                        "minimum": 1,
-                        "maximum": 10,
-                        "default": 5,
+                        "minimum": CPU_MIN_INTENSITY,
+                        "maximum": CPU_MAX_INTENSITY,
+                        "default": CPU_DEFAULT_INTENSITY,
                         "description": "Computational intensity (1-10). Higher = more CPU cycles per iteration.",
                     },
                 },
@@ -494,8 +515,8 @@ CPU_LOAD_WORK_SPEC = {
                 "properties": {
                     "iterations": {
                         "type": "integer",
-                        "minimum": 1000,
-                        "maximum": 10000000,
+                        "minimum": CPU_WORK_MIN_ITERATIONS,
+                        "maximum": CPU_WORK_MAX_ITERATIONS,
                         "default": 100000,
                         "description": "Number of CPU iterations to perform (higher = longer)",
                     },
