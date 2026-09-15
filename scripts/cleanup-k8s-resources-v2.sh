@@ -9,8 +9,6 @@
 #   2. If cluster is unhealthy/gone: Use AWS tags (fallback cleanup)
 #   3. Verify all resources are deleted before returning
 #
-# Note: Shared functions available in helpers/aws-resource-lib.sh for future refactoring
-#
 # Usage: ./cleanup-k8s-resources-v2.sh [cluster-name] [aws-region] [dry-run]
 # Example: ./cleanup-k8s-resources-v2.sh staging eu-west-2
 # Dry-run: ./cleanup-k8s-resources-v2.sh staging eu-west-2 dry-run

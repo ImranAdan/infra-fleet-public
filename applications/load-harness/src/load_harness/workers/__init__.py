@@ -1,14 +1,5 @@
-"""Worker module for load generation.
+"""Worker process targets for load generation.
 
-Workers run in separate processes to keep the Flask process responsive.
-Validation lives with the endpoints in load_harness_service; these are the
-process targets only.
+Import the targets from their modules directly; multiprocessing's spawn context
+pickles them by module path, so there is nothing for this package to re-export.
 """
-
-from load_harness.workers.cpu_worker import cpu_worker_target
-from load_harness.workers.memory_worker import memory_worker_target
-
-__all__ = [
-    "cpu_worker_target",
-    "memory_worker_target",
-]

@@ -3,7 +3,6 @@
 # READ-ONLY script to verify what resources would be cleaned up
 # This script does NOT delete anything - it only reports what it finds
 #
-# Note: Shared functions available in helpers/aws-resource-lib.sh for future refactoring
 #
 # Usage: ./verify-cleanup-resources.sh [cluster-name] [aws-region]
 # Example: ./verify-cleanup-resources.sh staging eu-west-2
