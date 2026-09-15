@@ -4,10 +4,13 @@ Each test here fails if one of the fixed defects comes back. They are grouped
 by the behaviour they protect, not by the module they touch.
 """
 
+import time
+
 import pytest
 from unittest.mock import MagicMock, patch
 
 from load_harness.app import create_app
+from load_harness.constants import LOGIN_LOCKOUT_SECONDS
 from load_harness.dashboard import routes as dashboard_routes
 from load_harness.load_harness_service import (
     _get_memory_limit_mb,
@@ -265,5 +268,20 @@ class TestAuthentication:
         client_with_auth.post("/ui/login", data={"api_key": "test-api-key-12345"})
 
         assert not dashboard_routes._login_failures
+
+        dashboard_routes._login_failures.clear()
+
+    def test_login_cache_drops_addresses_that_never_return(self):
+        """Failures from many one-off addresses must not grow the map forever."""
+        dashboard_routes._login_failures.clear()
+
+        # A burst of distinct addresses, all older than the lockout window.
+        stale = time.monotonic() - (LOGIN_LOCKOUT_SECONDS + 1)
+        for i in range(100):
+            dashboard_routes._login_failures[f"10.0.0.{i}"] = [stale]
+
+        dashboard_routes._record_login_failure("10.0.1.1")
+
+        assert list(dashboard_routes._login_failures) == ["10.0.1.1"]
 
         dashboard_routes._login_failures.clear()

@@ -71,9 +71,20 @@ def _login_blocked(client: str) -> bool:
 
 
 def _record_login_failure(client: str) -> None:
-    """Record a failed attempt against this client."""
+    """Record a failed attempt, dropping every entry that has aged out.
+
+    Prunes all clients, not just this one. _login_blocked only expires the
+    address in front of it, so addresses that fail once and never return would
+    otherwise sit here for the life of the process - and failures arriving from
+    many addresses would grow the map without bound. Pruning costs one pass
+    over a map that only failed logins can grow.
+    """
+    now = time.monotonic()
+    cutoff = now - LOGIN_LOCKOUT_SECONDS
     with _login_lock:
-        _login_failures.setdefault(client, []).append(time.monotonic())
+        for address in [a for a, times in _login_failures.items() if times[-1] <= cutoff]:
+            del _login_failures[address]
+        _login_failures.setdefault(client, []).append(now)
 
 
 def _clear_login_failures(client: str) -> None:

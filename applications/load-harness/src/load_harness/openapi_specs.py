@@ -5,6 +5,8 @@ OpenAPI/Swagger specifications for LoadHarness API endpoints.
 Each spec is a dictionary that can be used with flasgger's swag_from decorator.
 """
 
+from load_harness.constants import MEMORY_MAX_SIZE_MB
+
 # ---- Health Endpoints ----
 
 APP_INFO_SPEC = {
@@ -162,9 +164,14 @@ MEMORY_LOAD_START_SPEC = {
                     "size_mb": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 2048,
+                        "maximum": MEMORY_MAX_SIZE_MB,
                         "default": 50,
-                        "description": "Amount of memory to allocate (megabytes)",
+                        "description": (
+                            "Amount of memory to allocate (megabytes). This is the "
+                            "absolute cap; the effective maximum is derived from the "
+                            "container memory limit and is usually lower. "
+                            "GET /system/info reports it as memory_limit_mb."
+                        ),
                     },
                     "duration_seconds": {
                         "type": "integer",
@@ -309,9 +316,14 @@ MEMORY_LOAD_SPEC = {
                     "size_mb": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 2048,
+                        "maximum": MEMORY_MAX_SIZE_MB,
                         "default": 50,
-                        "description": "Amount of memory to allocate (megabytes)",
+                        "description": (
+                            "Amount of memory to allocate (megabytes). This is the "
+                            "absolute cap; the effective maximum is derived from the "
+                            "container memory limit and is usually lower. "
+                            "GET /system/info reports it as memory_limit_mb."
+                        ),
                     },
                     "duration_ms": {
                         "type": "integer",
