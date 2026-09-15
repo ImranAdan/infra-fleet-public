@@ -67,6 +67,13 @@ jobs:
           path: k8s/
           kubernetes-version: '1.35.0'
 
+      - name: Verify effective profile contracts
+        run: |
+          rendered="$RUNNER_TEMP/effective-profiles"
+          ./scripts/render-k8s-for-validation.sh "$rendered"
+          python -m pip install PyYAML==6.0.3 pytest==8.3.5 --quiet
+          FLEET_RENDER_DIR="$rendered" pytest tests/profiles/test_rendered.py -q -p no:cacheprovider
+
   # ---------------------------------------------------------------------------
   # Step 3: Kyverno Policy Validation
   # Enforces organizational policies (security, standards, best practices)

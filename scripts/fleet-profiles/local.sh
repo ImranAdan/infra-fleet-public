@@ -202,6 +202,15 @@ local_gateway_service() {
     -o jsonpath='{.items[0].metadata.name}'
 }
 
+local_wait_gateway() {
+  local deadline=$((SECONDS + 300))
+  until kctl get gateway fleet -n envoy-gateway-system >/dev/null 2>&1; do
+    [ "$SECONDS" -lt "$deadline" ] || fail 'Gateway was not created within 300s.' || return 1
+    sleep 3
+  done
+  kctl wait --for=condition=Programmed gateway/fleet -n envoy-gateway-system --timeout=5m
+}
+
 local_up() {
   local_revision "$1"
   if local_cluster_exists; then
@@ -225,7 +234,7 @@ local_up() {
   fctl reconcile source git fleet-local --timeout=5m
   fctl reconcile kustomization fleet-root --timeout=5m
   kctl wait --for=condition=Ready kustomization/infrastructure -n flux-system --timeout=15m
-  kctl wait --for=condition=Programmed gateway/fleet -n envoy-gateway-system --timeout=5m
+  local_wait_gateway
   local_configuration "$(local_gateway_service).envoy-gateway-system"
   fctl reconcile kustomization applications --with-source --timeout=15m
   kctl wait --for=condition=Ready kustomization/policies -n flux-system --timeout=5m
