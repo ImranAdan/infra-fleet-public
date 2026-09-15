@@ -26,7 +26,7 @@ def test_shared_workload_contract_is_preserved_in_both_profiles():
         assert "replicas" not in deployment["spec"]
         assert container["readinessProbe"]
         assert {entry["name"]: entry.get("value") for entry in container["env"]}["METRICS_BACKEND"] == "kubernetes"
-        one(resources, "ClusterPolicy", "require-rollout-capacity")
+        one(resources, "ValidatingPolicy", "require-rollout-capacity")
         one(resources, "PodMonitor", "load-harness")
 
 
@@ -39,8 +39,8 @@ def test_profiles_select_distinct_images_routing_and_registry_policies():
     assert aws_container["image"].startswith("123456789012.dkr.ecr.eu-west-2.amazonaws.com/")
     assert one(local, "Canary", "load-harness")["spec"]["provider"] == "gatewayapi:v1"
     assert one(aws, "Canary", "load-harness")["spec"]["provider"] == "nginx"
-    one(local, "ClusterPolicy", "require-local-images")
-    one(aws, "ClusterPolicy", "require-ecr-images")
+    one(local, "ValidatingPolicy", "require-local-images")
+    one(aws, "ValidatingPolicy", "require-ecr-images")
     assert not any(r.get("metadata", {}).get("name") == "require-ecr-images" for r in local)
     assert not any(r.get("metadata", {}).get("name") == "require-local-images" for r in aws)
 

@@ -16,16 +16,28 @@ on:
       - 'k8s/**'
       - 'policies/**'
       - 'tests/policies/**'
+      - 'tests/profiles/**'
       - 'scripts/render-profile.sh'
       - 'scripts/render-k8s-for-validation.sh'
+      - 'scripts/install-profile-tools.sh'
+      - '.github/actions/k8s-schema-validate/**'
+      - '.github/actions/kyverno-validate/**'
+      - '.github/actions/yaml-lint/**'
+      - '.github/workflows/k8s-manifest-validate.yml'
   push:
     branches: [main]
     paths:
       - 'k8s/**'
       - 'policies/**'
       - 'tests/policies/**'
+      - 'tests/profiles/**'
       - 'scripts/render-profile.sh'
       - 'scripts/render-k8s-for-validation.sh'
+      - 'scripts/install-profile-tools.sh'
+      - '.github/actions/k8s-schema-validate/**'
+      - '.github/actions/kyverno-validate/**'
+      - '.github/actions/yaml-lint/**'
+      - '.github/workflows/k8s-manifest-validate.yml'
 
 permissions:
   contents: read
@@ -95,13 +107,13 @@ jobs:
         with:
           profile: ${{ matrix.profile }}
 
-      - name: Test rollout policy regression cases
+      - name: Test policy regression cases
         run: |
           set -euo pipefail
-          /tmp/kyverno test tests/policies/rollout-capacity 2>&1 | tee "$RUNNER_TEMP/rollout-policy-tests.log"
+          /tmp/kyverno test tests/policies 2>&1 | tee "$RUNNER_TEMP/policy-tests.log"
           # The pinned CLI can exit zero on a malformed test definition.
-          if grep -q '^Test errors:' "$RUNNER_TEMP/rollout-policy-tests.log" ||
-             ! grep -Eq '^Test Summary: [1-9][0-9]* tests passed and 0 tests failed$' "$RUNNER_TEMP/rollout-policy-tests.log"; then
-            echo '::error::Rollout policy tests did not complete successfully.'
+          if grep -q '^Test errors:' "$RUNNER_TEMP/policy-tests.log" ||
+             ! grep -Eq '^Test Summary: [1-9][0-9]* tests passed and 0 tests failed$' "$RUNNER_TEMP/policy-tests.log"; then
+            echo '::error::Policy tests did not complete successfully.'
             exit 1
           fi

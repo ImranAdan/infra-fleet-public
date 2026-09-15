@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fleet-test-bad-latest-sidecar
+  namespace: applications
+spec:
+  containers:
+    - name: app
+      image: fleet-local-registry:5000/load-harness:git-fixture
+    - name: mutable-sidecar
+      image: fleet-local-registry:5000/load-harness:latest

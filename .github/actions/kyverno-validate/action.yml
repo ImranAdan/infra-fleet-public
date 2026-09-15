@@ -21,8 +21,8 @@ runs:
       run: |
         set -euo pipefail
         curl -fsSL --retry 3 -o /tmp/kyverno.tar.gz \
-          https://github.com/kyverno/kyverno/releases/download/v1.13.4/kyverno-cli_v1.13.4_linux_x86_64.tar.gz
-        echo "abd318dbb971ab6de2bbe3b7226f4a03230d5c9c651df8a29b6b5e085a55aeeb  /tmp/kyverno.tar.gz" | sha256sum --check
+          https://github.com/kyverno/kyverno/releases/download/v1.19.1/kyverno-cli_v1.19.1_linux_x86_64.tar.gz
+        echo "b38228f367fc0fdc2b08f4c83ea50ac5f16c60ff8d62d76a66157c33c47b70ae  /tmp/kyverno.tar.gz" | sha256sum --check
         tar -xzf /tmp/kyverno.tar.gz -C /tmp kyverno
 
     - name: Validate selected policies

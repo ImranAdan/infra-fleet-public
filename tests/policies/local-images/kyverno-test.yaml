@@ -1,0 +1,30 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: local-image-boundaries
+policies:
+  - ../../../policies/block-latest-tag.yaml
+  - ../../../k8s/profiles/local/policies/require-local-images.yaml
+resources:
+  - resources.yaml
+results:
+  - policy: block-latest-tag
+    isValidatingPolicy: true
+    resources: [local-images-good, local-images-bad-sidecar]
+    kind: Pod
+    result: pass
+  - policy: block-latest-tag
+    isValidatingPolicy: true
+    resources: [local-images-latest-sidecar]
+    kind: Pod
+    result: fail
+  - policy: require-local-images
+    isValidatingPolicy: true
+    resources: [local-images-good, local-images-latest-sidecar]
+    kind: Pod
+    result: pass
+  - policy: require-local-images
+    isValidatingPolicy: true
+    resources: [local-images-bad-sidecar]
+    kind: Pod
+    result: fail

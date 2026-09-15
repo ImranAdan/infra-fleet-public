@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fleet-test-bad-registry-sidecar
+  namespace: applications
+spec:
+  containers:
+    - name: app
+      image: fleet-local-registry:5000/load-harness:git-fixture
+    - name: unapproved-sidecar
+      image: ghcr.io/example/unapproved:v1.0.0

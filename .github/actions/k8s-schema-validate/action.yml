@@ -50,6 +50,7 @@ runs:
         ./scripts/render-k8s-for-validation.sh "$rendered_path"
         echo "Validating Kubernetes manifests against v$KUBERNETES_VERSION schemas..."
         /tmp/kubeconform \
+          -exit-on-error \
           -strict \
           -summary \
           -kubernetes-version "$KUBERNETES_VERSION" \

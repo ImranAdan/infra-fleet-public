@@ -1,10 +1,5 @@
-# --------------------------------------------------------------------------------------------------
-# Block Default Namespace Policy
-# Prevents deployments to the 'default' namespace to enforce explicit namespace usage.
-# This ensures all resources are organized into purpose-specific namespaces.
-# --------------------------------------------------------------------------------------------------
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: block-default-namespace
   annotations:
@@ -12,26 +7,27 @@ metadata:
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: medium
     policies.kyverno.io/description: >-
-      Kubernetes provides a default namespace for resources without an explicit namespace.
-      This policy blocks Pod creation in the default namespace to enforce proper
-      namespace organization and prevent accidental deployments.
+      Workloads must declare a purpose-specific namespace instead of using
+      the Kubernetes default namespace.
 spec:
-  validationFailureAction: Enforce
-  background: true
-  rules:
-    - name: block-default-namespace
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-                - Deployment
-                - StatefulSet
-                - DaemonSet
-                - Job
-                - CronJob
-      validate:
-        message: "Using the 'default' namespace is not allowed. Please specify a namespace."
-        pattern:
-          metadata:
-            namespace: "!default"
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets]
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [jobs, cronjobs]
+  validations:
+    - expression: object.metadata.namespace != 'default'
+      message: Using the default namespace is not allowed. Specify a purpose-specific namespace.

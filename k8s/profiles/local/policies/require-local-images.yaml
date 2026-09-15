@@ -1,20 +1,40 @@
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: require-local-images
+  annotations:
+    policies.kyverno.io/title: Require Local Application Images
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Every application, init and ephemeral container must use the registry
+      owned by the selected local fleet profile.
 spec:
-  validationFailureAction: Enforce
-  background: true
-  rules:
-    - name: require-designated-local-registry
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaces: [applications]
-      validate:
-        message: Harness images must come from the fleet local registry.
-        pattern:
-          spec:
-            containers:
-              - image: "fleet-local-registry:5000/load-harness:*"
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: true
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: applications-namespace
+      expression: object.metadata.namespace == 'applications'
+  variables:
+    - name: allContainers
+      expression: >-
+        object.spec.containers
+        + object.spec.?initContainers.orValue([])
+        + object.spec.?ephemeralContainers.orValue([])
+  validations:
+    - expression: >-
+        variables.allContainers.all(container,
+          container.image.startsWith('fleet-local-registry:5000/load-harness:') ||
+          container.image.startsWith('fleet-local-registry:5000/load-harness@sha256:'))
+      message: Every application container image must come from the fleet local registry.

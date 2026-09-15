@@ -3,12 +3,13 @@
 fleet_root=${fleet_root:?Local acceptance requires the fleet root}
 
 test_wait_phase() {
-  local expected=$1 timeout=$2 phase deadline
+  local expected=$1 timeout=$2 phase deadline started=false
   deadline=$((SECONDS + timeout))
   while [ "$SECONDS" -lt "$deadline" ]; do
     phase=$(kctl get canary load-harness -n applications -o jsonpath='{.status.phase}')
-    if [ "$phase" = "$expected" ]; then return 0; fi
-    if [ "$phase" = Failed ] && [ "$expected" != Failed ]; then
+    if [ "$phase" = Progressing ]; then started=true; fi
+    if [ "$started" = true ] && [ "$phase" = "$expected" ]; then return 0; fi
+    if [ "$started" = true ] && [ "$phase" = Failed ] && [ "$expected" != Failed ]; then
       kctl describe canary load-harness -n applications
       fail "Canary failed while waiting for $expected."; return 1
     fi
@@ -50,13 +51,14 @@ test_local() {
   [ "$(kctl get deployment load-harness -n applications -o jsonpath='{.metadata.labels.managed-by}')" = flux ]
 
   echo 'Checking Kyverno rejects unsafe rollout and registry requests.'
-  for fixture in bad-rollout bad-registry; do
+  for fixture in bad-rollout bad-registry bad-registry-sidecar bad-latest-sidecar; do
     if kctl apply --dry-run=server -f "$fleet_root/tests/profiles/admission/$fixture.yaml" > "$FLEET_STATE/admission.log" 2>&1; then
       fail "Kyverno accepted $fixture."; return 1
     fi
     case "$fixture" in
       bad-rollout) grep -q require-rollout-capacity "$FLEET_STATE/admission.log" ;;
-      bad-registry) grep -q require-local-images "$FLEET_STATE/admission.log" ;;
+      bad-registry|bad-registry-sidecar) grep -q require-local-images "$FLEET_STATE/admission.log" ;;
+      bad-latest-sidecar) grep -q block-latest-tag "$FLEET_STATE/admission.log" ;;
     esac
   done
 

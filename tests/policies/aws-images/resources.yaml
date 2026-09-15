@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aws-images-good
+  namespace: applications
+spec:
+  initContainers:
+    - name: prepare
+      image: 000000000000.dkr.ecr.us-east-1.amazonaws.com/load-harness:v1.0.0
+  containers:
+    - name: app
+      image: 000000000000.dkr.ecr.us-east-1.amazonaws.com/load-harness:v1.0.0
+    - name: helper
+      image: 000000000000.dkr.ecr.us-east-1.amazonaws.com/load-harness:v1.0.1
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aws-images-bad-sidecar
+  namespace: applications
+spec:
+  containers:
+    - name: app
+      image: 000000000000.dkr.ecr.us-east-1.amazonaws.com/load-harness:v1.0.0
+    - name: sidecar
+      image: ghcr.io/example/unapproved:v1.0.0
