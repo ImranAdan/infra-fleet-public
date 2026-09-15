@@ -3,12 +3,8 @@
 Tests PrometheusClient, MetricsProvider, and JobManager services.
 """
 
-import time
-import threading
-from multiprocessing import Event, Process
-from unittest.mock import MagicMock, patch, Mock
-
-import pytest
+from multiprocessing import Event
+from unittest.mock import MagicMock, patch
 
 from load_harness.constants import PROCESS_TERMINATE_TIMEOUT
 from load_harness.services import (
