@@ -9,8 +9,6 @@
 #   2. If cluster is unhealthy/gone: Use AWS tags (fallback cleanup)
 #   3. Verify all resources are deleted before returning
 #
-# Note: Shared functions available in helpers/aws-resource-lib.sh for future refactoring
-#
 # Usage: ./cleanup-k8s-resources-v2.sh [cluster-name] [aws-region] [dry-run]
 # Example: ./cleanup-k8s-resources-v2.sh staging eu-west-2
 # Dry-run: ./cleanup-k8s-resources-v2.sh staging eu-west-2 dry-run
@@ -46,8 +44,6 @@ echo ""
 
 # Track cleanup status
 CLEANUP_METHOD=""
-CLUSTER_EXISTS=false
-CLUSTER_HEALTHY=false
 
 # =============================================================================
 # Phase 1: Determine Cleanup Strategy
@@ -58,7 +54,6 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 # Check if cluster exists
 if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" &>/dev/null; then
-    CLUSTER_EXISTS=true
     CLUSTER_STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" --query 'cluster.status' --output text)
     echo "   ✅ Cluster found: $CLUSTER_NAME (Status: $CLUSTER_STATUS)"
 
@@ -66,7 +61,6 @@ if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" &>/dev
     export KUBECONFIG="/tmp/kubeconfig-cleanup-$$"
     if aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION" --kubeconfig "$KUBECONFIG" &>/dev/null; then
         if kubectl cluster-info &>/dev/null; then
-            CLUSTER_HEALTHY=true
             echo "   ✅ Cluster is healthy and accessible"
             CLEANUP_METHOD="kubernetes"
         else

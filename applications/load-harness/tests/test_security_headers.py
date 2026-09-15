@@ -11,20 +11,14 @@ import pytest
 class TestSecurityHeaders:
     """Test suite for security header middleware."""
 
-    def test_x_content_type_options(self, client):
-        """Verify X-Content-Type-Options is set to prevent MIME sniffing."""
-        response = client.get("/health")
-        assert response.headers.get("X-Content-Type-Options") == "nosniff"
-
-    def test_x_frame_options(self, client):
-        """Verify X-Frame-Options is set to prevent clickjacking."""
-        response = client.get("/health")
-        assert response.headers.get("X-Frame-Options") == "DENY"
-
-    def test_x_xss_protection(self, client):
-        """Verify X-XSS-Protection is set for legacy browser XSS protection."""
-        response = client.get("/health")
-        assert response.headers.get("X-XSS-Protection") == "1; mode=block"
+    @pytest.mark.parametrize("header,value", [
+        ("X-Content-Type-Options", "nosniff"),        # MIME sniffing
+        ("X-Frame-Options", "DENY"),                  # clickjacking
+        ("X-XSS-Protection", "1; mode=block"),        # legacy browser XSS filter
+    ])
+    def test_fixed_value_headers(self, client, header, value):
+        """Each header that must carry one exact value."""
+        assert client.get("/health").headers.get(header) == value
 
     def test_content_security_policy_present(self, client):
         """Verify Content-Security-Policy header is present."""

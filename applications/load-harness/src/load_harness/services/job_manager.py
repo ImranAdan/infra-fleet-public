@@ -69,14 +69,7 @@ class JobManager:
         )
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Get job by ID.
-
-        Args:
-            job_id: Job identifier
-
-        Returns:
-            Job dictionary or None if not found
-        """
+        """Get a job by id."""
         with self._lock:
             return self._jobs.get(job_id)
 
@@ -122,14 +115,7 @@ class JobManager:
             return jobs
 
     def stop_job(self, job_id: str) -> bool:
-        """Stop a specific job.
-
-        Args:
-            job_id: Job identifier
-
-        Returns:
-            True if job was stopped, False if not found
-        """
+        """Stop one job. False when no such job is registered."""
         with self._lock:
             job = self._jobs.get(job_id)
             if not job:
@@ -144,14 +130,7 @@ class JobManager:
         return True
 
     def stop_all_jobs(self, job_type: Optional[str] = None) -> List[str]:
-        """Stop all jobs, optionally filtered by type.
-
-        Args:
-            job_type: Optional filter by job type
-
-        Returns:
-            List of stopped job IDs
-        """
+        """Stop every running job, optionally of one type. Returns the ids stopped."""
         stopped = []
         detached = []
         with self._lock:
@@ -277,47 +256,29 @@ class JobManager:
             callback()
 
     def get_active_count(self, job_type: Optional[str] = None) -> int:
-        """Get count of currently running jobs.
-
-        Args:
-            job_type: Optional filter by job type
-
-        Returns:
-            Number of active jobs
-        """
+        """Count running jobs, optionally of one type."""
         jobs = self.get_all_jobs(job_type)
         return sum(1 for j in jobs if j.get("status") == "running")
 
+    @staticmethod
+    def _finished_age(job: Dict[str, Any], now: datetime) -> Optional[float]:
+        """Seconds since a job finished, or None if it is running or undated."""
+        finished_at = job.get("completed_at") or job.get("stopped_at")
+        if job.get("status") not in ("completed", "stopped") or not finished_at:
+            return None
+        try:
+            return (now - datetime.fromisoformat(finished_at.replace("Z", "+00:00"))).total_seconds()
+        except (ValueError, TypeError):
+            return None
+
     def clear_completed(self, max_age_seconds: float = 300) -> int:
-        """Remove completed jobs older than max_age.
-
-        Args:
-            max_age_seconds: Maximum age of completed jobs to keep
-
-        Returns:
-            Number of jobs removed
-        """
-        removed = 0
+        """Remove finished jobs older than max_age_seconds. Returns the count."""
         now = datetime.now(timezone.utc)
-
         with self._lock:
-            jobs_to_remove = []
-            for job_id, job in self._jobs.items():
-                if job.get("status") in ("completed", "stopped"):
-                    completed_at = job.get("completed_at") or job.get("stopped_at")
-                    if completed_at:
-                        try:
-                            completed_time = datetime.fromisoformat(
-                                completed_at.replace("Z", "+00:00")
-                            )
-                            age = (now - completed_time).total_seconds()
-                            if age > max_age_seconds:
-                                jobs_to_remove.append(job_id)
-                        except (ValueError, TypeError):
-                            pass
-
-            for job_id in jobs_to_remove:
+            stale = [
+                job_id for job_id, job in self._jobs.items()
+                if (age := self._finished_age(job, now)) is not None and age > max_age_seconds
+            ]
+            for job_id in stale:
                 del self._jobs[job_id]
-                removed += 1
-
-        return removed
+        return len(stale)

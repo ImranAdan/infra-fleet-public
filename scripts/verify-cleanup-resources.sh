@@ -3,7 +3,6 @@
 # READ-ONLY script to verify what resources would be cleaned up
 # This script does NOT delete anything - it only reports what it finds
 #
-# Note: Shared functions available in helpers/aws-resource-lib.sh for future refactoring
 #
 # Usage: ./verify-cleanup-resources.sh [cluster-name] [aws-region]
 # Example: ./verify-cleanup-resources.sh staging eu-west-2
@@ -33,11 +32,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "📊 Check 1: EKS Cluster Status"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-CLUSTER_EXISTS=false
 CLUSTER_HEALTHY=false
 
 if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" &>/dev/null; then
-    CLUSTER_EXISTS=true
     CLUSTER_STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" --query 'cluster.status' --output text)
     echo "   ✅ Cluster found: $CLUSTER_NAME"
     echo "   Status: $CLUSTER_STATUS"

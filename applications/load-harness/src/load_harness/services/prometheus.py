@@ -68,14 +68,7 @@ class PrometheusClient:
         return "http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090"
 
     def query_scalar(self, query: str) -> Optional[float]:
-        """Execute a PromQL query and return a single scalar value.
-
-        Args:
-            query: PromQL query string
-
-        Returns:
-            The scalar result value, or None if query failed or returned no data.
-        """
+        """Run a PromQL query. None when it fails or matches nothing, never raises."""
         try:
             response = requests.get(
                 f"{self.url}/api/v1/query",

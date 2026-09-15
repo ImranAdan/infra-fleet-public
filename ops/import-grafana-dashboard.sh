@@ -82,7 +82,6 @@ for DASHBOARD_PATH in "${DASHBOARDS[@]}"; do
     STATUS=$(echo "$RESPONSE" | jq -r '.status // "error"')
     if [ "$STATUS" = "success" ]; then
         DASHBOARD_URL=$(echo "$RESPONSE" | jq -r '.url')
-        DASHBOARD_UID=$(echo "$RESPONSE" | jq -r '.uid')
         echo -e "${GREEN}  ✓ Imported: $GRAFANA_URL$DASHBOARD_URL${NC}"
         IMPORTED=$((IMPORTED + 1))
     else

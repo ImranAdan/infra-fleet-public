@@ -5,7 +5,6 @@ Common fixtures (client, app, client_with_auth) are provided by conftest.py.
 Specialized fixtures (client_with_chaos) are defined locally.
 """
 
-import json
 
 import pytest
 from prometheus_client import REGISTRY
@@ -17,7 +16,7 @@ def test_app_info(client):
     response = client.get('/')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'message' in data
     assert 'timestamp' in data
     assert 'version' in data
@@ -29,7 +28,7 @@ def test_health_check(client):
     response = client.get('/health')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'status' in data
     assert 'timestamp' in data
     assert data['status'] == 'healthy'
@@ -39,7 +38,7 @@ def test_ready_check(client):
     response = client.get('/ready')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'status' in data
     assert 'timestamp' in data
     assert data['status'] == 'ready'
@@ -49,7 +48,7 @@ def test_version_endpoint(client):
     response = client.get('/version')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
 
     # Top-level fields
     assert 'version' in data
@@ -89,7 +88,7 @@ def test_system_info_endpoint(client):
     response = client.get('/system/info')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'cpu_cores' in data
     assert 'cpu_cores_physical' in data
     assert 'memory_total_mb' in data
@@ -119,11 +118,10 @@ def test_memory_load_endpoint(client):
         'duration_seconds': 5
     }
     response = client.post('/load/memory',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'started'
     assert 'job_id' in data
     assert data['job_id'].startswith('mem_')
@@ -134,8 +132,7 @@ def test_memory_load_endpoint(client):
     # Clean up - stop the worker
     stop_payload = {'job_id': data['job_id']}
     client.post('/load/memory/stop',
-                data=json.dumps(stop_payload),
-                content_type='application/json')
+                json=stop_payload)
 
 
 def test_memory_load_status_endpoint(client):
@@ -143,7 +140,7 @@ def test_memory_load_status_endpoint(client):
     response = client.get('/load/memory/status')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'active_jobs' in data
     assert 'total_jobs' in data
     assert 'jobs' in data
@@ -155,18 +152,16 @@ def test_memory_load_stop_endpoint(client):
     # First start a job
     start_payload = {'size_mb': 10, 'duration_seconds': 30}
     start_response = client.post('/load/memory',
-                                 data=json.dumps(start_payload),
-                                 content_type='application/json')
-    job_id = json.loads(start_response.data)['job_id']
+                                 json=start_payload)
+    job_id = start_response.get_json()['job_id']
 
     # Stop the job
     stop_payload = {'job_id': job_id}
     response = client.post('/load/memory/stop',
-                           data=json.dumps(stop_payload),
-                           content_type='application/json')
+                           json=stop_payload)
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'stopped'
     assert job_id in data['stopped_jobs']
 
@@ -175,11 +170,10 @@ def test_memory_load_invalid_size(client):
     """Test memory load endpoint rejects invalid size."""
     payload = {'size_mb': 3000, 'duration_seconds': 5}  # Too large (over 2048MB limit)
     response = client.post('/load/memory',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 400
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -187,11 +181,10 @@ def test_memory_load_invalid_duration(client):
     """Test memory load endpoint rejects invalid duration."""
     payload = {'size_mb': 10, 'duration_seconds': 400}  # Too long (over 300s limit)
     response = client.post('/load/memory',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 400
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -199,11 +192,10 @@ def test_memory_load_invalid_duration_too_short(client):
     """Test memory load endpoint rejects too short duration."""
     payload = {'size_mb': 10, 'duration_seconds': 2}  # Too short (under 5s limit)
     response = client.post('/load/memory',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 400
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -211,30 +203,27 @@ def test_memory_load_default_values(client):
     """Test memory load endpoint uses defaults when parameters missing."""
     payload = {}  # Empty payload
     response = client.post('/load/memory',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'started'
     assert data['size_mb'] == 50  # Default
     assert data['duration_seconds'] == 30  # Default
 
     # Clean up
     client.post('/load/memory/stop',
-                data=json.dumps({'job_id': data['job_id']}),
-                content_type='application/json')
+                json={'job_id': data['job_id']})
 
 
 def test_memory_load_stop_nonexistent_job(client):
     """Test stopping a non-existent memory job returns 404."""
     stop_payload = {'job_id': 'mem_nonexistent'}
     response = client.post('/load/memory/stop',
-                           data=json.dumps(stop_payload),
-                           content_type='application/json')
+                           json=stop_payload)
     assert response.status_code == 404
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -247,11 +236,10 @@ def test_memory_load_sync_endpoint(client):
         'duration_ms': 100
     }
     response = client.post('/load/memory/sync',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'completed'
     assert data['requested_size_mb'] == 10
     assert data['actual_bytes_allocated'] == 10 * 1024 * 1024
@@ -271,11 +259,10 @@ def test_cpu_load_endpoint(client):
         'intensity': 3
     }
     response = client.post('/load/cpu',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'started'
     assert 'job_id' in data
     assert data['cores'] == 1
@@ -286,8 +273,7 @@ def test_cpu_load_endpoint(client):
     # Clean up - stop the workers
     stop_payload = {'job_id': data['job_id']}
     client.post('/load/cpu/stop',
-                data=json.dumps(stop_payload),
-                content_type='application/json')
+                json=stop_payload)
 
 
 def test_cpu_load_status_endpoint(client):
@@ -295,7 +281,7 @@ def test_cpu_load_status_endpoint(client):
     response = client.get('/load/cpu/status')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'active_jobs' in data
     assert 'total_jobs' in data
     assert 'jobs' in data
@@ -311,19 +297,17 @@ def test_cpu_load_stop_endpoint(client):
         'intensity': 3
     }
     start_response = client.post('/load/cpu',
-                                  data=json.dumps(start_payload),
-                                  content_type='application/json')
-    start_data = json.loads(start_response.data)
+                                  json=start_payload)
+    start_data = start_response.get_json()
     job_id = start_data['job_id']
 
     # Now stop it
     stop_payload = {'job_id': job_id}
     response = client.post('/load/cpu/stop',
-                           data=json.dumps(stop_payload),
-                           content_type='application/json')
+                           json=stop_payload)
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'stopped'
     assert job_id in data['stopped_jobs']
 
@@ -337,16 +321,14 @@ def test_cpu_load_stop_all(client):
         'intensity': 3
     }
     client.post('/load/cpu',
-                data=json.dumps(start_payload),
-                content_type='application/json')
+                json=start_payload)
 
     # Stop all jobs (no job_id specified)
     response = client.post('/load/cpu/stop',
-                           data=json.dumps({}),
-                           content_type='application/json')
+                           json={})
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'stopped'
 
 
@@ -354,11 +336,10 @@ def test_cpu_load_invalid_cores(client):
     """Test CPU load rejects invalid core count."""
     payload = {'cores': 20, 'duration_seconds': 10}  # Too many cores
     response = client.post('/load/cpu',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 400
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -366,11 +347,10 @@ def test_cpu_load_invalid_duration(client):
     """Test CPU load rejects invalid duration."""
     payload = {'cores': 1, 'duration_seconds': 1000}  # Too long (max 900)
     response = client.post('/load/cpu',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 400
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -378,11 +358,10 @@ def test_cpu_load_invalid_duration_too_short(client):
     """Test CPU load rejects duration that's too short."""
     payload = {'cores': 1, 'duration_seconds': 5}  # Too short (min 10)
     response = client.post('/load/cpu',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 400
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -390,11 +369,10 @@ def test_cpu_load_default_values(client):
     """Test CPU load uses defaults when parameters missing."""
     payload = {}  # Empty payload
     response = client.post('/load/cpu',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'started'
     assert data['cores'] == 1  # Default
     assert data['duration_seconds'] == 60  # Default
@@ -403,19 +381,17 @@ def test_cpu_load_default_values(client):
     # Clean up
     stop_payload = {'job_id': data['job_id']}
     client.post('/load/cpu/stop',
-                data=json.dumps(stop_payload),
-                content_type='application/json')
+                json=stop_payload)
 
 
 def test_cpu_load_stop_nonexistent_job(client):
     """Test stopping a non-existent job returns 404."""
     stop_payload = {'job_id': 'nonexistent_job_12345'}
     response = client.post('/load/cpu/stop',
-                           data=json.dumps(stop_payload),
-                           content_type='application/json')
+                           json=stop_payload)
     assert response.status_code == 404
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -436,7 +412,7 @@ def test_openapi_spec_endpoint(client):
     response = client.get('/apispec.json')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     # Verify it's a valid OpenAPI spec
     assert 'info' in data
     assert data['info']['title'] == 'LoadHarness API'
@@ -446,7 +422,7 @@ def test_openapi_spec_endpoint(client):
 def test_openapi_spec_contains_all_endpoints(client):
     """Test that OpenAPI spec documents all API endpoints."""
     response = client.get('/apispec.json')
-    data = json.loads(response.data)
+    data = response.get_json()
 
     paths = data.get('paths', {})
 
@@ -470,7 +446,7 @@ def test_openapi_spec_contains_all_endpoints(client):
 def test_openapi_spec_has_tags(client):
     """Test that OpenAPI spec has proper tag organization."""
     response = client.get('/apispec.json')
-    data = json.loads(response.data)
+    data = response.get_json()
 
     # Verify tags are present
     tags = [t['name'] for t in data.get('tags', [])]
@@ -485,11 +461,10 @@ def test_cpu_work_endpoint(client):
     """Test the synchronous CPU work endpoint."""
     payload = {'iterations': 10000}
     response = client.post('/load/cpu/work',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'completed'
     assert data['iterations'] == 10000
     assert 'duration_ms' in data
@@ -502,11 +477,10 @@ def test_cpu_work_default_iterations(client):
     """Test CPU work uses default iterations when not specified."""
     payload = {}
     response = client.post('/load/cpu/work',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['iterations'] == 100000  # Default
 
 
@@ -514,11 +488,10 @@ def test_cpu_work_invalid_iterations_too_low(client):
     """Test CPU work rejects iterations below minimum."""
     payload = {'iterations': 500}  # Below 1000 minimum
     response = client.post('/load/cpu/work',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 400
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -526,11 +499,10 @@ def test_cpu_work_invalid_iterations_too_high(client):
     """Test CPU work rejects iterations above maximum."""
     payload = {'iterations': 20000000}  # Above 10M maximum
     response = client.post('/load/cpu/work',
-                           data=json.dumps(payload),
-                           content_type='application/json')
+                           json=payload)
     assert response.status_code == 400
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'error' in data
 
 
@@ -543,7 +515,7 @@ def test_health_no_auth_required(client_with_auth):
     response = client_with_auth.get('/health')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'healthy'
 
 
@@ -552,7 +524,7 @@ def test_ready_no_auth_required(client_with_auth):
     response = client_with_auth.get('/ready')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'ready'
 
 
@@ -570,7 +542,7 @@ def test_protected_endpoint_requires_auth(client_with_auth):
     response = client_with_auth.get('/version')
     assert response.status_code == 401
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['error'] == 'Unauthorized'
     assert 'X-API-Key' in data['message']
 
@@ -580,7 +552,7 @@ def test_protected_endpoint_with_valid_key(client_with_auth):
     response = client_with_auth.get('/', headers={'X-API-Key': 'test-api-key-12345'})
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert 'message' in data
 
 
@@ -597,7 +569,7 @@ def test_protected_endpoint_with_invalid_key(client_with_auth):
     response = client_with_auth.get('/version', headers={'X-API-Key': 'wrong-key'})
     assert response.status_code == 401
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['error'] == 'Unauthorized'
 
 
@@ -622,16 +594,10 @@ def test_metrics_no_auth_required(client_with_auth):
     assert response.status_code == 200
 
 
-def test_apidocs_no_auth_required(client_with_auth):
-    """Test /apidocs endpoint is public (browser accessible)."""
-    response = client_with_auth.get('/apidocs')
-    assert response.status_code == 200
-
-
-def test_apispec_no_auth_required(client_with_auth):
-    """Test /apispec.json endpoint is public."""
-    response = client_with_auth.get('/apispec.json')
-    assert response.status_code == 200
+@pytest.mark.parametrize("path", ['/apidocs', '/apispec.json', '/ui/login'])
+def test_public_endpoints_need_no_auth(client_with_auth, path):
+    """Endpoints reachable without a key: docs, spec and the login page itself."""
+    assert client_with_auth.get(path).status_code == 200
 
 
 def test_ui_redirects_to_login(client_with_auth):
@@ -640,12 +606,6 @@ def test_ui_redirects_to_login(client_with_auth):
     # Should redirect to login page (302) not return 401
     assert response.status_code == 302
     assert '/ui/login' in response.location
-
-
-def test_login_page_accessible(client_with_auth):
-    """Test /ui/login is accessible without authentication."""
-    response = client_with_auth.get('/ui/login')
-    assert response.status_code == 200
 
 
 def test_login_with_valid_key(client_with_auth):
@@ -687,7 +647,7 @@ def test_chaos_triggers_500(client_with_chaos):
     response = client_with_chaos.get('/')
     assert response.status_code == 500
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['chaos'] is True
     assert 'Chaos injection triggered' in data['error']
     assert 'FAIL_RATE' in data['message']
@@ -698,7 +658,7 @@ def test_chaos_never_affects_health(client_with_chaos):
     response = client_with_chaos.get('/health')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'healthy'
 
 
@@ -707,7 +667,7 @@ def test_chaos_never_affects_ready(client_with_chaos):
     response = client_with_chaos.get('/ready')
     assert response.status_code == 200
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['status'] == 'ready'
 
 
@@ -754,7 +714,7 @@ def test_auth_before_chaos(client_with_auth_and_chaos):
     response = client_with_auth_and_chaos.get('/version')
     assert response.status_code == 401
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['error'] == 'Unauthorized'
 
 
@@ -766,5 +726,5 @@ def test_chaos_after_valid_auth(client_with_auth_and_chaos):
     )
     assert response.status_code == 500
 
-    data = json.loads(response.data)
+    data = response.get_json()
     assert data['chaos'] is True
