@@ -117,11 +117,10 @@ gh repo create my-infra-fleet --private --template ImranAdan/infra-fleet-public
 
 Use a private repository for your deployment configuration and operations.
 
-Then follow **[CONFIGURATION.md](CONFIGURATION.md)** — every value you need to
-supply, where each one comes from, and what you can skip. You need an AWS
-account and an HCP Terraform organisation; a first cluster build commonly takes
-25–40 minutes. A custom domain is optional; without one, port-forwarding reaches
-the application and Grafana.
+Start with the [local profile](docs/DEPLOYMENT-PROFILES.md) using Docker, or
+follow **[CONFIGURATION.md](CONFIGURATION.md)** for AWS staging. The AWS profile
+needs an AWS account and HCP Terraform organisation; a first cluster build
+commonly takes 25–40 minutes. A custom domain is optional.
 
 The sample application is meant to be replaced. Doing so requires preserving
 the Service, probe, metrics, image-automation, and canary contracts—not only
@@ -132,23 +131,36 @@ adding `/health` and `/metrics` endpoints. See
 ## Architecture
 
 ```mermaid
-flowchart LR
-  GitHub[Private GitHub copy] --> CI[GitHub Actions]
-  CI -->|OIDC| AWS[AWS staging resources]
-  CI -->|images| ECR[ECR]
-  HCP[HCP Terraform<br/>state and locks] -. local execution .- CI
-  GitHub --> Flux[Flux in EKS]
-  ECR --> Flux
-  Flux --> Platform[NGINX + Flagger +<br/>Prometheus + Grafana]
-  Platform --> App[Load Harness]
-  Users[Users] -->|optional DNS/TLS via NLB| Platform
+flowchart TB
+  Operator[Operator] --> Facade[./fleet --profile]
+  Repo[Private GitHub copy] --> CI[GitHub Actions]
+
+  Facade -->|local| LocalBootstrap[kind + local registry<br/>read-only Git source]
+  LocalBootstrap --> LocalFlux[Flux local cluster root]
+  LocalFlux --> LocalPlatform[Envoy Gateway + Flagger<br/>Kyverno + monitoring]
+
+  Facade -->|aws-staging| Workflows[Reviewed GitHub workflows]
+  Workflows -->|OIDC| AWS[EKS + AWS infrastructure]
+  Workflows --> ECR[ECR images]
+  HCP[HCP Terraform<br/>state and locks] --- Workflows
+  Repo --> AWSFlux[Flux AWS cluster root]
+  ECR --> AWSFlux
+  AWS --> AWSFlux
+  AWSFlux --> AWSPlatform[NGINX staging route + Flagger<br/>Kyverno + monitoring]
+
+  Shared[Shared application base<br/>and delivery contracts] --> LocalFlux
+  Shared --> AWSFlux
+  LocalPlatform --> App[Load Harness]
+  AWSPlatform --> App
 ```
 
-HCP Terraform stores state and locks; Terraform execution and AWS calls happen
-on the operator's machine or a GitHub-hosted runner.
+The facade is the profile boundary. Local commands do not invoke AWS or GitHub
+writes. HCP Terraform stores AWS state and locks; Terraform execution and AWS
+calls happen on the operator's machine or a GitHub-hosted runner.
 
 **Key Flows:**
-- **CI/CD**: Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux → Deploy
+- **Local**: Committed revision → local registry and Git source → Flux → kind
+- **AWS CI/CD**: Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux → EKS
 - **Progressive Delivery**: New version → Flagger canary → Traffic shifting → Metrics analysis → Promote/Rollback
 - **Observability**: Applications → Prometheus scrape → Grafana dashboards → DORA metrics
 
@@ -239,14 +251,16 @@ Automated certificate management:
 │       └── local-dev/              # Docker Compose dev environment
 │
 ├── k8s/                            # GitOps manifests
-│   ├── flux-system/                # Flux controllers + kustomizations
-│   ├── infrastructure/             # Helm releases, namespaces
+│   ├── clusters/                   # Explicit local and AWS Flux roots
+│   ├── profiles/                   # Provider-specific composition
+│   ├── flux-system/                # Generated Flux controllers + AWS bootstrap
+│   ├── infrastructure/             # Shared Helm releases and namespaces
 │   │   ├── cert-manager/           # TLS certificates
 │   │   ├── flagger/                # Progressive delivery
 │   │   ├── nginx-ingress-controller/
 │   │   └── observability/          # Prometheus, Grafana, Pushgateway
-│   └── applications/               # App deployments
-│       └── load-harness/           # Deployment, Service, Ingress, Canary, HPA
+│   └── applications/               # Shared application resources
+│       └── load-harness/           # Deployment, Service, Canary, HPA, policy
 │
 ├── policies/                       # Kyverno policies for CI validation
 ├── ops/                            # Operational scripts
