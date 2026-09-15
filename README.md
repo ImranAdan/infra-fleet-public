@@ -64,9 +64,10 @@ Open **http://localhost:8080/ui** and press a button — the dashboard drives
 real CPU and memory load, and you watch Prometheus and Grafana react to it live.
 
 That is the same application the cluster runs, with the same app-level metrics
-and dashboards. The cluster adds ingress metrics for canary analysis. If you
-like what you see, the rest of this repository is an inspectable staging
-implementation—not a production blueprint.
+and dashboards. Kubernetes adds GitOps reconciliation, policy enforcement,
+network isolation, autoscaling and canary delivery. If you like what you see,
+the rest of this repository is an inspectable staging implementation—not a
+production blueprint.
 
 ---
 
@@ -81,6 +82,29 @@ Fork this and you have a platform that does the following, on day one:
 | **Makes cost visible** | Spot instances, a slim Flux install, nginx ingress, and a manual teardown workflow for when you are not using it |
 | **Proves itself in CI** | Both profiles rendered and checked, local Flux/Kyverno/canary behaviour exercised, Terraform and images scanned, commits linted |
 | **Connects intent to improvement** | Infra Fleet Advisor evaluates declared positions against versioned repository evidence and proposes work for review |
+
+---
+
+## Current verification checkpoint
+
+The local profile has completed a full disposable-cluster acceptance cycle.
+Flux repaired deliberate drift, Kyverno rejected unsafe rollout and image
+changes, Calico blocked an unauthorized namespace, Prometheus discovered the
+application, and Flagger both promoted a healthy revision and rolled back a
+forced failure. The authenticated application UI and API, Grafana health, and
+the Prometheus target were also exercised through operator-facing commands.
+
+CI renders and validates both deployment profiles, applies each profile's
+admission policies, tests the application and container, and repeats the local
+Kubernetes acceptance path. AWS staging has static coverage here; it still
+requires an approved account-specific apply, rollout, rollback and destroy
+cycle before anyone treats that route as deployment evidence.
+
+The next review layer is the Advisor. It reads the merged repository revision,
+opens a report PR, and waits for a human decision. Merging that report can then
+publish eligible recommendations as fleet issues for separately selected fix
+PRs. See [connecting the advisor](docs/ADVISOR-INTEGRATION.md) for the exact
+handoff.
 
 ---
 
@@ -133,7 +157,7 @@ adding `/health` and `/metrics` endpoints. See
 ```mermaid
 flowchart TB
   Operator[Operator] --> Facade[./fleet --profile]
-  Repo[Private GitHub copy] --> CI[GitHub Actions]
+  Repo[Versioned fleet repository] --> CI[GitHub Actions]
 
   Facade -->|local| LocalBootstrap[kind + local registry<br/>read-only Git source]
   LocalBootstrap --> LocalFlux[Flux local cluster root]
@@ -152,6 +176,11 @@ flowchart TB
   Shared --> AWSFlux
   LocalPlatform --> App[Load Harness]
   AWSPlatform --> App
+
+  Advisor[Infra Fleet Advisor] -->|reads merged revision| Repo
+  Advisor --> ReportPR[Advisor report PR]
+  ReportPR -->|human approval| FleetIssues[Fleet issues]
+  FleetIssues -->|selected fixes| Repo
 ```
 
 The facade is the profile boundary. Local commands do not invoke AWS or GitHub
@@ -163,6 +192,7 @@ calls happen on the operator's machine or a GitHub-hosted runner.
 - **AWS CI/CD**: Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux → EKS
 - **Progressive Delivery**: New version → Flagger canary → Traffic shifting → Metrics analysis → Promote/Rollback
 - **Observability**: Applications → Prometheus scrape → Grafana dashboards → DORA metrics
+- **Advisor**: Merged fleet revision → report PR → human approval → eligible fleet issues
 
 See [docs/README.md](docs/README.md) for detailed architecture diagram.
 

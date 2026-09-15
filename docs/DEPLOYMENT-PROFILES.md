@@ -77,6 +77,20 @@ AWS keeps its current NGINX staging preview and related ingress metrics.
 Local uses Envoy Gateway and canary application metrics. This local profile does
 not certify AWS routing, IAM or production readiness.
 
+## Verification boundary
+
+The local profile has been exercised end to end with a real kind cluster. Its
+acceptance suite verifies Flux reconciliation and drift repair, Kyverno
+rejections, Calico isolation, Prometheus target discovery, healthy canary
+promotion and forced-failure rollback. Operator smoke tests cover application
+authentication, the UI, Grafana health and Prometheus.
+
+CI repeats the local Kubernetes acceptance path and renders, schema-checks and
+policy-checks both profiles. The AWS profile is deliberately limited to static
+validation until a configured private copy runs the reviewed cloud lifecycle.
+Local success is evidence for the shared contracts and local provider; it is
+not evidence that AWS resources were created or destroyed successfully.
+
 ## Layout and checks
 
 - `k8s/applications/`: shared application base, including hardened Gunicorn
