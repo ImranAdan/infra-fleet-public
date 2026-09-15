@@ -24,7 +24,7 @@ network; it does not publish the repository or create a GitHub deploy key.
 
 ```bash
 ./fleet render --profile local   # inspect effective resources; fixtures only
-./fleet setup --profile local    # check the required tools, prepare local state
+./fleet setup --profile local    # enforce the tool versions above, prepare local state
 ./fleet up --profile local
 ./fleet status --profile local
 ./fleet test --profile local
