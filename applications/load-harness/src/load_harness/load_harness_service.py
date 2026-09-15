@@ -115,6 +115,18 @@ def _get_memory_limit_mb() -> int:
     _get_available_cpu_cores derives the CPU count, keeping headroom for the
     web process itself.
 
+    This is a PER-JOB ceiling, not an aggregate one. It stops a single request
+    from exceeding the container limit; it does not stop several concurrent
+    jobs from summing past it. Measured in a 1Gi container: one 2000MB request
+    is rejected, but three concurrent 600MB requests - each individually valid -
+    still drove the cgroup to an OOM kill.
+
+    ponytail: closing that needs a memory reservation shared across gunicorn
+    workers, since each worker has its own JobManager and cannot see the others'
+    jobs. Deliberately not built here - it is real cross-process machinery, and
+    the per-job ceiling already removes the single-request kill that a
+    documented, in-range value could trigger.
+
     Returns:
         The lower of MEMORY_MAX_SIZE_MB and this job's share of the cgroup limit
     """

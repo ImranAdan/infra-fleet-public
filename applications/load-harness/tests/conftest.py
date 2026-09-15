@@ -26,6 +26,18 @@ def _clear_prometheus_registry():
 
 
 @pytest.fixture(autouse=True)
+def local_environment(monkeypatch):
+    """Pin ENVIRONMENT to local for every test.
+
+    create_app refuses to start without an API key when ENVIRONMENT is not
+    "local", so a stray ENVIRONMENT exported in the developer's shell or on a
+    CI runner would otherwise fail the whole suite at fixture setup. Tests that
+    need a different value patch it themselves for the duration.
+    """
+    monkeypatch.setenv("ENVIRONMENT", "local")
+
+
+@pytest.fixture(autouse=True)
 def clean_prometheus():
     """Automatically clean Prometheus registry before and after each test.
 
