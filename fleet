@@ -65,21 +65,10 @@ cd "$fleet_root"
 if [ "$action" = render ]; then
   exec "$fleet_root/scripts/render-profile.sh" "$profile"
 fi
-if [ "$profile" = aws-staging ]; then
-  case "$action" in
-    setup)
-      # Reads and plans by default; bootstrap-permanent.sh validates the
-      # adopter configuration and prints the AWS identity before any change.
-      if [ "$apply" = true ]; then
-        exec "$fleet_root/scripts/bootstrap-permanent.sh" --apply
-      fi
-      exec "$fleet_root/scripts/bootstrap-permanent.sh" plan ;;
-    up) exec gh workflow run rebuild-stack.yml --ref main ;;
-    down) exec gh workflow run nightly-destroy.yml --ref main --field 'confirm_destroy=destroy staging' ;;
-    status) exec gh run list --workflow rebuild-stack.yml --limit 5 ;;
-    *) echo "$action is available only for the local profile." >&2; exit 2 ;;
-  esac
-fi
-# Closed strategies: profile text cannot select a script, command or import.
-source "$fleet_root/scripts/fleet-profiles/local.sh"
-local_main "$action" "$revision" "$service"
+# Keep strategy selection closed: profile text never becomes a path, command or
+# import. Both modules expose the same profile_main boundary.
+case "$profile" in
+  local) source "$fleet_root/scripts/fleet-profiles/local.sh" ;;
+  aws-staging) source "$fleet_root/scripts/fleet-profiles/aws-staging.sh" ;;
+esac
+profile_main "$action" "$revision" "$service" "$apply"

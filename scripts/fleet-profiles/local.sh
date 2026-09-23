@@ -435,14 +435,13 @@ local_down() {
   echo 'Local cluster and its supporting containers stopped. Cached images and credentials retained.'
 }
 
-local_main() {
+profile_main() {
   local action=$1 revision=$2 service=$3
-  # setup is the phase that reports missing tools, so it cannot be gated on the
-  # check that assumes they are already there.
-  if [ "$action" = setup ]; then
-    local_setup
-    return
-  fi
+  # setup reports missing tools itself, so it cannot use the prerequisite gate
+  # that assumes those tools are already present.
+  case "$action" in
+    setup) local_setup; return ;;
+  esac
   local_prerequisites
   case "$action" in
     up) local_up "$revision" ;;
