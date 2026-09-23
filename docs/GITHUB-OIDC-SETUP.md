@@ -36,13 +36,14 @@ Pull-request subjects and arbitrary repositories or refs are not trusted.
 ## GitHub Environment boundary
 
 GitHub omits the source branch from an OIDC subject when a job uses an
-Environment. Restrict the `staging` Environment to the `main` branch and
-release tags matching `v*`; the IAM subject alone cannot enforce both the
-Environment and branch.
+Environment. AWS apply onboarding creates `staging` when absent and restricts
+it to the `main` branch and release tags matching `v*`; the IAM subject alone
+cannot enforce both the Environment and branch. Existing reviewers and wait
+timers are preserved.
 
-The repository secret `AWS_GITHUB_ACTIONS_ROLE_ARN` must contain the
-`github_actions_role_arn` Terraform output. Workflows request `id-token: write`
-only in jobs that need AWS.
+Setup writes the `github_actions_role_arn` Terraform output to the repository
+secret `AWS_GITHUB_ACTIONS_ROLE_ARN`. Workflows request `id-token: write` only
+in jobs that need AWS.
 
 ## Permission limitation
 

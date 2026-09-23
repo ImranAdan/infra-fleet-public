@@ -17,9 +17,10 @@ environment is not included.
 You need:
 
 - an AWS account and local administrator credentials for the one-time bootstrap;
-- Terraform 1.14, the AWS CLI, and Git;
+- Terraform 1.14, the AWS CLI, Git, and the GitHub CLI;
 - an HCP Terraform organisation on a plan that supports two workspaces;
-- a private GitHub repository created from this template; and
+- a private GitHub repository created from this template, on a plan that
+  supports Environments and deployment branches; and
 - optionally, a hostname managed in Cloudflare for public TLS ingress.
 
 The stack is not free. Read the illustrative estimate in
@@ -55,6 +56,10 @@ Authenticate the local Terraform CLI:
 terraform login
 ```
 
+Authenticate the target AWS account and GitHub repository through their normal
+CLI sessions before setup. The GitHub identity needs repository administration
+access so setup can configure Actions and the `staging` Environment.
+
 ## 3. Fill in the identifier file
 
 ```bash
@@ -72,53 +77,67 @@ TF_CLOUD_ORGANIZATION=YOUR_HCP_ORGANISATION
 TF_WORKSPACE_PERMANENT=infra-fleet-permanent
 TF_WORKSPACE_STAGING=infra-fleet-staging
 EKS_ADMIN_PRINCIPAL_ARNS_JSON='[]'
+APP_HOSTNAME=
+ACME_EMAIL=
 ```
 
 `EKS_ADMIN_PRINCIPAL_ARNS_JSON` is optional. Leave it as `[]` unless a local
 IAM role or user also needs `cluster-admin`. Prefer an IAM Identity Center role
-to a long-lived IAM user.
+to a long-lived IAM user. Set `APP_HOSTNAME` and `ACME_EMAIL` together only when
+you want the optional public TLS path.
 
-## 4. Bootstrap permanent AWS resources
+## 4. Review and apply onboarding
 
-The permanent stack creates ECR and the narrowly trusted GitHub Actions OIDC
-role. CI cannot create its own initial identity, so this one apply runs on your
-machine with your current AWS credentials.
-
-Review a plan first, then opt in to the apply:
+Plan mode validates `config.env`, the AWS identity, both HCP Terraform
+workspaces, the GitHub CLI session, and the exact target repository. It creates
+nothing:
 
 ```bash
-./scripts/bootstrap-permanent.sh
-./scripts/bootstrap-permanent.sh --apply
+./fleet setup --profile aws-staging
 ```
 
-The script prints `github_actions_role_arn` after a successful apply. It does
-not configure GitHub or persist AWS credentials.
+Review the Terraform plan, then opt in to the complete onboarding step:
+
+```bash
+./fleet setup --profile aws-staging --apply
+```
+
+Apply prompts without echo for an HCP Terraform API token, a repository-scoped
+Flux token with Contents read/write, and a Grafana administrator password. For
+non-interactive use, export `TF_API_TOKEN`, `FLUX_GITHUB_TOKEN`, and
+`GRAFANA_ADMIN_PASSWORD` first. The values are sent to GitHub through standard
+input and are not written to `config.env` or placed in command arguments.
+
+Setup creates the permanent ECR and OIDC foundation with the current AWS
+identity. It creates the `staging` GitHub Environment when absent, restricts it
+to `main` and release tags matching `v*`, then configures the required Actions
+secrets and variables. A repeat run preserves existing reviewers and wait
+timers. If an existing environment uses an incompatible branch-policy mode,
+setup stops instead of replacing its protection rules.
 
 If the AWS account already has GitHub's account-wide OIDC provider, the script
 stops before planning and prints the exact import command. Run that import,
 review the next plan carefully, and then rerun the script.
 
-## 5. Configure GitHub Actions
+## 5. Values managed by setup
 
-Under **Settings → Secrets and variables → Actions**, add these secrets:
+Setup writes these repository Actions secrets:
 
 | Secret | Required | Source |
 |---|---:|---|
-| `AWS_GITHUB_ACTIONS_ROLE_ARN` | yes | `github_actions_role_arn` from bootstrap |
-| `TF_API_TOKEN` | yes | HCP Terraform user or team token |
-| `TF_CLOUD_ORGANIZATION` | yes | your HCP Terraform organisation name |
-| `FLUX_GITHUB_TOKEN` | yes | fine-grained token scoped to this repository with Contents read/write |
-| `GRAFANA_ADMIN_PASSWORD` | yes | a unique password; it is written to a Kubernetes Secret |
-| `LOAD_HARNESS_API_KEY` | no | enables API-key protection for the sample app |
-| `CLOUDFLARE_API_TOKEN` | with automated DNS | Cloudflare token with Zone DNS edit |
-| `CLOUDFLARE_ZONE_ID` | with automated DNS | Cloudflare zone overview |
-| `RELEASE_PLEASE_APP_CLIENT_ID` | no | optional release GitHub App client ID |
-| `RELEASE_PLEASE_APP_PRIVATE_KEY` | no | matching private key |
+| `AWS_GITHUB_ACTIONS_ROLE_ARN` | yes | Terraform output from the permanent bootstrap |
+| `TF_API_TOKEN` | yes | prompted or supplied through the caller's environment |
+| `TF_CLOUD_ORGANIZATION` | yes | `config.env` |
+| `FLUX_GITHUB_TOKEN` | yes | prompted or supplied through the caller's environment |
+| `GRAFANA_ADMIN_PASSWORD` | yes | prompted or supplied through the caller's environment |
+| `LOAD_HARNESS_API_KEY` | no | caller's environment when present during apply |
+| `CLOUDFLARE_API_TOKEN` | with automated DNS | caller's environment when present during apply |
+| `CLOUDFLARE_ZONE_ID` | with automated DNS | caller's environment when present during apply |
 
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` must be present together.
 Do not use repository variables for secrets.
 
-Add these repository variables:
+Setup writes these repository variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -128,21 +147,24 @@ Add these repository variables:
 | `APP_HOSTNAME` | `app.example.invalid` | optional real hostname for TLS ingress |
 | `ACME_EMAIL` | `nobody@example.invalid` | Let's Encrypt contact; set with `APP_HOSTNAME` |
 
-Set `APP_HOSTNAME` and `ACME_EMAIL` together. If they are omitted, the sample
+`APP_HOSTNAME` and `ACME_EMAIL` come from `config.env` when set. If they are
+omitted, the sample
 application and Grafana remain available by port-forwarding, while public TLS
 ingress intentionally uses the non-routable `.invalid` hostname. If the two
 Cloudflare secrets are also present, the rebuild workflow creates or updates
 the hostname's CNAME automatically. You may manage the same DNS record outside
 Cloudflare instead.
 
-Create a GitHub Environment named `staging` and restrict deployments to `main`
-and release tags matching `v*`. The OIDC role trusts that exact environment and
-the configured deployment branch; it does not trust pull request subjects or
-arbitrary refs.
+Optional release automation App credentials remain a separate repository-owner
+choice; setup does not create or broaden a GitHub App.
 
 ## 6. Build the fleet
 
-Run **Actions → Rebuild Stack → Run workflow** from `main`.
+Start the reviewed workflow through the configured repository:
+
+```bash
+./fleet up --profile aws-staging
+```
 
 The workflow:
 
@@ -176,9 +198,8 @@ certificate issuance complete.
 
 - Infrastructure pull requests run formatting, validation, and Trivy without
   cloud credentials. They never assume the deployment role.
-- Infrastructure changes merged to `main` apply only when all three deployment
-  secrets are configured. With none, deployment skips successfully; a partial
-  configuration fails clearly.
+- Infrastructure changes merged to `main` apply only when the required
+  deployment settings are configured. A partial configuration fails clearly.
 - Release tags, and rebuilds, test and scan the sample image before publishing
   it to ECR. The public template performs the same checks but skips publishing.
 - `nightly-destroy.yml` is manual. Run it when you want to remove the staging

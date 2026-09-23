@@ -61,7 +61,10 @@ flowchart LR
     L --> K[kind + local registry<br/>read-only Git snapshot]
     K --> LF[Flux local cluster root]
 
-    A --> P[Permanent foundation<br/>plan or apply]
+    A --> OB[AWS onboarding coordinator]
+    OB --> V[Validate config + CLI sessions<br/>HCP workspaces + target repo]
+    OB --> P[Permanent OIDC + ECR<br/>plan or apply]
+    OB --> G[GitHub secrets, variables<br/>and staging Environment]
     A --> W[Reviewed GitHub workflows]
     W --> E[EKS + ECR + Flux AWS root]
 
@@ -78,6 +81,15 @@ Local setup installs exact, checksum-verified CLI versions into Git-common
 checkout state and later local actions prefer that directory on `PATH`. It does
 not mutate system packages or the caller's default Kubernetes context. Teardown
 retains the tool cache so a later setup can reuse verified artifacts.
+
+AWS setup treats `config.env` as the non-committed target declaration. Plan mode
+is read-only. Apply collects all required deployment values before mutation,
+establishes the reversible GitHub Environment boundary before creating AWS
+resources, applies the permanent OIDC/ECR stack, and sends required secret
+values to the configured repository over standard input. Existing Environment
+reviewers and wait timers are preserved; incompatible protection is reported
+instead of replaced. Later workflow dispatches name the configured repository
+explicitly.
 
 ## Consequences
 

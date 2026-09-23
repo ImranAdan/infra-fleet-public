@@ -11,9 +11,10 @@ revision and is subject to that environment's protection rules.
 | `local` | `local` | Ephemeral | Prove Flux, Kyverno, networking, monitoring, canary promotion and rollback on kind, then tear it down |
 | `aws-staging` | `staging` | Persistent until destroyed | Publish images, apply or rebuild EKS, and clean up or destroy staging |
 
-GitHub creates an unprotected environment when a workflow first references a
-name that does not exist. Repository administrators own any later protection
-rules, branch restrictions, variables and secrets.
+The AWS onboarding coordinator creates `staging` before its first deployment
+and restricts it to `main` and release tags matching `v*`. Repository
+administrators own required reviewers and wait timers. Local workflow dispatch
+creates `local` on first use unless the repository owner configures it earlier.
 
 ## Local final gate
 
@@ -47,10 +48,12 @@ making this workflow a universal required check.
 
 ## AWS staging protection
 
-Create `staging` before the first AWS deployment under **Settings →
-Environments → New environment**. Recommended protection:
+`./fleet setup --profile aws-staging --apply` creates `staging` when absent and
+adds the supported branch and tag policies. It never replaces an existing
+environment's reviewers or wait timer. If the existing environment uses an
+incompatible branch-policy mode, setup stops for manual review. Recommended
+additional protection:
 
-- Allow deployments only from `main` and release tags matching `v*`.
 - Add a required reviewer if another person can approve deployments.
 - Do not add a timer unless delayed staging changes are useful to you.
 

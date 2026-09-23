@@ -16,8 +16,8 @@ root, the supported commands are:
 
 ```bash
 cp config.example.env config.env
-./scripts/bootstrap-permanent.sh
-./scripts/bootstrap-permanent.sh --apply
+./fleet setup --profile aws-staging
+./fleet setup --profile aws-staging --apply
 ```
 
 The first command that talks to AWS uses the caller's local credentials. Later

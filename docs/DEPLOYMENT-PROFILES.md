@@ -68,22 +68,26 @@ does not commit to the working branch or change the AWS image version.
 
 ## AWS staging
 
-Complete [configuration](../CONFIGURATION.md) and the AWS onboarding steps first.
-These commands invoke workflows in the GitHub repository configured by the
-checkout; provisioning and teardown remain reviewed main-branch workflows.
+Complete [configuration](../CONFIGURATION.md) first. Plan mode reads and
+validates the selected AWS, HCP Terraform, and GitHub targets. Apply mode creates
+the permanent OIDC/ECR foundation and configures the named repository. Later
+commands always pass that repository explicitly to the GitHub CLI.
 
 ```bash
 ./fleet render --profile aws-staging
-./fleet setup --profile aws-staging    # validate config.env and the AWS session, plan the OIDC foundation
-./fleet setup --profile aws-staging --apply   # create it, after reviewing that plan
-./fleet up --profile aws-staging       # dispatch rebuild-stack.yml
+./fleet setup --profile aws-staging    # validate all targets and plan the OIDC foundation
+./fleet setup --profile aws-staging --apply   # apply it and configure GitHub
+./fleet up --profile aws-staging       # dispatch rebuild-stack.yml to the configured repo
 ./fleet status --profile aws-staging
 ./fleet down --profile aws-staging     # dispatch nightly-destroy.yml
 ```
 
-AWS creates billable resources. This implementation does not provision or
-destroy AWS during local verification. Existing `terraform-outputs` values are
-translated into the common `fleet-config` contract by the AWS profile.
+AWS creates billable resources. Apply collects required values before the first
+mutation, creates a missing `staging` Environment, and preserves protection on
+an existing one. Required secret values travel to `gh secret set` over standard
+input. Local verification uses fakes and does not provision or destroy AWS.
+Existing `terraform-outputs` values are translated into the common
+`fleet-config` contract by the AWS profile.
 
 AWS keeps its current NGINX staging preview and related ingress metrics.
 Local uses Envoy Gateway and canary application metrics. This local profile does
