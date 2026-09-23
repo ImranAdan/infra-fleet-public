@@ -86,21 +86,48 @@ fi
 export -n LOAD_HARNESS_API_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ZONE_ID 2>/dev/null || true
 
 environment_api="repos/$GITHUB_REPOSITORY/environments/$GITHUB_DEPLOYMENT_ENVIRONMENT"
+branch_policy_api="$environment_api/deployment-branch-policies"
+gh_error=$(mktemp)
+trap 'rm -f "$gh_error"' EXIT
+
+# Only a confirmed 404 means the Environment is absent. Any other failure stops
+# setup, because creating over an unreadable Environment would reset its
+# reviewers and wait timer.
 environment_exists=false
 if custom_policies=$(gh api "$environment_api" \
-  --jq '.deployment_branch_policy.custom_branch_policies // false' 2>/dev/null); then
+  --jq '.deployment_branch_policy.custom_branch_policies // false' 2>"$gh_error"); then
   environment_exists=true
   if [ "$custom_policies" != true ]; then
     echo "Existing GitHub Environment $GITHUB_DEPLOYMENT_ENVIRONMENT does not use custom branch policies." >&2
     echo 'Review its protection rules manually; setup will not replace them.' >&2
     exit 1
   fi
+elif ! grep -q 'HTTP 404' "$gh_error"; then
+  echo "Could not read GitHub Environment $GITHUB_DEPLOYMENT_ENVIRONMENT:" >&2
+  cat "$gh_error" >&2
+  exit 1
 fi
 
-branch_policy_api="$environment_api/deployment-branch-policies"
+# The OIDC role trusts the Environment subject, not a branch, so the
+# Environment's deployment policies are the ref boundary. Accept exactly the
+# main branch and v* tags; anything broader or mistyped is left to an
+# administrator rather than silently widened or masked.
+existing_policies=
+if [ "$environment_exists" = true ]; then
+  existing_policies=$(gh api "$branch_policy_api" \
+    --paginate --jq '.branch_policies[] | "\(.type // "branch") \(.name)"')
+  unexpected_policies=$(grep -Fvx -e 'branch main' -e 'tag v*' <<< "$existing_policies" || true)
+  if [ -n "$unexpected_policies" ]; then
+    echo "GitHub Environment $GITHUB_DEPLOYMENT_ENVIRONMENT admits refs other than branch main and tag v*:" >&2
+    echo "$unexpected_policies" >&2
+    echo 'Remove them manually; setup will not replace them.' >&2
+    exit 1
+  fi
+fi
+
 ensure_policy() {
   local name=$1 type=$2
-  if ! grep -Fqx "$name" <<< "$existing_policies"; then
+  if ! grep -Fqx "$type $name" <<< "$existing_policies"; then
     gh api --method POST "$branch_policy_api" \
       -f "name=$name" -f "type=$type" >/dev/null
   fi
@@ -122,8 +149,6 @@ if [ "$mode" = --apply ]; then
 }
 JSON
   fi
-  existing_policies=$(gh api "$branch_policy_api" \
-    --paginate --jq '.branch_policies[].name')
   ensure_policy main branch
   ensure_policy 'v*' tag
 fi
@@ -171,22 +196,32 @@ set_secret TF_CLOUD_ORGANIZATION
 set_secret FLUX_GITHUB_TOKEN
 set_secret GRAFANA_ADMIN_PASSWORD
 
+set_variable TF_WORKSPACE_PERMANENT "$TF_WORKSPACE_PERMANENT"
+set_variable TF_WORKSPACE_STAGING "$TF_WORKSPACE_STAGING"
+set_variable EKS_ADMIN_PRINCIPAL_ARNS_JSON "${EKS_ADMIN_PRINCIPAL_ARNS_JSON:-[]}"
+
+# Optional settings are reconciled, not only added: config.env is the source of
+# truth, so a value removed from it is removed from the repository too. Without
+# this, a retained APP_HOSTNAME would keep a public TLS/DNS path alive.
+existing_secrets=$(gh secret list --repo "$GITHUB_REPOSITORY" --json name --jq '.[].name')
+existing_variables=$(gh variable list --repo "$GITHUB_REPOSITORY" --json name --jq '.[].name')
 for optional_secret in \
   LOAD_HARNESS_API_KEY \
   CLOUDFLARE_API_TOKEN \
   CLOUDFLARE_ZONE_ID; do
   if [ -n "${!optional_secret:-}" ]; then
     set_secret "$optional_secret"
+  elif grep -Fqx "$optional_secret" <<< "$existing_secrets"; then
+    gh secret delete "$optional_secret" --repo "$GITHUB_REPOSITORY"
   fi
 done
-
-set_variable TF_WORKSPACE_PERMANENT "$TF_WORKSPACE_PERMANENT"
-set_variable TF_WORKSPACE_STAGING "$TF_WORKSPACE_STAGING"
-set_variable EKS_ADMIN_PRINCIPAL_ARNS_JSON "${EKS_ADMIN_PRINCIPAL_ARNS_JSON:-[]}"
-if [ -n "${APP_HOSTNAME:-}" ] || [ -n "${ACME_EMAIL:-}" ]; then
-  set_variable APP_HOSTNAME "$APP_HOSTNAME"
-  set_variable ACME_EMAIL "$ACME_EMAIL"
-fi
+for optional_variable in APP_HOSTNAME ACME_EMAIL; do
+  if [ -n "${!optional_variable:-}" ]; then
+    set_variable "$optional_variable" "${!optional_variable}"
+  elif grep -Fqx "$optional_variable" <<< "$existing_variables"; then
+    gh variable delete "$optional_variable" --repo "$GITHUB_REPOSITORY"
+  fi
+done
 
 echo "AWS staging onboarding is configured for $GITHUB_REPOSITORY."
 echo 'Next: ./fleet up --profile aws-staging'

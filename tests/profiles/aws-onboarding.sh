@@ -55,6 +55,10 @@ case "${1:-} ${2:-}" in
     printf 'gh secret %s bytes=%s\n' "$3" "${#value}" >> "$FLEET_TEST_CALLS" ;;
   'variable set')
     printf 'gh variable %s\n' "$3" >> "$FLEET_TEST_CALLS" ;;
+  'secret list'|'variable list')
+    printf '%s\n' ${FLEET_EXISTING_OPTIONALS:-} ;;
+  'secret delete'|'variable delete')
+    printf 'gh %s delete %s\n' "$1" "$3" >> "$FLEET_TEST_CALLS" ;;
   'api --method')
     cat >/dev/null || true
     printf 'gh api %s %s\n' "$3" "$4" >> "$FLEET_TEST_CALLS" ;;
@@ -64,13 +68,18 @@ case "${1:-} ${2:-}" in
       echo false
     elif [ "${FLEET_EXISTING_ENVIRONMENT:-false}" = true ]; then
       echo true
+    elif [ "${FLEET_ENVIRONMENT_API_ERROR:-false}" = true ]; then
+      echo 'gh: Server Error (HTTP 500)' >&2
+      exit 1
     else
+      echo 'gh: Not Found (HTTP 404)' >&2
       exit 1
     fi ;;
   'api repos/example/fleet/environments/staging/deployment-branch-policies')
     printf 'gh api GET %s\n' "$2" >> "$FLEET_TEST_CALLS"
     if [ "${FLEET_EXISTING_ENVIRONMENT:-false}" = true ]; then
-      printf 'main\nv*\n'
+      printf 'branch main\ntag v*\n'
+      [ -z "${FLEET_EXTRA_POLICY:-}" ] || printf '%s\n' "$FLEET_EXTRA_POLICY"
     fi ;;
   'api '*)
     printf 'gh api GET %s\n' "$2" >> "$FLEET_TEST_CALLS" ;;
@@ -157,6 +166,50 @@ if grep -q '^gh api POST ' "$scratch/calls"; then
 fi
 unset FLEET_EXISTING_ENVIRONMENT
 
+# Environment policies are the OIDC ref boundary. A broader or mistyped policy
+# stops setup before any mutation, in plan mode too.
+for extra in 'branch *' 'tag main'; do
+  : > "$scratch/calls"
+  export FLEET_EXISTING_ENVIRONMENT=true FLEET_EXTRA_POLICY=$extra
+  if "$root/fleet" setup --profile aws-staging > "$scratch/policy-output" 2>&1; then
+    echo "AWS setup accepted an unexpected Environment policy: $extra" >&2
+    exit 1
+  fi
+  grep -q 'admits refs other than branch main and tag v\*' "$scratch/policy-output"
+  if grep -Eq '^gh (secret|variable|api PUT|api POST)|^terraform ' "$scratch/calls"; then
+    echo 'AWS setup mutated or planned past an unexpected Environment policy.' >&2
+    exit 1
+  fi
+done
+unset FLEET_EXISTING_ENVIRONMENT FLEET_EXTRA_POLICY
+
+# Only a confirmed 404 creates the Environment; any other read failure stops.
+: > "$scratch/calls"
+export FLEET_ENVIRONMENT_API_ERROR=true
+if "$root/fleet" setup --profile aws-staging --apply > "$scratch/api-error-output" 2>&1; then
+  echo 'AWS setup continued after an Environment read failure.' >&2
+  exit 1
+fi
+grep -q 'HTTP 500' "$scratch/api-error-output"
+if grep -Eq '^gh (secret|variable|api PUT|api POST)' "$scratch/calls"; then
+  echo 'AWS setup mutated GitHub after an Environment read failure.' >&2
+  exit 1
+fi
+unset FLEET_ENVIRONMENT_API_ERROR
+
+# Optional settings removed from config.env are removed from the repository.
+: > "$scratch/calls"
+export FLEET_EXISTING_OPTIONALS='APP_HOSTNAME ACME_EMAIL CLOUDFLARE_API_TOKEN'
+"$root/fleet" setup --profile aws-staging --apply > /dev/null
+for stale in 'secret delete CLOUDFLARE_API_TOKEN' 'variable delete APP_HOSTNAME' 'variable delete ACME_EMAIL'; do
+  grep -q "^gh $stale$" "$scratch/calls" || { echo "AWS setup retained stale $stale." >&2; exit 1; }
+done
+if grep -q 'delete LOAD_HARNESS_API_KEY' "$scratch/calls"; then
+  echo 'AWS setup deleted an optional value that was never set.' >&2
+  exit 1
+fi
+unset FLEET_EXISTING_OPTIONALS
+
 # An existing Environment with a different branch-policy mode is owned by the
 # repository administrator. Setup refuses to replace it or proceed into AWS.
 : > "$scratch/calls"
@@ -175,6 +228,21 @@ if grep -q 'infrastructure/permanent apply' "$scratch/calls"; then
   exit 1
 fi
 unset FLEET_INCOMPATIBLE_ENVIRONMENT
+
+cat > "$scratch/bad-json.env" <<'EOF'
+GITHUB_REPOSITORY=example/fleet
+GITHUB_DEPLOYMENT_BRANCH=main
+GITHUB_DEPLOYMENT_ENVIRONMENT=staging
+TF_CLOUD_ORGANIZATION=example
+TF_WORKSPACE_PERMANENT=infra-fleet-permanent
+TF_WORKSPACE_STAGING=infra-fleet-staging
+EKS_ADMIN_PRINCIPAL_ARNS_JSON='[not-json]'
+EOF
+if CONFIG_FILE="$scratch/bad-json.env" "$root/fleet" setup --profile aws-staging > "$scratch/bad-json-output" 2>&1; then
+  echo 'AWS setup accepted a malformed EKS admin principal list.' >&2
+  exit 1
+fi
+grep -q 'JSON array of IAM ARN strings' "$scratch/bad-json-output"
 
 cat > "$scratch/invalid.env" <<'EOF'
 GITHUB_REPOSITORY=example/fleet

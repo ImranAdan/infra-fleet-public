@@ -61,10 +61,10 @@ flowchart LR
     L --> K[kind + local registry<br/>read-only Git snapshot]
     K --> LF[Flux local cluster root]
 
-    A --> O[AWS onboarding coordinator]
-    O --> V[Validate config + CLI sessions<br/>HCP workspaces + target repo]
-    O --> P[Permanent OIDC + ECR<br/>plan or apply]
-    O --> G[GitHub secrets, variables<br/>and staging Environment]
+    A --> OB[AWS onboarding coordinator]
+    OB --> V[Validate config + CLI sessions<br/>HCP workspaces + target repo]
+    OB --> P[Permanent OIDC + ECR<br/>plan or apply]
+    OB --> G[GitHub secrets, variables<br/>and staging Environment]
     A --> W[Reviewed GitHub workflows]
     W --> E[EKS + ECR + Flux AWS root]
 

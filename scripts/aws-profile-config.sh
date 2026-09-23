@@ -60,8 +60,12 @@ aws_profile_load_config() {
       return 1
     fi
   done
-  if [[ ! "${EKS_ADMIN_PRINCIPAL_ARNS_JSON:-[]}" =~ ^\[.*\]$ ]]; then
-    aws_profile_fail 'EKS_ADMIN_PRINCIPAL_ARNS_JSON must be a JSON array.'
+  # Terraform reads this as set(string); accept only a JSON array of IAM ARN
+  # strings so a malformed value fails here rather than mid-deployment.
+  local arn='"arn:aws[a-z-]*:iam::[0-9]{12}:[^"[:space:]]+"'
+  local arns="^\\[[[:space:]]*($arn([[:space:]]*,[[:space:]]*$arn)*)?[[:space:]]*\\]$"
+  if [[ ! "${EKS_ADMIN_PRINCIPAL_ARNS_JSON:-[]}" =~ $arns ]]; then
+    aws_profile_fail 'EKS_ADMIN_PRINCIPAL_ARNS_JSON must be a JSON array of IAM ARN strings.'
     return 1
   fi
 
