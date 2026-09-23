@@ -46,6 +46,9 @@ flowchart TB
     LocalFlux --> LocalPlatform[Envoy Gateway + Flagger<br/>Kyverno + monitoring]
 
     AWSStrategy --> Workflows[Reviewed GitHub workflows]
+    AWSStrategy --> Onboarding[Plan/apply onboarding]
+    Onboarding --> Foundation[OIDC role + ECR]
+    Onboarding --> RepoConfig[Repository settings +<br/>staging Environment]
     Workflows -->|OIDC| Terraform[HCP Terraform + AWS]
     Workflows --> ECR[ECR image registry]
     Terraform --> EKS[EKS cluster]
@@ -59,9 +62,11 @@ flowchart TB
 ```
 
 The facade accepts only the two named profiles and delegates to fixed strategy
-modules with a common entry point. Local and AWS share application and delivery
-contracts while keeping provisioning, credentials, routing, registry and
-deployment evidence explicit.
+modules with a common entry point. The AWS coordinator validates the declared
+account, workspaces, repository and Environment before apply; subsequent
+workflow dispatches name that repository explicitly. Local and AWS share
+application and delivery contracts while keeping provisioning, credentials,
+routing, registry and deployment evidence explicit.
 
 ### AWS topology detail
 

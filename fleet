@@ -43,8 +43,8 @@ Every profile supports the same three lifecycle phases: setup, up and down.
 Each is safe to repeat and reports its target before changing anything.
 
 setup --profile local checks the tools the local profile needs and creates its
-state directory. setup --profile aws-staging validates your configuration and
-AWS session and plans the OIDC foundation; it only reads until you add --apply.
+state directory. setup --profile aws-staging validates AWS, HCP Terraform and
+GitHub targets and plans the OIDC foundation; --apply configures the repository.
 
 Local up/sync use a committed Git snapshot and require a clean tracked checkout.
 AWS up/down dispatch the existing main-branch workflows; AWS resources cost money.

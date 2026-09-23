@@ -12,6 +12,16 @@ EOF
 chmod +x "$scratch/bin/gh"
 export FLEET_TEST_CALLS="$scratch/calls"
 export PATH="$scratch/bin:$PATH"
+cat > "$scratch/config.env" <<'EOF'
+GITHUB_REPOSITORY=example/fleet
+GITHUB_DEPLOYMENT_BRANCH=main
+GITHUB_DEPLOYMENT_ENVIRONMENT=staging
+TF_CLOUD_ORGANIZATION=example
+TF_WORKSPACE_PERMANENT=infra-fleet-permanent
+TF_WORKSPACE_STAGING=infra-fleet-staging
+EKS_ADMIN_PRINCIPAL_ARNS_JSON='[]'
+EOF
+export CONFIG_FILE="$scratch/config.env"
 for arguments in 'up --profile unsupported' 'up --profile ../aws-staging' 'wat --profile local' 'sync --profile aws-staging' 'up --profile aws-staging --revision abc' 'setup --profile unsupported' 'setup --profile ../local' 'up --profile local --apply' 'setup --profile local --apply' 'down --profile aws-staging --apply'; do
   read -r -a fixture <<< "$arguments"
   if "$root/fleet" "${fixture[@]}" > "$scratch/output" 2>&1; then
@@ -20,10 +30,10 @@ for arguments in 'up --profile unsupported' 'up --profile ../aws-staging' 'wat -
   [ ! -e "$scratch/calls" ] || { echo 'Invalid request reached GitHub.' >&2; exit 1; }
 done
 "$root/fleet" up --profile aws-staging
-printf '%s\n' workflow run rebuild-stack.yml --ref main > "$scratch/expected"
+printf '%s\n' workflow run rebuild-stack.yml --repo example/fleet --ref main > "$scratch/expected"
 cmp "$scratch/expected" "$scratch/calls"
 "$root/fleet" down --profile aws-staging
-printf '%s\n' workflow run nightly-destroy.yml --ref main --field 'confirm_destroy=destroy staging' > "$scratch/expected"
+printf '%s\n' workflow run nightly-destroy.yml --repo example/fleet --ref main --field 'confirm_destroy=destroy staging' > "$scratch/expected"
 cmp "$scratch/expected" "$scratch/calls"
 # setup is part of the fixed action surface for both profiles.
 "$root/fleet" --help > "$scratch/help"

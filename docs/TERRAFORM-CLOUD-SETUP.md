@@ -26,12 +26,13 @@ matching values in `config.env`.
 
 ## Authentication
 
-Run `terraform login` before the one-time local bootstrap. Store the resulting
-HCP token only in Terraform's local credentials file.
+Run `terraform login` before the read-only onboarding plan. Store that local
+session in Terraform's credentials file.
 
 For GitHub Actions, create a user or team API token with access to both
-workspaces and store it as the `TF_API_TOKEN` repository secret. Store the
-organisation name as `TF_CLOUD_ORGANIZATION`.
+workspaces. `./fleet setup --profile aws-staging --apply` prompts for it and
+writes it as the `TF_API_TOKEN` repository secret over standard input. The same
+setup writes the organisation name as `TF_CLOUD_ORGANIZATION`.
 
 AWS authentication is separate:
 

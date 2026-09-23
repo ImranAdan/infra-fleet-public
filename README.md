@@ -181,6 +181,9 @@ flowchart TB
   LocalFlux --> LocalPlatform[Envoy Gateway + Flagger<br/>Kyverno + monitoring]
 
   Facade -->|aws-staging| AWSStrategy[AWS staging strategy]
+  AWSStrategy --> Onboarding[Plan/apply onboarding<br/>explicit target repository]
+  Onboarding --> Foundation[OIDC role + ECR]
+  Onboarding --> RepoConfig[Actions settings +<br/>staging Environment]
   AWSStrategy --> Workflows[Reviewed GitHub workflows]
   Workflows -->|OIDC| AWS[EKS + AWS infrastructure]
   Workflows --> ECR[ECR images]
@@ -202,8 +205,10 @@ flowchart TB
 ```
 
 The facade is the profile boundary. Local commands do not invoke AWS or GitHub
-writes. HCP Terraform stores AWS state and locks; Terraform execution and AWS
-calls happen on the operator's machine or a GitHub-hosted runner.
+writes. AWS plan mode is read-only; apply binds the permanent OIDC foundation
+and repository settings to the target declared in `config.env`. HCP Terraform
+stores AWS state and locks; Terraform execution and AWS calls happen on the
+operator's machine or a GitHub-hosted runner.
 
 **Key Flows:**
 - **Local**: Committed revision → local registry and Git source → Flux → kind

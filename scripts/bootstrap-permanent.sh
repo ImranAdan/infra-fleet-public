@@ -3,46 +3,16 @@
 set -euo pipefail
 
 repository_root=$(git rev-parse --show-toplevel)
-config_file="${CONFIG_FILE:-$repository_root/config.env}"
 mode="${1:-plan}"
+# shellcheck source=scripts/aws-profile-config.sh
+source "$repository_root/scripts/aws-profile-config.sh"
 
 if [ "$mode" != "plan" ] && [ "$mode" != "--apply" ]; then
   echo "Usage: $0 [plan|--apply]" >&2
   exit 2
 fi
 
-if [ ! -f "$config_file" ]; then
-  echo "Missing $config_file. Copy config.example.env to config.env first." >&2
-  exit 1
-fi
-
-# config.env is an operator-owned shell environment file. It intentionally
-# contains identifiers only; credentials must come from the caller's session.
-set -a
-# shellcheck disable=SC1090
-source "$config_file"
-set +a
-
-required=(
-  GITHUB_REPOSITORY
-  GITHUB_DEPLOYMENT_BRANCH
-  GITHUB_DEPLOYMENT_ENVIRONMENT
-  TF_CLOUD_ORGANIZATION
-  TF_WORKSPACE_PERMANENT
-  TF_WORKSPACE_STAGING
-)
-
-for name in "${required[@]}"; do
-  if [ -z "${!name:-}" ] || [[ "${!name}" == *CHANGE_ME* ]]; then
-    echo "$name is unset or still contains CHANGE_ME in $config_file." >&2
-    exit 1
-  fi
-done
-
-if [[ ! "$GITHUB_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-  echo "GITHUB_REPOSITORY must use OWNER/REPOSITORY form." >&2
-  exit 1
-fi
+aws_profile_load_config "$repository_root"
 
 for command_name in aws terraform; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
