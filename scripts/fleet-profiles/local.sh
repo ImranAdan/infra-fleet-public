@@ -30,11 +30,13 @@ local_init_state() {
 }
 
 local_prerequisites() {
+  command -v git >/dev/null || fail 'Missing git; run ./fleet setup --profile local.' || return 1
+  local_init_state || return 1
+  export PATH="$FLEET_STATE/bin:$PATH"
   for binary in docker kind kubectl flux git openssl curl; do
-    command -v "$binary" >/dev/null || fail "Missing $binary; see docs/LOCAL-KUBERNETES.md." || return 1
+    command -v "$binary" >/dev/null || fail "Missing $binary; run ./fleet setup --profile local." || return 1
   done
   docker info >/dev/null
-  local_init_state || return 1
   mkdir -p "$FLEET_STATE"
   chmod 700 "$FLEET_STATE"
 }
@@ -79,6 +81,20 @@ local_setup() {
   echo "Profile: local"
   echo "Target:  kind cluster $FLEET_CLUSTER (context $FLEET_CONTEXT)"
   echo
+  for binary in docker git curl openssl tar; do
+    command -v "$binary" >/dev/null || missing+=("$binary")
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    fail "Install ${missing[*]} and run setup again; see docs/LOCAL-KUBERNETES.md."
+    return 1
+  fi
+  local_init_state || return 1
+  mkdir -p "$FLEET_STATE/bin"
+  chmod 700 "$FLEET_STATE" "$FLEET_STATE/bin"
+  echo 'Preparing checksum-verified kind, kubectl and Flux CLIs...'
+  "$fleet_root/scripts/install-profile-tools.sh" "$FLEET_STATE/bin" --local
+  export PATH="$FLEET_STATE/bin:$PATH"
+
   echo 'Required tools:'
   for binary in docker kind kubectl flux git openssl curl; do
     if ! path=$(command -v "$binary" 2>/dev/null); then
@@ -124,14 +140,8 @@ local_setup() {
     return 1
   fi
 
-  # Needs git, so it runs only after the scan above could report git missing.
-  local_init_state || return 1
-
-  # The only change setup makes, and it is idempotent.
-  mkdir -p "$FLEET_STATE"
-  chmod 700 "$FLEET_STATE"
-
   echo "State:   $FLEET_STATE"
+  echo "Tools:   $FLEET_STATE/bin"
   echo
   # Not a failure - a tool that changes its version output should not block
   # setup - but readiness is not claimed for something that was never confirmed.
@@ -432,7 +442,7 @@ local_down() {
       docker rm -f "$container" >/dev/null
     fi
   done
-  echo 'Local cluster and its supporting containers stopped. Cached images and credentials retained.'
+  echo 'Local cluster and its supporting containers stopped. Cached tools, images and credentials retained.'
 }
 
 profile_main() {
