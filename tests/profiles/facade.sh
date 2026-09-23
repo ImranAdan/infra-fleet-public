@@ -32,7 +32,16 @@ done
 "$root/fleet" up --profile aws-staging
 printf '%s\n' workflow run rebuild-stack.yml --repo example/fleet --ref main > "$scratch/expected"
 cmp "$scratch/expected" "$scratch/calls"
-"$root/fleet" down --profile aws-staging
+# Teardown needs the operator's confirmation; the script never supplies it.
+rm -f "$scratch/calls"
+for confirmation in '' 'destroy prod'; do
+  if FLEET_CONFIRM_DESTROY=$confirmation "$root/fleet" down --profile aws-staging < /dev/null > "$scratch/output" 2>&1; then
+    echo "AWS teardown dispatched without confirmation: '$confirmation'" >&2; exit 1
+  fi
+  grep -q 'Teardown target: example/fleet' "$scratch/output" || { echo 'AWS teardown did not report its target.' >&2; exit 1; }
+  [ ! -e "$scratch/calls" ] || { echo 'Unconfirmed teardown reached GitHub.' >&2; exit 1; }
+done
+FLEET_CONFIRM_DESTROY='destroy staging' "$root/fleet" down --profile aws-staging > /dev/null
 printf '%s\n' workflow run nightly-destroy.yml --repo example/fleet --ref main --field 'confirm_destroy=destroy staging' > "$scratch/expected"
 cmp "$scratch/expected" "$scratch/calls"
 # setup is part of the fixed action surface for both profiles.

@@ -79,13 +79,15 @@ commands always pass that repository explicitly to the GitHub CLI.
 ./fleet setup --profile aws-staging --apply   # apply it and configure GitHub
 ./fleet up --profile aws-staging       # dispatch rebuild-stack.yml to the configured repo
 ./fleet status --profile aws-staging
-./fleet down --profile aws-staging     # dispatch nightly-destroy.yml
+./fleet down --profile aws-staging     # show the target, confirm, dispatch nightly-destroy.yml
 ```
 
 AWS creates billable resources. Apply collects required values before the first
 mutation, creates a missing `staging` Environment, and preserves protection on
 an existing one. Required secret values travel to `gh secret set` over standard
-input. Local verification uses fakes and does not provision or destroy AWS.
+input. `down` prints its repository and Environment and dispatches only after
+the operator types `destroy staging`; unattended use must set
+`FLEET_CONFIRM_DESTROY` explicitly. Local verification uses fakes and does not provision or destroy AWS.
 Existing `terraform-outputs` values are translated into the common
 `fleet-config` contract by the AWS profile.
 
