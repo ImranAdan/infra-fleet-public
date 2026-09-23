@@ -48,6 +48,37 @@ teardown. AWS jobs continue to use the existing `staging` Environment because
 its name is bound into the OIDC trust policy. Renaming that environment requires
 a separately reviewed AWS trust migration.
 
+## Strategy boundary
+
+```mermaid
+flowchart LR
+    O[Operator] --> F[./fleet facade]
+    F --> S{Closed profile selection}
+    S -->|local| L[local.sh<br/>profile_main]
+    S -->|aws-staging| A[aws-staging.sh<br/>profile_main]
+
+    L --> T[Checksum-verified pinned CLIs<br/>.git/fleet/local/bin]
+    L --> K[kind + local registry<br/>read-only Git snapshot]
+    K --> LF[Flux local cluster root]
+
+    A --> P[Permanent foundation<br/>plan or apply]
+    A --> W[Reviewed GitHub workflows]
+    W --> E[EKS + ECR + Flux AWS root]
+
+    LF --> C[Shared applications and controls]
+    E --> C
+```
+
+The facade performs closed profile selection and sources one fixed module. Both
+modules expose the same `profile_main` interface; configuration cannot provide a
+module name or command. This keeps provider selection explicit while allowing
+the lifecycle contract to remain uniform.
+
+Local setup installs exact, checksum-verified CLI versions into Git-common
+checkout state and later local actions prefer that directory on `PATH`. It does
+not mutate system packages or the caller's default Kubernetes context. Teardown
+retains the tool cache so a later setup can reuse verified artifacts.
+
 ## Consequences
 
 Both profiles must build and pass profile-specific policies in CI. Kyverno
@@ -59,7 +90,10 @@ fault injection; probe-only traffic cannot prove automatic rollback.
 No facade action changes the caller's default kubeconfig or contacts AWS when
 the local profile is selected. Local teardown is limited to resources bearing
 this workspace's ownership record. Local state lives under `.git/fleet/local`
-and is shared by linked worktrees.
+and is shared by linked worktrees. The fixed strategy modules and their common
+entry point are part of the public lifecycle contract; a new profile requires a
+reviewed facade branch, strategy module, documentation, and profile-specific
+validation.
 
 Local acceptance cannot validate AWS IAM, EKS access, cloud load balancing,
 physical-node failure or cloud cost. The advisor remains a static repository

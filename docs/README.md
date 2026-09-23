@@ -4,8 +4,9 @@ Choose [local Kubernetes or AWS staging](DEPLOYMENT-PROFILES.md). The profiles
 share application resources and delivery controls; their provisioning,
 networking and registry restrictions are explicit.
 
-This is the documentation for **Infra Fleet**, a template for an AWS
-EKS platform and the sample application — the Harness — that runs on it.
+This is the documentation for **Infra Fleet**, a template for local Kubernetes
+or an AWS EKS platform and the sample application — the Harness — that runs on
+it.
 
 If you are adopting the template, start with
 [../CONFIGURATION.md](../CONFIGURATION.md). For repository review and
@@ -22,10 +23,50 @@ recommendation delivery, see [Advisor Integration](ADVISOR-INTEGRATION.md).
 
 ## Architecture
 
-The diagram below is authoritative for the implemented topology. The older PNG
-asset is retained only as project history; it shows an obsolete ALB path.
+The diagram below is authoritative for profile selection and the implemented
+local and AWS topology. The older PNG asset is retained only as project history;
+it shows an obsolete ALB path.
 
 ### Detailed Architecture Diagram
+
+```mermaid
+flowchart TB
+    Operator[Operator] --> Facade[./fleet facade]
+    Facade -->|local| LocalStrategy[Fixed local strategy]
+    Facade -->|aws-staging| AWSStrategy[Fixed AWS strategy]
+
+    Repo[Versioned repository] --> CI[Fast pull-request CI]
+    CI --> Render[Render, schema, policy,<br/>application and image checks]
+
+    LocalStrategy --> Tools[Pinned CLIs in checkout state]
+    LocalStrategy --> Kind[kind + loopback registry]
+    Repo --> LocalGit[Read-only committed Git snapshot]
+    LocalGit --> LocalFlux[Flux local root]
+    Kind --> LocalFlux
+    LocalFlux --> LocalPlatform[Envoy Gateway + Flagger<br/>Kyverno + monitoring]
+
+    AWSStrategy --> Workflows[Reviewed GitHub workflows]
+    Workflows -->|OIDC| Terraform[HCP Terraform + AWS]
+    Workflows --> ECR[ECR image registry]
+    Terraform --> EKS[EKS cluster]
+    Repo --> AWSFlux[Flux AWS root]
+    ECR --> AWSFlux
+    EKS --> AWSFlux
+    AWSFlux --> AWSPlatform[NGINX preview + Flagger<br/>Kyverno + monitoring]
+
+    LocalPlatform --> Shared[Shared application,<br/>rollout and observability contracts]
+    AWSPlatform --> Shared
+```
+
+The facade accepts only the two named profiles and delegates to fixed strategy
+modules with a common entry point. Local and AWS share application and delivery
+contracts while keeping provisioning, credentials, routing, registry and
+deployment evidence explicit.
+
+### AWS topology detail
+
+The following diagram preserves the existing AWS component detail. Its
+ingress-nginx route is a non-public preview pending the Gateway API migration.
 
 ```
                                     ┌─────────────────────────────────────────────────────┐
@@ -84,10 +125,12 @@ asset is retained only as project history; it shows an obsolete ALB path.
 
 | Flow | Path |
 |------|------|
-| **CI/CD** | Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux |
-| **GitOps** | Manifest change → Flux detects → Applies to cluster |
+| **Fast CI** | Pull request → render/test/scan → reviewed merge |
+| **Local GitOps** | Committed snapshot → read-only local Git source → Flux → kind |
+| **AWS CI/CD** | Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux |
+| **AWS GitOps** | Manifest change → Flux detects → applies to EKS |
 | **Progressive Delivery** | New version → Flagger canary → Metrics analysis → Promote/Rollback |
-| **User Traffic** | Users → Cloudflare → NLB → nginx-ingress → Application |
+| **User Traffic** | Loopback → Envoy Gateway → local application, or users → Cloudflare → NLB → AWS preview |
 | **Observability** | Apps → Prometheus scrape → Grafana dashboards |
 
 ---
@@ -153,6 +196,7 @@ review current AWS pricing before deployment.
 ### Design Decisions
 | Document | Description |
 |----------|-------------|
+| [Deployment Profiles DDR](DEPLOYMENT-PROFILES-DDR.md) | Local/AWS strategy boundary, shared contracts and deployment gates |
 | [Template Deployment Boundaries DDR](PUBLIC-TEMPLATE-BOUNDARY-DDR.md) | Template adoption and deployment architecture |
 | [Terraform Cloud EKS DDR](TERRAFORM-CLOUD-EKS-DDR.md) | Cluster access design |
 | [Multi-Environment Design](MULTI-ENVIRONMENT-DESIGN.md) | Future multi-env architecture |
