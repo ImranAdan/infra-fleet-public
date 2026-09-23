@@ -31,6 +31,10 @@ module "eks" {
   create_kms_key    = false
   encryption_config = null
 
+  # The module keeps control-plane logs for 90 days by default. Staging logs
+  # matter only while an environment is being debugged, so keep two weeks.
+  cloudwatch_log_group_retention_in_days = 14
+
   eks_managed_node_groups = {
     default = {
       instance_types = ["t3.large"] # Upgraded from t3.medium: 35 pods vs 17, 8GB RAM vs 4GB (required for HPA scaling)
