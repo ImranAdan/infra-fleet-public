@@ -13,10 +13,13 @@ are explicit profile resources under `k8s/profiles/` and `k8s/clusters/`.
 
 ## Local Kubernetes
 
-Requires Docker, kind 0.31.0+, kubectl 1.35+, Flux CLI 2.7.5+, Git, curl and
-OpenSSL. The pinned cluster is Kubernetes 1.35.0; allow Docker at least 8 GiB of
-memory. No AWS or GitHub write credentials are needed. Initial startup downloads
-controller images and Helm charts. The monitoring storage is ephemeral.
+Requires Docker, Git, curl, OpenSSL and a supported Linux or macOS amd64/arm64
+workstation. `setup` installs checksum-verified kind 0.31.0, kubectl 1.35.0 and
+Flux CLI 2.7.5 into checkout-owned state under `.git/fleet/local/bin`; it does
+not change system packages. The pinned cluster is Kubernetes 1.35.0; allow
+Docker at least 8 GiB of memory. No AWS or GitHub write credentials are needed.
+Initial startup downloads controller images and Helm charts. The monitoring
+storage is ephemeral.
 
 Commit application or manifest changes before deployment. The local source
 serves the committed snapshot through a read-only Git HTTP backend on the kind Docker
@@ -24,7 +27,7 @@ network; it does not publish the repository or create a GitHub deploy key.
 
 ```bash
 ./fleet render --profile local   # inspect effective resources; fixtures only
-./fleet setup --profile local    # enforce the tool versions above, prepare local state
+./fleet setup --profile local    # install pinned CLIs and prepare local state
 ./fleet up --profile local
 ./fleet status --profile local
 ./fleet test --profile local
@@ -56,7 +59,8 @@ After committing a change:
 `sync` builds that exact Git snapshot and updates only the local Git source and
 configuration. Flux then reconciles it. It never pushes to GitHub. Runtime state
 under `.git/fleet/local` is shared across linked worktrees; teardown retains
-cached registry data and local credentials. Compose volumes are separate.
+the pinned CLI cache, registry data and local credentials. Compose volumes are
+separate.
 
 `test` temporarily commits promotion and fault-injection snapshots into the
 local-only Git source, verifies outcomes, and restores the deployed source. It

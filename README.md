@@ -175,11 +175,13 @@ flowchart TB
   Operator[Operator] --> Facade[./fleet --profile]
   Repo[Versioned fleet repository] --> CI[GitHub Actions]
 
-  Facade -->|local| LocalBootstrap[kind + local registry<br/>read-only Git source]
+  Facade -->|local| LocalStrategy[Local strategy<br/>checkout-owned pinned CLIs]
+  LocalStrategy --> LocalBootstrap[kind + local registry<br/>read-only Git source]
   LocalBootstrap --> LocalFlux[Flux local cluster root]
   LocalFlux --> LocalPlatform[Envoy Gateway + Flagger<br/>Kyverno + monitoring]
 
-  Facade -->|aws-staging| Workflows[Reviewed GitHub workflows]
+  Facade -->|aws-staging| AWSStrategy[AWS staging strategy]
+  AWSStrategy --> Workflows[Reviewed GitHub workflows]
   Workflows -->|OIDC| AWS[EKS + AWS infrastructure]
   Workflows --> ECR[ECR images]
   HCP[HCP Terraform<br/>state and locks] --- Workflows
