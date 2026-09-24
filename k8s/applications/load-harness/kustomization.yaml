@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
-  - hpa.yaml
   - podmonitor.yaml
-  - networkpolicy.yaml
-  - canary.yaml
+  # The app's own Grafana dashboards travel with it.
+  - ../../../applications/load-harness/monitoring

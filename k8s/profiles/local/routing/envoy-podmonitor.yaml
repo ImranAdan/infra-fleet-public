@@ -1,0 +1,16 @@
+# Envoy proxy request metrics: the app-agnostic golden signals that canary
+# analysis and the platform dashboard read.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-proxy
+  namespace: envoy-gateway-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: proxy
+      app.kubernetes.io/managed-by: envoy-gateway
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 15s

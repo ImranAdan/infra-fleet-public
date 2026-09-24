@@ -1,20 +1,20 @@
 # --------------------------------------------------------------------------------------------------
-# Horizontal Pod Autoscaler for load-harness
+# Horizontal Pod Autoscaler for ${APP_NAME}
 # Automatically scales pods based on CPU utilization
 # --------------------------------------------------------------------------------------------------
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: load-harness
+  name: ${APP_NAME}
   namespace: applications
   labels:
-    app: load-harness
+    app: ${APP_NAME}
     managed-by: flux
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: load-harness
+    name: ${APP_NAME}
 
   # Replica limits
   # - minReplicas: Normal operating state

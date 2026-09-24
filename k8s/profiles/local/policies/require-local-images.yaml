@@ -35,6 +35,5 @@ spec:
   validations:
     - expression: >-
         variables.allContainers.all(container,
-          container.image.startsWith('fleet-local-registry:5000/load-harness:') ||
-          container.image.startsWith('fleet-local-registry:5000/load-harness@sha256:'))
+          container.image.startsWith('fleet-local-registry:5000/'))
       message: Every application container image must come from the fleet local registry.

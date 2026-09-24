@@ -43,3 +43,11 @@ def test_unknown_cookie_setting_fails(monkeypatch):
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "False")
     with pytest.raises(ValueError, match="SESSION_COOKIE_SECURE"):
         create_app()
+
+
+@pytest.mark.parametrize(("scheme", "secure"), [("http", False), ("https", True)])
+def test_public_scheme_decides_secure_cookies_in_a_cluster(monkeypatch, scheme, secure):
+    monkeypatch.setenv("ENVIRONMENT", "kind")
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.setenv("PUBLIC_SCHEME", scheme)
+    assert create_app({"API_KEY": "fixture-key"}).config["SESSION_COOKIE_SECURE"] is secure

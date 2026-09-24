@@ -78,9 +78,16 @@ def create_app(config_override: dict | None = None):
     cookie_secure = os.getenv("SESSION_COOKIE_SECURE")
     if cookie_secure is not None and cookie_secure not in ("true", "false"):
         raise ValueError("SESSION_COOKIE_SECURE must be true or false")
-    app.config["SESSION_COOKIE_SECURE"] = (
-        environment != "local" if cookie_secure is None else cookie_secure == "true"
-    )
+    public_scheme = os.getenv("PUBLIC_SCHEME")
+    if public_scheme is not None and public_scheme not in ("http", "https"):
+        raise ValueError("PUBLIC_SCHEME must be http or https")
+    if cookie_secure is not None:
+        app.config["SESSION_COOKIE_SECURE"] = cookie_secure == "true"
+    elif public_scheme is not None:
+        # The fleet says how the app is reached; a secure cookie over http is never sent.
+        app.config["SESSION_COOKIE_SECURE"] = public_scheme == "https"
+    else:
+        app.config["SESSION_COOKIE_SECURE"] = environment != "local"
 
     # Base config from environment
     app.config.from_mapping(
