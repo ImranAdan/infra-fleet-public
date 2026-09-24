@@ -17,7 +17,13 @@ concurrency:
 
 jobs:
   acceptance:
-    name: Flux, Kyverno and canary acceptance
+    # The platform names no app, so prove it runs more than one: the same
+    # cycle runs with the default app and with podinfo swapped in.
+    name: Acceptance (${{ matrix.app }})
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [load-harness, podinfo]
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment:
@@ -34,6 +40,7 @@ jobs:
           SOURCE_REF: ${{ github.ref }}
           SOURCE_SHA: ${{ github.sha }}
           TRIGGER: ${{ github.event_name }}
+          APP: ${{ matrix.app }}
         run: |
           {
             echo '### Local profile deployment'
@@ -41,6 +48,7 @@ jobs:
             printf -- '- Revision: [`%s`](https://github.com/%s/commit/%s)\n' "$SOURCE_SHA" "$GITHUB_REPOSITORY" "$SOURCE_SHA"
             printf -- '- Ref: `%s`\n' "$SOURCE_REF"
             printf -- '- Trigger: `%s`\n' "$TRIGGER"
+            printf -- '- Application: `%s`\n' "$APP"
             echo '- Lifecycle: create, verify, then tear down the ephemeral cluster'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -48,6 +56,18 @@ jobs:
         run: |
           ./scripts/install-profile-tools.sh "$RUNNER_TEMP/fleet-bin" --local
           echo "$RUNNER_TEMP/fleet-bin" >> "$GITHUB_PATH"
+
+      - name: Select the application
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          scripts/select-app.sh "$APP"
+          # The local profile deploys committed revisions only; this commit
+          # exists on the runner alone and is never pushed.
+          if ! git diff --quiet; then
+            git -c user.name='Local acceptance' -c user.email='local-acceptance@example.invalid' \
+              commit --quiet -am "chore: run $APP for acceptance"
+          fi
 
       - name: Start the local profile
         run: ./fleet up --profile local

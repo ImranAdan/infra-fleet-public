@@ -101,8 +101,8 @@ Pull-request CI renders and validates both deployment profiles, applies each
 profile's admission policies, and tests the application and container. The full
 local Kubernetes cycle is a separate `local` GitHub Environment deployment:
 run it once against a reviewed candidate revision rather than before and after
-every merge. A weekly run against `main` provides continuing integration
-confidence. AWS staging uses the existing protected `staging` Environment and
+every merge. A weekly run against `main`, once with Load Harness and once with
+podinfo swapped in, provides continuing integration confidence. AWS staging uses the existing protected `staging` Environment and
 still requires an approved account-specific apply, rollout, rollback and destroy
 cycle before anyone treats that route as deployment evidence.
 
