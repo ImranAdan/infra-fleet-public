@@ -77,13 +77,15 @@ TF_CLOUD_ORGANIZATION=YOUR_HCP_ORGANISATION
 TF_WORKSPACE_PERMANENT=infra-fleet-permanent
 TF_WORKSPACE_STAGING=infra-fleet-staging
 EKS_ADMIN_PRINCIPAL_ARNS_JSON='[]'
+COST_OWNER=infra-fleet
 APP_HOSTNAME=
 ACME_EMAIL=
 ```
 
 `EKS_ADMIN_PRINCIPAL_ARNS_JSON` is optional. Leave it as `[]` unless a local
 IAM role or user also needs `cluster-admin`. Prefer an IAM Identity Center role
-to a long-lived IAM user. Set `APP_HOSTNAME` and `ACME_EMAIL` together only when
+to a long-lived IAM user. `COST_OWNER` is the `Owner` cost-allocation tag both
+stacks apply to every taggable resource. Set `APP_HOSTNAME` and `ACME_EMAIL` together only when
 you want the optional public TLS path.
 
 ## 4. Review and apply onboarding
@@ -144,6 +146,7 @@ Setup writes these repository variables:
 | `TF_WORKSPACE_PERMANENT` | `infra-fleet-permanent` | permanent HCP workspace |
 | `TF_WORKSPACE_STAGING` | `infra-fleet-staging` | staging HCP workspace |
 | `EKS_ADMIN_PRINCIPAL_ARNS_JSON` | `[]` | JSON array passed to Terraform |
+| `COST_OWNER` | `infra-fleet` | `Owner` cost-allocation tag passed to both stacks |
 | `APP_HOSTNAME` | `app.example.invalid` | optional real hostname for TLS ingress |
 | `ACME_EMAIL` | `nobody@example.invalid` | Let's Encrypt contact; set with `APP_HOSTNAME` |
 

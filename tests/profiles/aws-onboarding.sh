@@ -138,7 +138,8 @@ done
 for variable in \
   TF_WORKSPACE_PERMANENT \
   TF_WORKSPACE_STAGING \
-  EKS_ADMIN_PRINCIPAL_ARNS_JSON; do
+  EKS_ADMIN_PRINCIPAL_ARNS_JSON \
+  COST_OWNER; do
   grep -q "^gh variable $variable$" "$scratch/calls" || {
     echo "AWS onboarding omitted $variable." >&2
     exit 1
