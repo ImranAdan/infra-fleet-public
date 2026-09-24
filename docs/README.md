@@ -83,7 +83,8 @@ review current AWS pricing before deployment.
 ### Observability
 | Document | Description |
 |----------|-------------|
-| [Monitoring Setup](MONITORING-SETUP.md) | Prometheus, Grafana, PodMonitors and ServiceMonitors |
+| [Monitoring Setup](MONITORING-SETUP.md) | Gateway and container signals, dashboards provisioned from Git |
+| [Application Contract](APPLICATION-CONTRACT.md) | What an app brings, what the platform provides, and how to swap it |
 | [DORA Metrics](DORA-METRICS.md) | Engineering metrics collection |
 
 ### CI/CD & Development

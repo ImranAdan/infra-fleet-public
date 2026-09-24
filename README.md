@@ -79,7 +79,8 @@ Fork this and you have a platform that does the following, on day one:
 | | |
 |---|---|
 | **Models staged delivery** | Choose local Kubernetes or AWS staging; Flux reconciles the selected profile and Flagger evaluates a canary. AWS routing remains a non-public preview |
-| **Exposes useful signals** | Prometheus, Grafana and an explicitly heuristic DORA-signal pipeline for deployment events, lead time and failures |
+| **Runs any app** | The platform names no application: Load Harness is the default, `scripts/select-app.sh podinfo` swaps in another, and CI proves every app can be selected |
+| **Exposes useful signals** | Gateway golden signals and a Fleet Application dashboard for whatever runs, provisioned from Git, plus an explicitly heuristic DORA-signal pipeline |
 | **Makes cost visible** | Spot instances, a slim Flux install, nginx ingress, and a manual teardown workflow for when you are not using it |
 | **Proves itself in CI** | Both profiles rendered and checked, local Flux/Kyverno/canary behaviour exercised, Terraform and images scanned, commits linted |
 | **Connects intent to improvement** | Infra Fleet Advisor evaluates declared positions against versioned repository evidence and proposes work for review |
@@ -92,7 +93,8 @@ The local profile has completed a full disposable-cluster acceptance cycle.
 Flux repaired deliberate drift, Kyverno rejected unsafe rollout and image
 changes, Calico blocked an unauthorized namespace, Prometheus discovered the
 application, and Flagger both promoted a healthy revision and rolled back a
-forced failure. The authenticated application UI and API, Grafana health, and
+forced failure. The same cycle passed with podinfo swapped in for Load Harness,
+with no platform change in between. The authenticated application UI and API, Grafana health, and
 the Prometheus target were also exercised through operator-facing commands.
 
 Pull-request CI renders and validates both deployment profiles, applies each
@@ -174,7 +176,8 @@ CI proves every app can be selected. See the
 flowchart LR
     Operator([Operator]) -->|"./fleet up"| Cluster
     Repo[("Fleet repository")] -->|Flux reconciles| Cluster["Kubernetes cluster<br/>local kind or AWS EKS"]
-    Cluster --> App["Load Harness<br/>canary delivery + monitoring"]
+    Contract["App contract<br/>k8s/fleet-app"] --> Cluster
+    Cluster --> App["The selected app<br/>Load Harness by default"]
     Repo -.->|reviewed nightly| Advisor["Infra Fleet Advisor"]
     Advisor -.->|approved findings| Repo
 ```
@@ -210,14 +213,15 @@ analysis:
 ```
 
 **What happens on deploy:**
-1. New version creates canary pods
+1. New version creates canary pods; a smoke test and a warm-up run first
 2. Traffic gradually shifts: 10% → 20% → 30% → 40% → 50%
-3. Prometheus metrics analyzed at each step
+3. Success rate and p99 latency are measured at the gateway at each step, so
+   any HTTP app can be analysed without exporting its own metrics
 4. Success → Promote to primary | Failure → Automatic rollback
 
-### Dashboard UI
+### Load Harness dashboard UI
 
-Web-based interface for load testing and monitoring:
+The default app's web interface for load testing and monitoring:
 
 - **Load Tests**: CPU, Memory, Distributed Cluster tests
 - **Live Metrics**: Real-time Prometheus integration
@@ -258,7 +262,8 @@ Automated certificate management:
 │   └── staging/                    # EKS cluster (ephemeral)
 │
 ├── applications/
-│   └── load-harness/               # Python Flask application
+│   ├── podinfo/                    # Second app: proves the swap
+│   └── load-harness/               # Default app: Python Flask load generator
 │       ├── src/load_harness/       # Application code
 │       │   ├── services/           # JobManager, Prometheus, Metrics providers
 │       │   ├── workers/            # CPU/Memory background workers
@@ -278,8 +283,11 @@ Automated certificate management:
 │   │   ├── flagger/                # Progressive delivery
 │   │   ├── nginx-ingress-controller/
 │   │   └── observability/          # Prometheus, Grafana, Pushgateway
-│   └── applications/               # Shared application resources
-│       └── load-harness/           # Deployment, Service, Canary, HPA, policy
+│   ├── fleet-app/                  # App contract: which app runs, port, paths
+│   └── applications/
+│       ├── platform/               # Canary, HPA, NetworkPolicy for any app
+│       ├── load-harness/           # Default app: Deployment, Service, contract
+│       └── podinfo/                # Second app: Deployment, Service, contract
 │
 ├── policies/                       # Kyverno policies for CI validation
 ├── ops/                            # Operational scripts
@@ -313,6 +321,7 @@ Automated certificate management:
 | Prometheus | Metrics collection |
 | Grafana | Dashboards and visualization |
 | Pushgateway | DORA metrics collection |
+| Envoy / ingress-nginx metrics | App-agnostic request rate, errors and latency |
 | PodMonitors / ServiceMonitors | Auto-discovery of scrape targets |
 
 ### CI/CD

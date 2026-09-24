@@ -1,397 +1,113 @@
 # Progressive Delivery with Flagger
 
+[Documentation index](README.md)
+
 > **Deployment preview:** the local profile uses Envoy Gateway. AWS staging
 > retains retired community `ingress-nginx`, which no longer receives security
-> fixes, so that route is a private preview. See
-> [../SECURITY.md](../SECURITY.md).
+> fixes, so that route is a private preview. See [../SECURITY.md](../SECURITY.md).
 
-**Status**: Implemented (2025-12-26)
-**Last Updated**: 2026-01-01
+Every new revision of the application reaches users gradually. Flagger shifts
+traffic to it in steps, measures it at the gateway, and promotes or rolls it
+back without a human. The canary is part of the platform, not the app: it is
+written once for whichever app [`k8s/fleet-app`](APPLICATION-CONTRACT.md) names.
 
-This document describes the progressive delivery setup using Flagger for automated canary deployments.
+## Flow
 
----
-
-## Overview
-
-Flagger is a progressive delivery controller that automates the promotion of canary deployments using metrics from Prometheus. When a new version of load-harness is deployed, Flagger:
-
-1. Creates a canary deployment alongside the primary (stable) deployment
-2. Gradually shifts traffic from primary to canary
-3. Analyzes Prometheus metrics at each step
-4. Automatically rolls back if metrics fail thresholds
-5. Promotes the canary to primary if all checks pass
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      CANARY DEPLOYMENT FLOW                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│   ┌──────────────┐    Image Change    ┌──────────────────┐      │
-│   │    GitHub    │ ────────────────── │   Flux Image     │      │
-│   │   Actions    │                    │   Automation     │      │
-│   └──────────────┘                    └────────┬─────────┘      │
-│                                                │                 │
-│                                                ▼                 │
-│                                       ┌──────────────────┐      │
-│                                       │   Deployment     │      │
-│                                       │  (load-harness)  │      │
-│                                       └────────┬─────────┘      │
-│                                                │                 │
-│                                                ▼                 │
-│   ┌──────────────────────────────────────────────────────┐      │
-│   │                     FLAGGER                           │      │
-│   │  ┌─────────────┐              ┌─────────────────┐    │      │
-│   │  │   PRIMARY   │ ◄── traffic ──│    CANARY      │    │      │
-│   │  │   (stable)  │   splitting   │   (new ver)    │    │      │
-│   │  └─────────────┘              └────────┬────────┘    │      │
-│   │                                        │             │      │
-│   │                        ┌───────────────┘             │      │
-│   │                        ▼                             │      │
-│   │              ┌─────────────────┐                     │      │
-│   │              │   PROMETHEUS    │                     │      │
-│   │              │   (metrics)     │                     │      │
-│   │              └────────┬────────┘                     │      │
-│   │                       │                              │      │
-│   │         success rate > 99%? ───────────┐             │      │
-│   │         latency p99 < 500ms?           │             │      │
-│   │                       │                │             │      │
-│   │                   YES │            NO  │             │      │
-│   │                       ▼                ▼             │      │
-│   │              ┌────────────┐    ┌────────────┐        │      │
-│   │              │  PROMOTE   │    │  ROLLBACK  │        │      │
-│   │              │  to primary│    │  to primary│        │      │
-│   │              └────────────┘    └────────────┘        │      │
-│   └──────────────────────────────────────────────────────┘      │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    Change["New revision<br/>Git or image tag"] --> Flux["Flux applies it"]
+    Flux --> Pre["Pre-rollout:<br/>smoke test, warm-up"]
+    Pre --> Step["Shift 10% more traffic"]
+    Step --> Gates{"At the gateway:<br/>success ≥ 99%<br/>p99 < 500 ms"}
+    Gates -->|pass, below 50%| Step
+    Gates -->|pass at 50%| Promote(["Promote"])
+    Gates -->|3 failed checks| Rollback(["Roll back"])
 ```
 
----
+## The canary
 
-## Components
+[`k8s/applications/platform/canary.yaml`](../k8s/applications/platform/canary.yaml)
+targets the Deployment and HPA named `${APP_NAME}`, which Flux substitutes from
+the app contract.
 
-### 1. Flagger Controller
+| Setting | Value |
+|---|---|
+| Interval | 30 s between checks |
+| Steps | 10% at a time, up to 50% |
+| Threshold | 3 failed checks roll back |
+| Gates | `workload-request-success-rate` ≥ 99%, `workload-request-duration` p99 < 500 ms, both over 1 minute |
 
-**Location**: `k8s/infrastructure/flagger/helmrelease.yaml`
+Webhooks, all run by `flagger-loadtester`:
 
-The Flagger controller runs in the `flux-system` namespace and watches for Canary resources.
+| Hook | When | What |
+|---|---|---|
+| `smoke-test` | Before any traffic shifts | `APP_HEALTH_PATH` on the canary Service directly |
+| `warm-up` | Before the first check | 30 s of `APP_LOAD_PATH` through the gateway, so the first 1-minute window has data |
+| `load-test` | Every step | 10 s at 10 req/s of `APP_LOAD_PATH` through the gateway |
 
-**Configuration**:
+Gateway requests use `hey -host ${APP_HOSTNAME}`. hey is a Go client and
+ignores `-H 'Host: …'`, so a Host header set that way never reaches the app's
+route: every request gets a 404 from the gateway itself.
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| `meshProvider` | Profile value | `gatewayapi:v1` locally; `nginx` in AWS staging |
-| `metricsServer` | `http://kube-prometheus-stack-prometheus.observability:9090` | Prometheus endpoint |
+## Gates are measured at the gateway
 
-### 2. Canary Resource
+The app needs no metrics of its own. Each profile ships its MetricTemplates
+under `k8s/profiles/<profile>/applications/`:
 
-**Location**: `k8s/applications/load-harness/canary.yaml`
+| Profile | Source | Notes |
+|---|---|---|
+| local | Envoy `envoy_cluster_upstream_rq*` for `httproute/<namespace>/<canary>/rule/*` | Envoy Gateway keeps primary and canary endpoints in one cluster per route rule, so the gates are route-wide. A failing canary still breaks them as its share of traffic rises. |
+| aws-staging | ingress-nginx `nginx_ingress_controller_*` for the app's Ingress | prometheus-operator relabels the app's namespace to `exported_namespace`. |
 
-The Canary CRD tells Flagger how to manage the load-harness deployment.
-
-**Configuration**:
-
-| Setting | Value | Description |
-|---------|-------|-------------|
-| `targetRef` | `Deployment/load-harness` | Deployment to manage |
-| `autoscalerRef` | `HPA/load-harness` | HPA for coordinated scaling |
-| `analysis.interval` | `30s` | Time between metric checks |
-| `analysis.stepWeight` | `10` | Traffic increment per step (%) |
-| `analysis.maxWeight` | `50` | Maximum canary traffic (%) |
-| `analysis.threshold` | `3` | Failed checks tolerated before rollback |
-
-### 3. Metrics
-
-Flagger uses profile-specific **custom MetricTemplates**. Local templates query
-application metrics from the PodMonitor. AWS templates query NGINX ingress
-metrics and account for prometheus-operator relabelling the application
-namespace to `exported_namespace`. The templates live under each profile's
-`applications/` directory.
-
-| Metric | Threshold | Template |
-|--------|-----------|----------|
-| `workload-request-success-rate` | > 99% | Local application or AWS NGINX success template |
-| `workload-request-duration` | p99 < 500ms | Local application or AWS NGINX latency template |
-
----
-
-## How Traffic Shifting Works
-
-Flagger delegates weighted routing to the selected profile: Envoy Gateway
-locally and NGINX in AWS staging. It also coordinates the canary and primary
-Deployment replica counts:
-
-1. **Initial state**: Primary receives all traffic and the canary has 0 replicas.
-2. **Analysis starts**: Flagger starts the canary and assigns it 10% route weight.
-3. **Passing checks**: The selected router advances weight in 10% increments.
-4. **Maximum analysis**: The canary receives 50% while the last checks run.
-5. **Promotion**: The tested revision becomes primary and the canary scales down.
-
-```
-Timeline:
-─────────────────────────────────────────────────────────────────────
-0:00   │ Primary: 100%  │ Canary: 0%    │ (new image detected)
-0:30   │ Primary: 90%   │ Canary: 10%   │ (metrics check: PASS)
-1:00   │ Primary: 80%   │ Canary: 20%   │ (metrics check: PASS)
-1:30   │ Primary: 70%   │ Canary: 30%   │ (metrics check: PASS)
-2:00   │ Primary: 60%   │ Canary: 40%   │ (metrics check: PASS)
-2:30   │ Primary: 50%   │ Canary: 50%   │ (metrics check: PASS × 3)
-3:00   │ Primary: 0%    │ Canary: 100%  │ (PROMOTED)
-─────────────────────────────────────────────────────────────────────
-```
-
----
-
-## Observing Canary Deployments
-
-### Check Canary Status
+## Try it
 
 ```bash
-# Get all canaries
-kubectl get canary -n applications
-
-# Detailed status
-kubectl describe canary load-harness -n applications
-
-# Watch in real-time
-kubectl get canary load-harness -n applications -w
+./fleet test --profile local
 ```
 
-### Status Values
+This proves a Git-delivered revision is **promoted**. It also proves a revision
+with the app's declared fault switch (`APP_FAULT_ENV`, for example
+`FAIL_RATE=1.0` for Load Harness) is **rolled back** while the primary keeps
+serving. Both changes are strategic-merge patches on a local-only snapshot:
+nothing is committed to your branch, and the app's own files are never edited.
 
-| Status | Description |
-|--------|-------------|
-| `Initialized` | Canary created, waiting for first deployment |
-| `Progressing` | Traffic shifting in progress |
-| `Promoting` | Metrics passed, promoting canary to primary |
-| `Succeeded` | Canary promoted successfully |
-| `Failed` | Metrics failed, rolled back |
-
-### View Flagger Logs
+To watch a release:
 
 ```bash
-# Flagger controller logs
-kubectl logs -n flux-system deploy/flagger -f
-
-# Filter for load-harness events
-kubectl logs -n flux-system deploy/flagger -f | grep load-harness
+kubectl get canary -n applications -w
+kubectl describe canary -n applications     # events: Advance, Halt, Promotion
 ```
 
-### Example Log Output
-
-```
-Initialization done! load-harness.applications
-New revision detected! Scaling up load-harness.applications
-Starting canary analysis for load-harness.applications
-Advance load-harness.applications canary weight 10
-Advance load-harness.applications canary weight 20
-Advance load-harness.applications canary weight 30
-Advance load-harness.applications canary weight 40
-Advance load-harness.applications canary weight 50
-Promotion completed! Scaling down load-harness.applications
-```
-
----
-
-## Testing Automatic Rollback
-
-Use the `FAIL_RATE` chaos injection feature to test rollback:
-
-### Step 1: Enable Chaos Injection
-
-Edit the deployment to add failures:
-
-```yaml
-# k8s/applications/load-harness/deployment.yaml
-env:
-  - name: FAIL_RATE
-    value: "0.3"  # 30% of requests will return 500
-```
-
-### Step 2: Push and Watch
-
-```bash
-# Commit and push the change
-git add k8s/applications/load-harness/deployment.yaml
-git commit -m "test: enable chaos injection for rollback testing"
-git push
-
-# Watch canary status
-kubectl get canary load-harness -n applications -w
-```
-
-### Step 3: Expected Behavior
-
-```
-Timeline with FAIL_RATE=0.3:
-─────────────────────────────────────────────────────────────────────
-0:00   │ Primary: 100%  │ Canary: 0%    │ (new image detected)
-0:30   │ Primary: 90%   │ Canary: 10%   │ (metrics check...)
-       │                │               │ success_rate=70% < 99% ❌
-1:00   │ Primary: 100%  │ Canary: 0%    │ (ROLLBACK)
-─────────────────────────────────────────────────────────────────────
-
-Flagger logs:
-Halt advancement load-harness.applications workload-request-success-rate 70.00 < 99
-Rolling back load-harness.applications failed checks threshold reached 1
-Canary failed! Scaling down load-harness.applications
-```
-
-### Step 4: Cleanup
-
-Revert the FAIL_RATE change:
-
-```yaml
-env:
-  - name: FAIL_RATE
-    value: "0.0"  # Disable chaos
-```
-
----
-
-## Prometheus Metrics
-
-Flagger queries these metrics from NGINX ingress metrics:
-
-### Success Rate
-
-```promql
-# Request success rate (non-5xx / total)
-sum(
-  rate(
-    nginx_ingress_controller_requests{
-      exported_namespace="applications",
-      ingress="load-harness",
-      status!~"5.."
-    }[1m]
-  )
-)
-/
-sum(
-  rate(
-    nginx_ingress_controller_requests{
-      exported_namespace="applications",
-      ingress="load-harness"
-    }[1m]
-  )
-) * 100
-```
-
-### Request Duration (p99)
-
-```promql
-# 99th percentile latency (ms)
-histogram_quantile(0.99,
-  sum(
-    rate(
-      nginx_ingress_controller_request_duration_seconds_bucket{
-        exported_namespace="applications",
-        ingress="load-harness"
-      }[1m]
-    )
-  ) by (le)
-) * 1000
-```
-
-### View in Prometheus
-
-```bash
-# Port-forward to Prometheus
-kubectl port-forward -n observability svc/kube-prometheus-stack-prometheus 9090:9090
-
-# Open http://localhost:9090 and run the queries above
-```
-
----
+| Phase | Meaning |
+|---|---|
+| `Initialized` | Primary created, waiting for a new revision |
+| `Progressing` | Shifting traffic and checking gates |
+| `Promoting` / `Finalising` | Gates passed; the canary becomes primary |
+| `Succeeded` | Promoted |
+| `Failed` | Rolled back to the previous primary |
 
 ## Troubleshooting
 
-### Canary Stuck in "Initialized"
+**`no values found for custom metric`.** No request reached the route in the
+last minute. Check that the load test reaches the app:
+`kubectl exec -n flux-system deploy/flagger-loadtester -- hey -n 20 -host localhost http://<gateway-service>.envoy-gateway-system/`
+should return 200s, not 404s.
 
-The deployment hasn't changed since Flagger was installed.
+**A healthy revision fails the latency gate.** Compare gateway p99 with the
+app's own timings from inside a pod. On a one-node lab, check the node first
+(`kubectl top node`, `kubectl top pods -A --sort-by=cpu`): a busy node adds
+latency to every request. A container at its CPU limit is throttled too; see
+`container_cpu_cfs_throttled_periods_total`.
 
-**Solution**: Make any change to the deployment (e.g., add an annotation) to trigger the first canary:
+**A sync leaves pods in `ImagePullBackOff`.** The revision, the app contract
+and `fleet-config` (the image tag) must change together. `./fleet sync` holds
+the applications layer until all three agree, and the first Flux layer of each
+profile depends on the root that applies `k8s/fleet-app`. If a sync was
+interrupted, run it again; `./fleet up` also clears a leftover hold.
 
-```bash
-kubectl annotate deployment load-harness -n applications \
-  flagger.app/trigger="$(date +%s)"
-```
+## Reference
 
-### Canary Fails Immediately
-
-Check if metrics are available:
-
-```bash
-# Verify the application PodMonitor is present
-kubectl get podmonitor -n applications
-
-# Check Prometheus targets
-# Port-forward and check Status > Targets
-```
-
-For AWS staging, also verify that traffic goes through NGINX with the correct
-`Host` header; direct service calls bypass ingress metrics. For local, verify
-that the primary and canary pods are `UP` Prometheus targets (see
-`k8s/applications/load-harness/canary.yaml`).
-
-### Canary Never Promotes
-
-Thresholds may be too strict or traffic is too low:
-
-```bash
-# Check current metrics
-kubectl port-forward -n observability svc/kube-prometheus-stack-prometheus 9090:9090
-# Run the PromQL queries above
-
-# Check Flagger analysis results
-kubectl describe canary load-harness -n applications
-```
-
-### View Flagger Events
-
-```bash
-kubectl get events -n applications --field-selector reason=Synced
-```
-
----
-
-## Configuration Reference
-
-### Canary Spec Fields
-
-| Field | Description | Default |
-|-------|-------------|---------|
-| `targetRef` | Deployment to manage | Required |
-| `autoscalerRef` | HPA for coordinated scaling | Optional |
-| `service.port` | Service port | Required |
-| `analysis.interval` | Time between checks | `1m` |
-| `analysis.threshold` | Failed checks tolerated before rollback | `3` |
-| `analysis.maxWeight` | Max canary traffic % | `50` |
-| `analysis.stepWeight` | Traffic increment % | `10` |
-| `analysis.metrics` | Metric thresholds | Required |
-
-### MetricTemplate Names
-
-| Name | Description |
-|------|-------------|
-| `nginx-request-success-rate` | Percentage of non-5xx responses |
-| `nginx-request-duration` | Request latency histogram (p99) |
-
----
-
-## Related Documentation
-
-- [Flagger Official Docs](https://docs.flagger.app/)
-- [MONITORING-SETUP.md](MONITORING-SETUP.md) - Prometheus configuration
-- [Load-Harness README](../applications/load-harness/README.md) - FAIL_RATE documentation
-
----
-
-## Changelog
-
-- **2025-12-26**: Initial implementation with Kubernetes native provider
+- [Flagger documentation](https://docs.flagger.app/)
+- [Application contract](APPLICATION-CONTRACT.md)
+- [Monitoring setup](MONITORING-SETUP.md)
+- [Canary deployments](CANARY-DEPLOYMENTS.md)

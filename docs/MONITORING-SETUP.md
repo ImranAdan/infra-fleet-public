@@ -1,248 +1,107 @@
 # Monitoring Setup Guide
 
-Guide to the observability stack shared by the local and AWS staging profiles.
+[Documentation index](README.md)
+
+The observability stack is shared by the local and AWS staging profiles and
+describes whichever application the fleet runs (see the
+[application contract](APPLICATION-CONTRACT.md)).
 
 ## Overview
 
-The platform uses **kube-prometheus-stack** (Helm chart v67.4.0) to provide:
+**kube-prometheus-stack** (chart 67.4.0) provides Prometheus, Grafana,
+kube-state-metrics and node-exporter. On top of it the platform adds:
 
-- **Prometheus**: Metrics collection and time-series database
-- **Grafana**: Dashboards and visualization
-- **kube-state-metrics**: Kubernetes object metrics
-- **node-exporter**: Node-level metrics (CPU, memory, disk)
-- **PodMonitors and ServiceMonitors**: Auto-discovery of workload metrics
+| Signal | Source | Needs anything from the app? |
+|---|---|---|
+| Request rate, errors, latency | The gateway: Envoy locally (`envoy-proxy` PodMonitor), ingress-nginx on AWS | No |
+| CPU, memory, restarts, pods, replicas | cAdvisor and kube-state-metrics | No |
+| App-level metrics | The app's own `PodMonitor`, if it ships one | Optional |
+| Delivery (DORA) | Pushgateway, fed by the delivery workflows on AWS | No |
 
-## Architecture
+The golden signals come from the gateway rather than the app, so Flagger's
+canary gates and the platform dashboard work for any HTTP service.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     observability namespace                  │
-│                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌────────────────┐  │
-│  │  Prometheus │────│   Grafana   │    │ kube-state-    │  │
-│  │   (scrape)  │    │ (visualize) │    │    metrics     │  │
-│  └──────┬──────┘    └─────────────┘    └────────────────┘  │
-│         │                                                   │
-│         │ PodMonitor                                        │
-│         ▼                                                   │
-└─────────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   applications namespace                     │
-│                                                             │
-│  ┌─────────────┐                                            │
-│  │ load-harness│──► /metrics (Prometheus format)            │
-│  │   :5000     │                                            │
-│  └─────────────┘                                            │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    Gateway["Gateway<br/>Envoy or ingress-nginx"] --> Prometheus[("Prometheus")]
+    Kubelet["cAdvisor and<br/>kube-state-metrics"] --> Prometheus
+    App["App /metrics<br/>(optional)"] -.-> Prometheus
+    Prometheus --> Grafana["Grafana"]
+    Prometheus --> Flagger["Flagger canary gates"]
 ```
 
 ## Access
 
-### Port forwarding
-
-Use the facade so it selects the active profile's namespace and service:
-
 ```bash
-./fleet access --profile local --service prometheus
-./fleet access --profile local --service grafana
+./fleet access --profile local --service grafana     # http://localhost:3000
+./fleet access --profile local --service prometheus  # http://localhost:9090
+./fleet credentials --profile local                 # Grafana user is admin
 ```
 
-Then access:
-- **Prometheus**: http://localhost:9090
-- **Grafana**: http://localhost:3000
+Locally, the bootstrap generates the Grafana password and keeps it across
+restarts. On AWS, the rebuild workflow writes the `GRAFANA_ADMIN_PASSWORD`
+Actions secret to the runtime-only `grafana-admin-credentials` Secret. No
+password is committed.
 
-### Grafana Credentials
+## Dashboards are provisioned from Git
 
-| Setting | Value |
-|---------|-------|
-| Username | `admin` |
-| Password | Value supplied as the `GRAFANA_ADMIN_PASSWORD` Actions secret |
+Grafana has no persistent storage, so nothing is imported by hand. Its
+dashboard sidecar loads every ConfigMap labelled `grafana_dashboard: "1"`, and
+each dashboard is such a ConfigMap, generated from JSON in Git:
 
-The rebuild workflow writes this value to the runtime-only
-`grafana-admin-credentials` Kubernetes Secret. No default cluster password is
-committed.
+| Dashboard | Lives in | Shows |
+|---|---|---|
+| **Fleet Application** | `k8s/infrastructure/observability/dashboards/` | Gateway golden signals, CPU and memory by pod against limits, pods, HPA replicas, restarts. Names no app. |
+| Load Testing Overview, Load Harness | `applications/load-harness/monitoring/` | Load Harness's own view, including its Flask metrics |
+| DORA Metrics | `applications/load-harness/monitoring/` | Deployments, lead time and rollbacks (AWS only; nothing pushes them locally) |
+
+An app's dashboards travel with its manifests, so swapping the app swaps them.
+To change a dashboard, edit its JSON and commit: edits made in the Grafana UI
+do not survive a restart. Platform dashboards sit in a layer Flux substitutes,
+so their JSON must not contain `${...}`.
 
 ## Configuration
 
-### Prometheus
+| Component | Setting |
+|---|---|
+| Prometheus | 2 days retention, 1 GB cap, 15 s scrape, 100m/256Mi requests, 500m/512Mi limits |
+| Grafana | No persistence, 50m/128Mi requests, 200m/256Mi limits |
+| Discovery | Every `PodMonitor` and `ServiceMonitor` in every namespace |
+| Disabled | Alertmanager (nothing pages on an ephemeral stack), operator admission webhooks (known timeouts) |
 
-| Setting | Value | Notes |
-|---------|-------|-------|
-| Retention | 2 days | Ephemeral stack, no long-term storage |
-| Max Storage | 1GB | Constrained for t3.large |
-| Scrape Interval | 15s | Default |
-| CPU Request | 100m | |
-| Memory Request | 256Mi | |
-| CPU Limit | 500m | |
-| Memory Limit | 512Mi | |
+## Useful queries
 
-### Grafana
+| Question | Query |
+|---|---|
+| Requests per second (local) | `sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~"httproute/applications/.*"}[1m]))` |
+| 5xx rate (local) | `sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~"httproute/applications/.*",envoy_response_code=~"5.."}[5m]))` |
+| p99 latency, ms (local) | `histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~"httproute/applications/.*"}[5m])) by (le))` |
+| Requests per second (AWS) | `sum(rate(nginx_ingress_controller_requests{exported_namespace="applications"}[1m]))` |
+| CPU by pod, as % of limit | `sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="applications",container!=""}[1m])) / sum by (pod) (kube_pod_container_resource_limits{namespace="applications",resource="cpu"}) * 100` |
 
-| Setting | Value | Notes |
-|---------|-------|-------|
-| Persistence | Disabled | Dashboards lost on restart |
-| CPU Request | 50m | |
-| Memory Request | 128Mi | |
-| CPU Limit | 200m | |
-| Memory Limit | 256Mi | |
-
-### Disabled Components
-
-| Component | Reason |
-|-----------|--------|
-| Alertmanager | Saves 1 pod, not needed for ephemeral stack |
-| Admission Webhooks | Known timeout issues |
-
-## Monitor configuration
-
-The load harness exposes Prometheus metrics through a PodMonitor so Flagger's
-generated primary and canary pods remain discoverable:
-
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: load-harness
-  namespace: applications
-spec:
-  selector:
-    matchExpressions:
-      - key: app
-        operator: In
-        values: [load-harness, load-harness-primary]
-  podMetricsEndpoints:
-    - port: http
-      path: /metrics
-      interval: 15s
-```
-
-Prometheus discovers both monitor types across all namespaces:
-```yaml
-serviceMonitorSelectorNilUsesHelmValues: false
-serviceMonitorSelector: {}
-podMonitorSelectorNilUsesHelmValues: false
-podMonitorSelector: {}
-```
-
-## Verifying the Setup
-
-### Check Prometheus Targets
-
-```bash
-# Port-forward to Prometheus
-kubectl port-forward -n observability prometheus-kube-prometheus-stack-prometheus-0 9090:9090
-
-# Open http://localhost:9090/targets
-# Verify load-harness appears as "UP"
-```
-
-### Check Metrics Collection
-
-```bash
-# Query Prometheus for Flask metrics
-curl -s "http://localhost:9090/api/v1/query?query=flask_http_request_total" | jq .
-```
-
-### Useful PromQL Queries
-
-| Metric | Query |
-|--------|-------|
-| Request rate | `rate(flask_http_request_total[1m])` |
-| Request latency (p95) | `histogram_quantile(0.95, rate(flask_http_request_duration_seconds_bucket[5m]))` |
-| Error rate | `rate(flask_http_request_total{status=~"5.."}[5m])` |
-| Pod CPU usage | `rate(container_cpu_usage_seconds_total{pod=~"load-harness.*"}[5m])` |
-| Pod memory | `container_memory_usage_bytes{pod=~"load-harness.*"}` |
-
-## Importing Dashboards
-
-Since Grafana uses ephemeral storage, dashboards must be imported after each restart.
-
-### Option 1: Import JSON File
-
-1. Open Grafana at http://localhost:3000
-2. Go to **Dashboards** → **Import**
-3. Upload JSON from `applications/load-harness/monitoring/grafana-dashboard.json`
-4. Select **Prometheus** as the datasource
-5. Click **Import**
-
-### Option 2: Import via ConfigMap
-
-```bash
-# Create ConfigMap with dashboard JSON
-kubectl create configmap load-harness-dashboard \
-  -n observability \
-  --from-file=grafana-dashboard.json=applications/load-harness/monitoring/grafana-dashboard.json
-
-# Label it for Grafana sidecar discovery
-kubectl label configmap load-harness-dashboard \
-  -n observability \
-  grafana_dashboard=1
-```
-
-### Option 3: Import Community Dashboard
-
-1. Go to **Dashboards** → **Import**
-2. Enter ID: `10924` (Flask Prometheus Exporter)
-3. Select **Prometheus** datasource
-4. Click **Import**
-
-## Resource Constraints
-
-### t3.large Pod Capacity (35 pods max)
-
-Current allocation:
-```
-observability:  4 pods
-├── prometheus-kube-prometheus-stack-prometheus-0
-├── kube-prometheus-stack-grafana-*
-├── kube-prometheus-stack-operator-*
-└── kube-prometheus-stack-kube-state-metrics-*
-```
-
-**Note**: node-exporter runs as DaemonSet (1 per node), not counted in pod limit.
+Envoy Gateway keeps a route's primary and canary backends in one Envoy cluster,
+so the gateway signals are route-wide rather than per revision.
 
 ## Troubleshooting
 
-### Prometheus Not Scraping Target
+**A panel shows no data.** Run its query in Prometheus. Gateway panels need
+traffic through the gateway; AWS-only series (ingress-nginx, DORA) are
+expected to be empty locally.
 
-1. Check the application PodMonitor exists:
-   ```bash
-   kubectl get podmonitor -n applications
-   ```
+**An app's own metrics are missing.** Check that its `PodMonitor` exists and
+selects both `<app>` and `<app>-primary` pods, since Flagger renames the primary's
+`app` label. Then open `http://localhost:9090/targets`.
 
-2. Check Prometheus config includes target:
-   ```bash
-   kubectl port-forward -n observability prometheus-kube-prometheus-stack-prometheus-0 9090:9090
-   # Open http://localhost:9090/config
-   ```
+**Gateway metrics are missing.** Check
+`kubectl get podmonitor envoy-proxy -n envoy-gateway-system` and that
+`up{namespace="envoy-gateway-system"}` is 1.
 
-3. Verify pod labels match the PodMonitor selector:
-   ```bash
-   kubectl get pods -n applications --show-labels
-   ```
+**Prometheus runs out of memory.** Lower `retention` or `retentionSize`, or
+drop high-cardinality series with relabelling.
 
-### Grafana Dashboard Not Loading
+## Related documentation
 
-1. Verify Prometheus datasource is configured:
-   - Go to **Configuration** → **Data Sources**
-   - Should show "Prometheus" with URL `http://prometheus-operated:9090`
-
-2. Check Prometheus is running:
-   ```bash
-   kubectl get pods -n observability
-   ```
-
-### High Memory Usage
-
-If Prometheus OOMs:
-1. Reduce retention: `retention: 1d`
-2. Reduce storage: `retentionSize: "500MB"`
-3. Limit scraped metrics via relabeling
-
-## Related Documentation
-
-- [Load Harness Monitoring Guide](../applications/load-harness/monitoring/README.md)
-- [Cost Optimization Guide](./COST-OPTIMIZATION-GUIDE.md)
-- [EKS Access Guide](./EKS-ACCESS.md)
+- [Application contract](APPLICATION-CONTRACT.md)
+- [Progressive delivery](PROGRESSIVE-DELIVERY.md)
+- [Load Harness monitoring guide](../applications/load-harness/monitoring/README.md)
+- [DORA metrics](DORA-METRICS.md)
