@@ -1,9 +1,9 @@
 name: Intent Gate (retarget)
 
 # A pull request retargeted to main without a new commit produces only an
-# `edited` event. This separate workflow gates that case under its own check
-# name, so ordinary title and body edits never add a skipped run of, or cancel,
-# the main Intent Gate check. Same read-only comparison; see intent-gate.yml.
+# `edited` event. This workflow gates that case under its own check name and
+# concurrency group, so ordinary title and body edits never add a skipped run
+# of, or cancel, the main Intent Gate check. Same job: intent-gate-run.yml.
 
 on:
   pull_request:
@@ -13,30 +13,12 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: intent-gate-retarget-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
-  gate:
-    name: Declared intent (retargeted)
+  intent:
+    name: Intent gate (retargeted)
     if: github.event.changes.base != null
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout the merge result with history
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      # The pull_request merge commit's first parent is the base as it would be
-      # merged, so the comparison covers exactly what this change lands.
-      - name: Resolve the compared commits
-        id: commits
-        run: |
-          echo "base=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
-          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      # Pinned by SHA: upgrading the advisor is an ordinary reviewed change here.
-      - name: Compare declared intent at base and merge result
-        uses: ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@343cc252683db91bb3dacb61abde7daeb0e53798
-        with:
-          base-sha: ${{ steps.commits.outputs.base }}
-          head-sha: ${{ steps.commits.outputs.head }}
+    uses: ./.github/workflows/intent-gate-run.yml

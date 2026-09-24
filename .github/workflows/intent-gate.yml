@@ -3,9 +3,8 @@ name: Intent Gate
 # Runs Infra Fleet Advisor's deterministic checks on the change this pull
 # request would merge, and fails when it would newly break a declared
 # security, reliability, cost or maintainability position, or hide one the
-# advisor could evaluate before. Read-only: nothing is applied, published or
-# commented; the verdict is this check and the evidence is its job summary.
-# See the advisor's PDR 0007.
+# advisor could evaluate before. The job itself is defined once, in
+# intent-gate-run.yml.
 
 on:
   pull_request:
@@ -24,28 +23,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gate:
-    name: Declared intent
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout the merge result with history
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      # The pull_request merge commit's first parent is the base as it would be
-      # merged, so the comparison covers exactly what this change lands.
-      - name: Resolve the compared commits
-        id: commits
-        run: |
-          echo "base=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
-          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      # Pinned by SHA: upgrading the advisor is an ordinary reviewed change here.
-      - name: Compare declared intent at base and merge result
-        uses: ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@343cc252683db91bb3dacb61abde7daeb0e53798
-        with:
-          base-sha: ${{ steps.commits.outputs.base }}
-          head-sha: ${{ steps.commits.outputs.head }}
+  intent:
+    name: Intent gate
+    uses: ./.github/workflows/intent-gate-run.yml

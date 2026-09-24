@@ -15,8 +15,9 @@ arbitrary/private adopter repositories as publication targets.
 request to `main`. It compares the merge result with its base and fails when the
 change would newly diverge from a declared position, or make one the advisor
 could evaluate unevaluable. The job summary lists the evidence. It holds only
-`contents: read`, calls no model, and publishes nothing. The advisor action is
-pinned by commit SHA, so upgrading it is a normal reviewed change here.
+`contents: read`, calls no model, and publishes nothing. The job is defined once
+in `.github/workflows/intent-gate-run.yml`, where the advisor action is pinned by
+commit SHA, so upgrading it is a normal one-line reviewed change here.
 
 A deliberate exception needs an owner-approved intent or policy change in the
 advisor first; the gate never weakens intent to let a change through.
