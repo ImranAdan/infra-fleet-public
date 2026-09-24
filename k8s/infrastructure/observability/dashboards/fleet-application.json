@@ -5,7 +5,7 @@
     "fleet",
     "platform"
   ],
-  "description": "Golden signals for whichever app the fleet runs. Nothing here names an app.",
+  "description": "Golden signals for whichever app the fleet runs, and the declared intent the advisor evaluates. Nothing here names an app.",
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
@@ -411,6 +411,520 @@
             "type": "prometheus",
             "uid": "prometheus"
           }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Declared intent (Infra Fleet Advisor)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Positions declared",
+      "description": "From the latest report a human approved in Infra Fleet Advisor (reports/report.json on its main branch): what the repository declares, and whether evidence in Git decides it. Desired state, not live health.",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "fleet-advisor"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "fleet-advisor"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "https://raw.githubusercontent.com/ImranAdan/infra-fleet-advisor-public/main/reports/report.json",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "$count(intent_evaluations)",
+          "columns": []
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Decided by evidence",
+      "description": "From the latest report a human approved in Infra Fleet Advisor (reports/report.json on its main branch): what the repository declares, and whether evidence in Git decides it. Desired state, not live health.",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "fleet-advisor"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 31,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "fleet-advisor"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "https://raw.githubusercontent.com/ImranAdan/infra-fleet-advisor-public/main/reports/report.json",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "$count(intent_evaluations[status!=\"declared_unverified\"])",
+          "columns": []
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Satisfied",
+      "description": "From the latest report a human approved in Infra Fleet Advisor (reports/report.json on its main branch): what the repository declares, and whether evidence in Git decides it. Desired state, not live health.",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "fleet-advisor"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 31,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "fleet-advisor"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "https://raw.githubusercontent.com/ImranAdan/infra-fleet-advisor-public/main/reports/report.json",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "$count(intent_evaluations[status=\"satisfied\"])",
+          "columns": []
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "Divergent",
+      "description": "From the latest report a human approved in Infra Fleet Advisor (reports/report.json on its main branch): what the repository declares, and whether evidence in Git decides it. Desired state, not live health.",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "fleet-advisor"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "fleet-advisor"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "https://raw.githubusercontent.com/ImranAdan/infra-fleet-advisor-public/main/reports/report.json",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "$count(intent_evaluations[status=\"divergent\"])",
+          "columns": []
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "Reviewed fleet commit",
+      "description": "From the latest report a human approved in Infra Fleet Advisor (reports/report.json on its main branch): what the repository declares, and whether evidence in Git decides it. Desired state, not live health.",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "fleet-advisor"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 31,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "fleet-advisor"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "https://raw.githubusercontent.com/ImranAdan/infra-fleet-advisor-public/main/reports/report.json",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "$substring(provenance.source_commit_sha, 0, 12)",
+          "columns": []
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Report age",
+      "description": "From the latest report a human approved in Infra Fleet Advisor (reports/report.json on its main branch): what the repository declares, and whether evidence in Git decides it. Desired state, not live health.",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "fleet-advisor"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 31,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "fleet-advisor"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "https://raw.githubusercontent.com/ImranAdan/infra-fleet-advisor-public/main/reports/report.json",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "provenance",
+          "columns": [
+            {
+              "selector": "run_started_at",
+              "text": "Reviewed",
+              "type": "timestamp"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "table",
+      "title": "Divergent positions",
+      "description": "From the latest report a human approved in Infra Fleet Advisor (reports/report.json on its main branch): what the repository declares, and whether evidence in Git decides it. Desired state, not live health.",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "fleet-advisor"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "inspect": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Position"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Category"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "fleet-advisor"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "https://raw.githubusercontent.com/ImranAdan/infra-fleet-advisor-public/main/reports/report.json",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "root_selector": "intent_evaluations[status=\"divergent\"]",
+          "columns": [
+            {
+              "selector": "proposition_id",
+              "text": "Position",
+              "type": "string"
+            },
+            {
+              "selector": "category",
+              "text": "Category",
+              "type": "string"
+            },
+            {
+              "selector": "statement",
+              "text": "Declared position",
+              "type": "string"
+            }
+          ]
         }
       ]
     }

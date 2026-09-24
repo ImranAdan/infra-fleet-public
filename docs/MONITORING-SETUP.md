@@ -51,7 +51,7 @@ each dashboard is such a ConfigMap, generated from JSON in Git:
 
 | Dashboard | Lives in | Shows |
 |---|---|---|
-| **Fleet Application** | `k8s/infrastructure/observability/dashboards/` | Gateway golden signals, CPU and memory by pod against limits, pods, HPA replicas, restarts. Names no app. |
+| **Fleet Application** | `k8s/infrastructure/observability/dashboards/` | Gateway golden signals, CPU and memory by pod against limits, pods, HPA replicas, restarts, and a **Declared intent** row: positions declared, decided, satisfied and divergent in the advisor's latest approved report, the fleet commit it reviewed, and the divergent positions. Names no app. |
 | Load Testing Overview, Load Harness | `applications/load-harness/monitoring/` | Load Harness's own view, including its Flask metrics |
 | DORA Metrics | `applications/load-harness/monitoring/` | Deployments, lead time and rollbacks (AWS only; nothing pushes them locally) |
 
@@ -67,7 +67,19 @@ so their JSON must not contain `${...}`.
 | Prometheus | 2 days retention, 1 GB cap, 15 s scrape, 100m/256Mi requests, 500m/512Mi limits |
 | Grafana | No persistence, 50m/128Mi requests, 200m/256Mi limits |
 | Discovery | Every `PodMonitor` and `ServiceMonitor` in every namespace |
+| Advisor data source | Infinity plugin 3.7.1 (pinned; the newest supporting Grafana 11.4), allowed to call only `https://raw.githubusercontent.com` |
 | Disabled | Alertmanager (nothing pages on an ephemeral stack), operator admission webhooks (known timeouts) |
+
+## Declared intent next to live signals
+
+The **Declared intent** row reads `reports/report.json` from the advisor's
+`main` branch. That file changes only when a human merges a report PR, so the
+row shows the approved decision record, not a draft. It counts positions by
+result, names the reviewed fleet commit and the report's age, and lists what
+diverges. It describes desired state in Git; the panels above it describe the
+running cluster. Grafana needs outbound HTTPS to GitHub for this row; the rest
+of the dashboard does not. The template validator exempts this one URL from its
+pinned-fetch rule, because it reads data and following `main` is the point.
 
 ## Useful queries
 

@@ -43,6 +43,16 @@ The advisor rejects a dirty fleet checkout and keeps output outside it. Changes
 in an open fleet PR are evaluated only when its exact clean commit is checked
 out locally; scheduled reviews target merged fleet `main`.
 
+## Coverage on the dashboard
+
+Grafana's **Fleet Application** dashboard ends with a **Declared intent** row
+fed by the advisor's latest approved report (`reports/report.json` on the
+advisor's `main`): how many positions are declared, how many evidence decides,
+how many are satisfied or divergent, which fleet commit was reviewed and when,
+and the divergent positions. It sits under the live golden signals, so what the
+fleet declares and how it is running are read together. See
+[monitoring](MONITORING-SETUP.md#declared-intent-next-to-live-signals).
+
 ## Delivery contract
 
 1. The advisor compiles declared intent into registered deterministic checks.
