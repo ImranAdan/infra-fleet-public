@@ -26,13 +26,14 @@ if git grep -n -E '^[[:space:]]*(- )?uses: [^./][^ ]*@v?[0-9]+(\.[0-9]+)*([[:spa
   failed=true
 fi
 
-# Code and manifests must be pinned. The Fleet Application dashboard is the one
-# exemption: it reads the advisor's latest approved report as data, and
-# following main is the point; nothing it fetches is executed.
+# Code and manifests must be pinned. One line is exempt: the Fleet Application
+# dashboard reads the advisor's latest approved report as data, where following
+# main is the point and nothing fetched is executed. Only that exact URL, as a
+# url field in that file, is allowed; any other moving URL there still fails.
+approved_moving_url='^k8s/infrastructure/observability/dashboards/fleet-application\.json:[0-9]+:[[:space:]]*"url": "https://raw\.githubusercontent\.com/ImranAdan/infra-fleet-advisor-public/main/reports/report\.json",?$'
 if git grep -n -E 'https://raw\.githubusercontent\.com/[^/]+/[^/]+/(main|master)/|/releases/latest/' \
   -- .github infrastructure k8s ops scripts \
-  ':(exclude)scripts/validate-template-contract.sh' \
-  ':(exclude)k8s/infrastructure/observability/dashboards/fleet-application.json'; then
+  ':(exclude)scripts/validate-template-contract.sh' | grep -v -E "$approved_moving_url"; then
   echo "Executable template files must not fetch from moving branches or latest-release URLs." >&2
   failed=true
 fi
