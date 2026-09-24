@@ -432,7 +432,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (irate(process_cpu_seconds_total{job=\"load-harness\"}[1m])) * 100",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"applications\", container=\"load-harness\"}[1m])) * 100",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
@@ -528,7 +528,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (pod) (process_resident_memory_bytes{job=\"load-harness\"})",
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"applications\", container=\"load-harness\"})",
           "legendFormat": "{{pod}}",
           "refId": "A"
         }
@@ -626,7 +626,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "avg(irate(process_cpu_seconds_total{job=\"load-harness\"}[1m])) * 100",
+          "expr": "avg(sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"applications\", container=\"load-harness\"}[1m]))) * 100",
           "legendFormat": "Average CPU",
           "range": true,
           "refId": "A"
@@ -723,7 +723,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "avg(process_resident_memory_bytes{job=\"load-harness\"})",
+          "expr": "avg(sum by (pod) (container_memory_working_set_bytes{namespace=\"applications\", container=\"load-harness\"}))",
           "legendFormat": "Average Memory",
           "range": true,
           "refId": "A"
