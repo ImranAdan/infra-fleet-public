@@ -62,3 +62,24 @@ updates:
       terraform-permanent:
         patterns:
           - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+    groups:
+      development-tools:
+        patterns:
+          - "*"
+
+  # The local Git server image is pinned by digest; Dependabot refreshes the
+  # base image. Its apk package pins track that base and must be bumped in the
+  # same PR; the Template Contract workflow builds the image to catch a miss.
+  - package-ecosystem: "docker"
+    directory: "/platform/local/git-server"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
