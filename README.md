@@ -171,53 +171,19 @@ adding `/health` and `/metrics` endpoints. See
 ## Architecture
 
 ```mermaid
-flowchart TB
-  Operator[Operator] --> Facade[./fleet --profile]
-  Repo[Versioned fleet repository] --> CI[GitHub Actions]
-
-  Facade -->|local| LocalStrategy[Local strategy<br/>checkout-owned pinned CLIs]
-  LocalStrategy --> LocalBootstrap[kind + local registry<br/>read-only Git source]
-  LocalBootstrap --> LocalFlux[Flux local cluster root]
-  LocalFlux --> LocalPlatform[Envoy Gateway + Flagger<br/>Kyverno + monitoring]
-
-  Facade -->|aws-staging| AWSStrategy[AWS staging strategy]
-  AWSStrategy --> Onboarding[Plan/apply onboarding<br/>explicit target repository]
-  Onboarding --> Foundation[OIDC role + ECR]
-  Onboarding --> RepoConfig[Actions settings +<br/>staging Environment]
-  AWSStrategy --> Workflows[Reviewed GitHub workflows]
-  Workflows -->|OIDC| AWS[EKS + AWS infrastructure]
-  Workflows --> ECR[ECR images]
-  HCP[HCP Terraform<br/>state and locks] --- Workflows
-  Repo --> AWSFlux[Flux AWS cluster root]
-  ECR --> AWSFlux
-  AWS --> AWSFlux
-  AWSFlux --> AWSPlatform[NGINX staging route + Flagger<br/>Kyverno + monitoring]
-
-  Shared[Shared application base<br/>and delivery contracts] --> LocalFlux
-  Shared --> AWSFlux
-  LocalPlatform --> App[Load Harness]
-  AWSPlatform --> App
-
-  Advisor[Infra Fleet Advisor] -->|reads merged revision| Repo
-  Advisor --> ReportPR[Advisor report PR]
-  ReportPR -->|human approval| FleetIssues[Fleet issues]
-  FleetIssues -->|selected fixes| Repo
+flowchart LR
+    Operator([Operator]) -->|"./fleet up"| Cluster
+    Repo[("Fleet repository")] -->|Flux reconciles| Cluster["Kubernetes cluster<br/>local kind or AWS EKS"]
+    Cluster --> App["Load Harness<br/>canary delivery + monitoring"]
+    Repo -.->|reviewed nightly| Advisor["Infra Fleet Advisor"]
+    Advisor -.->|approved findings| Repo
 ```
 
-The facade is the profile boundary. Local commands do not invoke AWS or GitHub
-writes. AWS plan mode is read-only; apply binds the permanent OIDC foundation
-and repository settings to the target declared in `config.env`. HCP Terraform
-stores AWS state and locks; Terraform execution and AWS calls happen on the
-operator's machine or a GitHub-hosted runner.
-
-**Key Flows:**
-- **Local**: Committed revision → local registry and Git source → Flux → kind
-- **AWS CI/CD**: Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux → EKS
-- **Progressive Delivery**: New version → Flagger canary → Traffic shifting → Metrics analysis → Promote/Rollback
-- **Observability**: Applications → Prometheus scrape → Grafana dashboards → DORA metrics
-- **Advisor**: Merged fleet revision → report PR → human approval → eligible fleet issues
-
-See [docs/README.md](docs/README.md) for detailed architecture diagram.
+Git is the source of truth: `./fleet` prepares a cluster for the chosen profile,
+Flux keeps it matching the repository, and the advisor checks the repository
+against declared intent. Each step has its own small diagram in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): profiles, AWS onboarding, GitOps
+delivery, progressive delivery, request paths, observability and guardrails.
 
 ---
 
