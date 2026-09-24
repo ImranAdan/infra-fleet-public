@@ -219,6 +219,7 @@ jobs:
         id: terraform
         env:
           TF_VAR_eks_admin_principal_arns: ${{ vars.EKS_ADMIN_PRINCIPAL_ARNS_JSON || '[]' }}
+          TF_VAR_cost_owner: ${{ vars.COST_OWNER || 'infra-fleet' }}
         run: |
           set -euo pipefail
           cd infrastructure/staging

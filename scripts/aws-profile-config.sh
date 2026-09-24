@@ -64,6 +64,12 @@ aws_profile_load_config() {
   # strings so a malformed value fails here rather than mid-deployment.
   local arn='"arn:aws[a-z-]*:iam::[0-9]{12}:[^"[:space:]]+"'
   local arns="^\\[[[:space:]]*($arn([[:space:]]*,[[:space:]]*$arn)*)?[[:space:]]*\\]$"
+  # AWS tag values allow letters, digits, spaces and _.:/=+-@ only.
+  local tag_value='^[A-Za-z0-9_.:/=+@ -]+$' owner=${COST_OWNER:-infra-fleet}
+  if [[ ! "$owner" =~ $tag_value ]] || [ "${#owner}" -gt 256 ]; then
+    aws_profile_fail 'COST_OWNER must be a valid AWS tag value.'
+    return 1
+  fi
   if [[ ! "${EKS_ADMIN_PRINCIPAL_ARNS_JSON:-[]}" =~ $arns ]]; then
     aws_profile_fail 'EKS_ADMIN_PRINCIPAL_ARNS_JSON must be a JSON array of IAM ARN strings.'
     return 1

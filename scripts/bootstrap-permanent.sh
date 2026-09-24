@@ -25,6 +25,7 @@ export TF_WORKSPACE="$TF_WORKSPACE_PERMANENT"
 export TF_VAR_github_repository="$GITHUB_REPOSITORY"
 export TF_VAR_github_deployment_branch="$GITHUB_DEPLOYMENT_BRANCH"
 export TF_VAR_github_deployment_environment="$GITHUB_DEPLOYMENT_ENVIRONMENT"
+export TF_VAR_cost_owner="${COST_OWNER:-infra-fleet}"
 
 echo "Checking the local AWS identity used for bootstrap..."
 identity_arn=$(aws sts get-caller-identity --query Arn --output text)

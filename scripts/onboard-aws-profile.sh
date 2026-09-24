@@ -199,6 +199,7 @@ set_secret GRAFANA_ADMIN_PASSWORD
 set_variable TF_WORKSPACE_PERMANENT "$TF_WORKSPACE_PERMANENT"
 set_variable TF_WORKSPACE_STAGING "$TF_WORKSPACE_STAGING"
 set_variable EKS_ADMIN_PRINCIPAL_ARNS_JSON "${EKS_ADMIN_PRINCIPAL_ARNS_JSON:-[]}"
+set_variable COST_OWNER "${COST_OWNER:-infra-fleet}"
 
 # Optional settings are reconciled, not only added: config.env is the source of
 # truth, so a value removed from it is removed from the repository too. Without
