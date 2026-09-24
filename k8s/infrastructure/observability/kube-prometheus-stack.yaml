@@ -102,6 +102,21 @@ spec:
 
       # Admin credentials are created by rebuild-stack.yml and never stored in Git.
 
+      # The Fleet Application dashboard shows declared-intent coverage from the
+      # advisor's latest approved report, read as JSON by the Infinity data
+      # source. Pinned; 3.7.1 is the newest release supporting Grafana 11.4.
+      plugins:
+        - yesoreyeram-infinity-datasource 3.7.1
+      additionalDataSources:
+        - name: Infra Fleet Advisor
+          uid: fleet-advisor
+          type: yesoreyeram-infinity-datasource
+          editable: false
+          jsonData:
+            # The only host this data source may call.
+            allowedHosts:
+              - https://raw.githubusercontent.com
+
       # Prometheus datasource auto-configured by kube-prometheus-stack chart
       # No additional datasource configuration needed
 
