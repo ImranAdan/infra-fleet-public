@@ -25,6 +25,14 @@ updates:
       - dependency-name: "python"
         versions: [">=3.14"]
 
+  # podinfo, the second app: its pinned upstream image
+  - package-ecosystem: "docker"
+    directory: "/applications/podinfo"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+
   # GitHub Actions - monthly, grouped, no major bumps
   - package-ecosystem: "github-actions"
     directory: "/"
