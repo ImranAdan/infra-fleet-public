@@ -68,14 +68,14 @@
                               class="space-y-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
-                                    Cores: <span id="cpu-cores-value" class="font-semibold text-primary-600 dark:text-primary-400">1</span>
-                                    <span class="text-gray-400 dark:text-gray-500 text-xs">/ {{ system_info.cpu_cores }} available</span>
+                                    Workers: <span id="cpu-cores-value" class="font-semibold text-primary-600 dark:text-primary-400">1</span>
+                                    <span class="text-gray-400 dark:text-gray-500 text-xs">/ {{ system_info.cpu_cores }}{% if system_info.cpu_limit_cores %} · container limit {{ '%g' % system_info.cpu_limit_cores }} cores{% endif %}</span>
                                     <div class="relative group">
                                         <svg class="w-4 h-4 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity w-48 pointer-events-none z-10">
-                                            Number of CPU cores to load. One worker process per core. More cores = more parallel load.
+                                            CPU worker processes to start. The container cannot use more CPU than its limit, so extra workers share it.
                                         </div>
                                     </div>
                                 </label>

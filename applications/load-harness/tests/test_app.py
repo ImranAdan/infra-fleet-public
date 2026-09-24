@@ -728,3 +728,14 @@ def test_chaos_after_valid_auth(client_with_auth_and_chaos):
 
     data = response.get_json()
     assert data['chaos'] is True
+
+
+def test_cpu_load_reports_the_container_limit_it_is_held_to(client, monkeypatch):
+    """A 0.5-core container given one worker must not claim a full core."""
+    monkeypatch.setattr('load_harness.load_harness_service._get_cpu_limit_cores', lambda: 0.5)
+    data = client.post('/load/cpu', json={'cores': 1, 'duration_seconds': 10, 'intensity': 1}).get_json()
+    client.post('/load/cpu/stop', json={'job_id': data['job_id']})
+
+    assert data['cpu_limit_cores'] == 0.5
+    assert 'limited to 0.5 core(s)' in data['message']
+    assert 'on 1 core' not in data['message']
