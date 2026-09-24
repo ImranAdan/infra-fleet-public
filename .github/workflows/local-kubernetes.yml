@@ -68,6 +68,10 @@ jobs:
             git -c user.name='Local acceptance' -c user.email='local-acceptance@example.invalid' \
               commit --quiet -am "chore: run $APP for acceptance"
           fi
+          # The cluster runs this revision; it differs from the source revision
+          # above when the app selection had to be committed on the runner.
+          printf -- '- Tested revision: `%s` (runner-local when it differs from the source)\n' \
+            "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Start the local profile
         run: ./fleet up --profile local
