@@ -263,35 +263,20 @@ All metrics flow through a collection pipeline:
 
 Since we don't expose Ingress (to avoid ALB costs and finalizer issues), access is via port-forwarding:
 
-### Grafana (Dashboards)
-
 ```bash
-kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
+./fleet access --profile local --service grafana     # http://localhost:3000
+./fleet access --profile local --service prometheus  # http://localhost:9090
+./fleet credentials --profile local                 # Grafana user is admin
 ```
 
-Then open: http://localhost:3000
+### How the dashboards get there
 
-**Credentials**:
-- Username: `admin`
-- Password: `prom-operator`
-
-### Prometheus (Direct Queries)
-
-```bash
-kubectl port-forward -n observability prometheus-kube-prometheus-stack-prometheus-0 9090:9090
-```
-
-Then open: http://localhost:9090
-
-### Importing Dashboards
-
-If dashboards aren't present, import them:
-
-```bash
-./ops/import-grafana-dashboard.sh
-```
-
-This script imports both dashboards from the JSON files in this directory.
+The three JSON files in this directory are provisioned from Git. Their
+[kustomization](kustomization.yaml) turns each into a ConfigMap labelled
+`grafana_dashboard: "1"`, and Grafana's dashboard sidecar loads every such
+ConfigMap, so they appear in every profile and survive Grafana restarts.
+To change a dashboard, edit its JSON here and commit; edits made in the
+Grafana UI are not kept.
 
 ---
 
