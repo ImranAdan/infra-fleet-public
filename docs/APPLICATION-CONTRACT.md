@@ -72,7 +72,9 @@ The contract values:
 The local profile builds the image from `APP_SOURCE`. AWS runs released images
 from ECR, so an app also needs:
 
-1. an ECR repository named `APP_NAME` (`infrastructure/permanent/ecr.tf`);
+1. an ECR repository named `APP_NAME` (`infrastructure/permanent/ecr.tf`) that
+   the Flux image reflector may read (`infrastructure/staging/flux-image-reflector.tf`).
+   Both are explicit per repository to keep least privilege;
 2. a CI workflow that publishes `vX.Y.Z` tags there, called by
    `rebuild-stack.yml` in place of `load-harness-ci.yml`;
 3. its first release tag on the `app` image in
