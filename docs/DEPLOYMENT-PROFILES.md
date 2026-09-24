@@ -128,7 +128,9 @@ ephemeral and is removed before the job completes; the deployment record is
 evidence of the completed integration cycle, not an endpoint that remains
 online. Runs are serialized because the workflow represents one logical target.
 A weekly scheduled run applies the same proof to current `main` without delaying
-ordinary pull requests.
+ordinary pull requests. Every run covers both applications: Load Harness, and
+podinfo selected with `scripts/select-app.sh` on the runner, so the proof is of
+the platform rather than of one app.
 
 The AWS profile maps to the existing `staging` GitHub Environment because that
 name is part of its OIDC trust boundary. AWS remains limited to static PR
