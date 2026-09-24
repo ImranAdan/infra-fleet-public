@@ -24,6 +24,9 @@ storage is ephemeral.
 Commit application or manifest changes before deployment. The local source
 serves the committed snapshot through a read-only Git HTTP backend on the kind Docker
 network; it does not publish the repository or create a GitHub deploy key.
+Its `infra-fleet.io/checkout-mirror` annotation is a machine-readable promise
+that this secondary Flux source contains the reviewed checkout. The local
+snapshot contract test couples that promise to exact-revision publication.
 
 ```bash
 ./fleet render --profile local   # inspect effective resources; fixtures only
