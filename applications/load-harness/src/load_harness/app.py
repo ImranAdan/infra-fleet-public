@@ -17,6 +17,7 @@ from datetime import timedelta
 
 from flask import Flask
 from prometheus_flask_exporter import PrometheusMetrics
+from prometheus_flask_exporter.multiprocess import GunicornInternalPrometheusMetrics
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from load_harness.dashboard import dashboard
@@ -114,8 +115,13 @@ def create_app(config_override: dict | None = None):
     init_chaos(app, config_override)
     init_security_headers(app)
 
-    # Initialize Prometheus metrics
-    metrics = PrometheusMetrics(app)
+    # Gunicorn runs several worker processes. Without multiprocess mode each
+    # scrape sees one worker's counters, so dashboards under-count and rate()
+    # reads every switch between workers as a counter reset.
+    if os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
+        metrics = GunicornInternalPrometheusMetrics(app)
+    else:
+        metrics = PrometheusMetrics(app)
 
     # Register service (wires all routes)
     LoadHarnessService(app=app, metrics=metrics)
