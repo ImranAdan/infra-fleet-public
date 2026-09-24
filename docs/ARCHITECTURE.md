@@ -96,9 +96,11 @@ planned Gateway API migration replaces the retired ingress-nginx controller.
 ```mermaid
 flowchart LR
     Local(["Local browser"]) --> Envoy["Envoy Gateway"] --> App["Load Harness"]
-    Users(["Users"]) --> DNS["Cloudflare DNS"] --> NLB["AWS NLB"] --> NGINX["ingress-nginx<br/>preview"] --> App
+    Users(["Users"]) -.->|resolve name| DNS["Cloudflare DNS<br/>unproxied CNAME"]
+    Users --> NLB["AWS NLB"] --> NGINX["ingress-nginx<br/>preview"] --> App
 ```
 
+Cloudflare only resolves the name; application traffic goes straight to the NLB.
 See [TLS and DNS](TLS-SSL-SETUP.md).
 
 ## Observability
