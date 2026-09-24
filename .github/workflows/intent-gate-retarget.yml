@@ -1,31 +1,22 @@
-name: Intent Gate
+name: Intent Gate (retarget)
 
-# Runs Infra Fleet Advisor's deterministic checks on the change this pull
-# request would merge, and fails when it would newly break a declared
-# security, reliability, cost or maintainability position, or hide one the
-# advisor could evaluate before. Read-only: nothing is applied, published or
-# commented; the verdict is this check and the evidence is its job summary.
-# See the advisor's PDR 0007.
+# A pull request retargeted to main without a new commit produces only an
+# `edited` event. This separate workflow gates that case under its own check
+# name, so ordinary title and body edits never add a skipped run of, or cancel,
+# the main Intent Gate check. Same read-only comparison; see intent-gate.yml.
 
 on:
   pull_request:
     branches: [main]
-    # Retargeting without a new commit is gated by intent-gate-retarget.yml.
-    # `edited` stays out of this workflow: every title or body edit (bots edit
-    # PR bodies) would add a skipped run of this check on the same commit, and
-    # with cancel-in-progress could cancel a real run and leave only the skip.
-    types: [opened, synchronize, reopened]
+    types: [edited]
 
 permissions:
   contents: read
 
-concurrency:
-  group: intent-gate-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 jobs:
   gate:
-    name: Declared intent
+    name: Declared intent (retargeted)
+    if: github.event.changes.base != null
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
