@@ -1,0 +1,14 @@
+# Platform dashboards describe whichever app runs, so they name none; an app's
+# own dashboards travel with its manifests. Flux substitutes ${...} in this
+# layer, so dashboard JSON here must not contain it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: observability
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+configMapGenerator:
+  - name: grafana-dashboard-fleet-application
+    files:
+      - fleet-application.json
