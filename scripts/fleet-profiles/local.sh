@@ -234,7 +234,7 @@ local_app() {
   local value
   value=$(git show "$FLEET_SHA:k8s/fleet-app/fleet-app.yaml" |
     awk -v key="$1" '$1 == key":" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }')
-  [ -n "$value" ] || fail "k8s/fleet-app/fleet-app.yaml does not set $1." || return 1
+  [ -n "$value" ] || [ "${2:-}" = optional ] || fail "k8s/fleet-app/fleet-app.yaml does not set $1." || return 1
   printf '%s' "$value"
 }
 
@@ -277,7 +277,7 @@ local_secrets() {
     kctl create namespace "$namespace" --dry-run=client -o yaml | \
       kctl apply --server-side --field-manager=fleet-local-facade -f - >/dev/null
   done
-  app_secrets=$(local_app APP_SECRETS) || return 1
+  app_secrets=$(local_app APP_SECRETS optional) || return 1
   # Each app secret holds one random key, cached so repeated starts keep it.
   for entry in $app_secrets grafana-admin-credentials:admin-password; do
     secret=${entry%%:*} key=${entry#*:}

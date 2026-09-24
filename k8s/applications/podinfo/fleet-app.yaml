@@ -1,0 +1,22 @@
+# podinfo's side of the app contract (docs/APPLICATION-CONTRACT.md).
+# scripts/select-app.sh copies it to k8s/fleet-app/fleet-app.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fleet-app
+  namespace: flux-system
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
+data:
+  # Names the Deployment, its container, its pod `app` label and its image.
+  APP_NAME: podinfo
+  # Build context, containing the Dockerfile.
+  APP_SOURCE: applications/podinfo
+  APP_PORT: "9898"
+  APP_HEALTH_PATH: /healthz
+  # Requested through the gateway while Flagger analyses a canary.
+  APP_LOAD_PATH: /
+  # Space-separated secret:key pairs the platform generates in `applications`.
+  APP_SECRETS: ""
+  # NAME=value that makes the app fail requests; the rollback test sets it.
+  APP_FAULT_ENV: PODINFO_RANDOM_ERROR=true
