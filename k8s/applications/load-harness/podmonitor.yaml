@@ -13,3 +13,8 @@ spec:
     - port: http
       path: /metrics
       interval: 15s
+      # The dashboards select job="load-harness", as local-dev Prometheus does.
+      # Without this the operator names the job "applications/load-harness".
+      relabelings:
+        - targetLabel: job
+          replacement: load-harness
