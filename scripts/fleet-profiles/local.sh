@@ -440,6 +440,10 @@ local_sync() {
   local_revision "$1"
   local_build_image
   local_publish_snapshot
+  # Fetch the new revision before changing fleet-config: a config change makes
+  # Flux re-apply at once, and doing so from the old revision would pair old
+  # manifests with the new image tag (or app), which does not exist.
+  fctl reconcile source git fleet-local --timeout=5m
   local_secrets
   local_configuration "$(local_gateway_service).envoy-gateway-system"
   fctl reconcile kustomization fleet-root --with-source --timeout=5m
