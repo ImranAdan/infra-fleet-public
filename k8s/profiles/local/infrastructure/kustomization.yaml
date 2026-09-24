@@ -30,3 +30,15 @@ patches:
       - op: add
         path: /spec/values/kubeScheduler
         value: {enabled: false}
+  # Admission enforcement is the admission controller's job. The reports
+  # controller only writes background PolicyReports, which nothing here reads;
+  # on a one-node lab its rescans cost more than a core and, after a Docker
+  # restart, it lost leader election and rescanned in a loop, adding hundreds
+  # of milliseconds to every request and failing healthy canaries.
+  - target:
+      kind: HelmRelease
+      name: kyverno
+    patch: |-
+      - op: add
+        path: /spec/values/reportsController/enabled
+        value: false
