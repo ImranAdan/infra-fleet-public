@@ -12,6 +12,10 @@ spec:
     name: fleet-local
   wait: true
   timeout: 15m
+  # The root applies k8s/fleet-app; wait until it has applied this revision,
+  # so an app swap never pairs new manifests with the previous app contract.
+  dependsOn:
+    - name: fleet-root
   postBuild:
     substituteFrom:
       - kind: ConfigMap

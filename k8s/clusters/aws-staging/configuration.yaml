@@ -12,6 +12,10 @@ spec:
     name: flux-system
   wait: true
   timeout: 5m
+  # The root applies k8s/fleet-app; wait until it has applied this revision,
+  # so an app swap never pairs new manifests with the previous app contract.
+  dependsOn:
+    - name: flux-system
   postBuild:
     substituteFrom:
       - kind: ConfigMap

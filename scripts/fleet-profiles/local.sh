@@ -430,6 +430,8 @@ local_up() {
   kctl wait --for=condition=Ready kustomization/infrastructure -n flux-system --timeout=15m
   local_wait_gateway
   local_configuration "$(local_gateway_service).envoy-gateway-system"
+  # A sync interrupted between suspend and resume must not leave the app held.
+  kctl patch kustomization applications -n flux-system --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
   fctl reconcile kustomization applications --with-source --timeout=15m
   kctl wait --for=condition=Ready kustomization/policies -n flux-system --timeout=5m
   echo 'Local Kubernetes is ready. Use ./fleet access --profile local and ./fleet credentials --profile local.'
@@ -440,18 +442,26 @@ local_sync() {
   local_revision "$1"
   local_build_image
   local_publish_snapshot
-  # Fetch the new revision before changing fleet-config: a config change makes
-  # Flux re-apply at once, and doing so from the old revision would pair old
-  # manifests with the new image tag (or app), which does not exist.
-  fctl reconcile source git fleet-local --timeout=5m
-  local_secrets
-  local_configuration "$(local_gateway_service).envoy-gateway-system"
-  fctl reconcile kustomization fleet-root --with-source --timeout=5m
-  fctl reconcile kustomization infrastructure --timeout=15m
-  local_wait_gateway
-  fctl reconcile kustomization routing --timeout=15m
-  fctl reconcile kustomization policies --timeout=15m
-  fctl reconcile kustomization applications --timeout=15m
+  # The revision, its app contract and fleet-config (which holds the image
+  # tag) change together. Hold the app layer until all three are consistent:
+  # applying any one early pairs manifests with an image that does not exist.
+  fctl suspend kustomization applications >/dev/null
+  if ! local_sync_platform; then
+    fctl resume kustomization applications --timeout=15m || true
+    return 1
+  fi
+  fctl resume kustomization applications --timeout=15m
+}
+
+local_sync_platform() {
+  fctl reconcile source git fleet-local --timeout=5m &&
+    local_secrets &&
+    local_configuration "$(local_gateway_service).envoy-gateway-system" &&
+    fctl reconcile kustomization fleet-root --timeout=5m &&
+    fctl reconcile kustomization infrastructure --timeout=15m &&
+    local_wait_gateway &&
+    fctl reconcile kustomization routing --timeout=15m &&
+    fctl reconcile kustomization policies --timeout=15m
 }
 
 local_down() {
