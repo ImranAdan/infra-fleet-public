@@ -50,3 +50,15 @@ jobs:
 
       - name: Validate template invariants
         run: ./scripts/validate-template-contract.sh
+
+  # Dependabot bumps the git-server base image but not its apk package pins.
+  # Building the image here makes a bump whose Alpine release dropped those
+  # pinned revisions fail review instead of breaking `./fleet up` later.
+  local-git-server-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Build local Git server image
+        run: docker build --tag fleet-local-git-server:ci platform/local/git-server
