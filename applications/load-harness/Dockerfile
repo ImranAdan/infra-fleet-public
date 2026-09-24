@@ -86,6 +86,7 @@ EXPOSE 8080
 #
 # PROMETHEUS_MULTIPROC_DIR makes /metrics aggregate every worker. It lives under
 # /tmp (an emptyDir in Kubernetes) and is emptied on start so a restarted
-# container never reports the previous run's counters.
-ENV PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-multiproc
-CMD ["sh", "-c", "rm -rf \"$PROMETHEUS_MULTIPROC_DIR\" && mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && exec gunicorn --config python:load_harness.gunicorn_config --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 8 --timeout 120 load_harness.wsgi:app"]
+# container never reports the previous run's counters. It is set only for
+# Gunicorn: commands that replace this one (docker-compose's `python -m` and
+# `pytest`) run a single process and must not look for the directory.
+CMD ["sh", "-c", "export PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-multiproc && rm -rf \"$PROMETHEUS_MULTIPROC_DIR\" && mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && exec gunicorn --config python:load_harness.gunicorn_config --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 8 --timeout 120 load_harness.wsgi:app"]
