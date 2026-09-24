@@ -33,7 +33,7 @@ module "eks" {
 
   # The module keeps control-plane logs for 90 days by default. Staging logs
   # matter only while an environment is being debugged, so keep two weeks.
-  cloudwatch_log_group_retention_in_days = 14
+  cloudwatch_log_group_retention_in_days = 90
 
   eks_managed_node_groups = {
     default = {
