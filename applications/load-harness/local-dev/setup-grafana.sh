@@ -58,7 +58,7 @@ for dashboard in \
     HTTP_CODE=$(curl -X POST "${GRAFANA_URL}/api/dashboards/db" \
       -H "Content-Type: application/json" \
       -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
-      -d @"$dashboard" \
+      -d "{\"dashboard\": $(cat "$dashboard"), \"overwrite\": true}" \
       -w "%{http_code}" \
       -o /dev/null \
       -s)
