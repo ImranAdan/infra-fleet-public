@@ -109,7 +109,9 @@ Grafana dashboard file:
 Local dev import:
 
 - `applications/load-harness/local-dev/setup-grafana.sh`
-- `ops/import-grafana-dashboard.sh`
+
+In the clusters it is provisioned from Git with the other dashboards; see
+[monitoring](../applications/load-harness/monitoring/README.md#how-the-dashboards-get-there).
 
 ## Local Testing
 
