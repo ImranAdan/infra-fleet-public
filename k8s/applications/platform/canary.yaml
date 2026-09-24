@@ -1,21 +1,21 @@
 apiVersion: flagger.app/v1beta1
 kind: Canary
 metadata:
-  name: load-harness
+  name: ${APP_NAME}
   namespace: applications
 spec:
   provider: ${TRAFFIC_PROVIDER}
   targetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: load-harness
+    name: ${APP_NAME}
   autoscalerRef:
     apiVersion: autoscaling/v2
     kind: HorizontalPodAutoscaler
-    name: load-harness
+    name: ${APP_NAME}
   service:
-    port: 5000
-    targetPort: 5000
+    port: ${APP_PORT}
+    targetPort: ${APP_PORT}
   analysis:
     interval: 30s
     maxWeight: 50
@@ -46,7 +46,16 @@ spec:
         timeout: 30s
         metadata:
           type: cmd
-          cmd: "hey -z 5s -q 5 -c 2 http://load-harness-canary.applications:5000/health"
+          cmd: "hey -z 5s -q 5 -c 2 http://${APP_NAME}-canary.applications:${APP_PORT}${APP_HEALTH_PATH}"
+      # Gates read the last minute at the gateway. Without traffic before the
+      # first check it finds no values, which Flagger counts as a failure.
+      - name: warm-up
+        type: pre-rollout
+        url: http://flagger-loadtester.flux-system/
+        timeout: 45s
+        metadata:
+          type: cmd
+          cmd: "hey -z 30s -q 10 -c 2 -host ${APP_HOSTNAME} http://${TRAFFIC_ENDPOINT}${APP_LOAD_PATH}"
       - name: load-test
         type: rollout
         url: http://flagger-loadtester.flux-system/
@@ -56,4 +65,4 @@ spec:
           # This public endpoint participates in chaos injection; probes do not.
           # hey ignores -H 'Host: …' (Go takes the host from the URL), so the
           # routed hostname needs -host or every request misses the app's route.
-          cmd: "hey -z 10s -q 10 -c 2 -host ${APP_HOSTNAME} http://${TRAFFIC_ENDPOINT}/apispec.json"
+          cmd: "hey -z 10s -q 10 -c 2 -host ${APP_HOSTNAME} http://${TRAFFIC_ENDPOINT}${APP_LOAD_PATH}"

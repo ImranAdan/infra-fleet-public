@@ -187,7 +187,7 @@ Without a domain:
 
 ```bash
 aws eks update-kubeconfig --name staging --region eu-west-2
-kubectl port-forward -n applications svc/load-harness 8080:5000
+kubectl port-forward -n applications svc/load-harness 8080:5000   # svc/<APP_NAME> for another app
 kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
 ```
 

@@ -1,5 +1,5 @@
 ---
-# NGINX Ingress for load-harness
+# NGINX Ingress for ${APP_NAME}
 #
 # =============================================================================
 # MIGRATION FROM ALB TO NGINX
@@ -11,7 +11,7 @@
 #   - NGINX Ingress uses canary annotations managed by Flagger
 #
 # Traffic flow (with TLS):
-#   Internet -> AWS NLB (TCP) -> NGINX Ingress (TLS termination) -> load-harness
+#   Internet -> AWS NLB (TCP) -> NGINX Ingress (TLS termination) -> ${APP_NAME}
 #
 # =============================================================================
 # TLS CONFIGURATION (adopter hostname + cert-manager)
@@ -24,7 +24,7 @@
 #   1. rebuild-stack.yml updates Cloudflare DNS to point to NLB
 #   2. cert-manager sees the TLS config and requests certificate
 #   3. Let's Encrypt performs HTTP-01 challenge
-#   4. Certificate stored in load-harness-tls secret
+#   4. Certificate stored in ${APP_NAME}-tls secret
 #   5. NGINX uses cert for TLS termination
 #
 # =============================================================================
@@ -32,7 +32,7 @@
 # =============================================================================
 #
 # During canary analysis, Flagger will:
-#   1. Create a canary ingress (load-harness-canary) as a copy of this ingress
+#   1. Create a canary ingress (${APP_NAME}-canary) as a copy of this ingress
 #   2. Add annotation: nginx.ingress.kubernetes.io/canary: "true"
 #   3. Set annotation: nginx.ingress.kubernetes.io/canary-weight: "<percentage>"
 #   4. NGINX routes <percentage>% of traffic to canary pods
@@ -41,7 +41,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: load-harness
+  name: ${APP_NAME}
   namespace: applications
   annotations:
     # TLS certificate management via cert-manager
@@ -51,7 +51,7 @@ metadata:
     # edge after configuring a real hostname.
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     # Health check configuration
-    nginx.ingress.kubernetes.io/healthcheck-path: /health
+    nginx.ingress.kubernetes.io/healthcheck-path: ${APP_HEALTH_PATH}
     # Connection and timeout settings
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
@@ -60,14 +60,14 @@ metadata:
     # implemented in the Flask application middleware (security_headers.py)
     # rather than NGINX, as configuration-snippet requires allow-snippet-annotations.
   labels:
-    app: load-harness
+    app: ${APP_NAME}
     managed-by: flux
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
         - ${APP_HOSTNAME}
-      secretName: load-harness-tls
+      secretName: ${APP_NAME}-tls
   rules:
     - host: ${APP_HOSTNAME}
       http:
@@ -77,6 +77,6 @@ spec:
             backend:
               service:
                 # Apex service - Flagger manages traffic splitting
-                name: load-harness
+                name: ${APP_NAME}
                 port:
-                  number: 5000
+                  number: ${APP_PORT}

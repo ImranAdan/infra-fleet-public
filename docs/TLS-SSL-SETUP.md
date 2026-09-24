@@ -15,7 +15,7 @@ Leave `APP_HOSTNAME` and `ACME_EMAIL` unset. The rebuild uses the reserved
 `.invalid` domain, which cannot resolve publicly. Reach the application with:
 
 ```bash
-kubectl port-forward -n applications svc/load-harness 8080:5000
+kubectl port-forward -n applications svc/load-harness 8080:5000   # svc/<APP_NAME> for another app
 ```
 
 This is the recommended way to inspect the current staging preview.

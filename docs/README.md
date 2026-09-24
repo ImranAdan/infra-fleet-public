@@ -8,6 +8,9 @@ This is the documentation for **Infra Fleet**, a template for local Kubernetes
 or an AWS EKS platform and the sample application — the Harness — that runs on
 it.
 
+The application is a plug-in: see the [application contract](APPLICATION-CONTRACT.md)
+to swap Load Harness for another app.
+
 If you are adopting the template, start with
 [../CONFIGURATION.md](../CONFIGURATION.md). For repository review and
 recommendation delivery, see [Advisor Integration](ADVISOR-INTEGRATION.md).
@@ -80,7 +83,8 @@ review current AWS pricing before deployment.
 ### Observability
 | Document | Description |
 |----------|-------------|
-| [Monitoring Setup](MONITORING-SETUP.md) | Prometheus, Grafana, PodMonitors and ServiceMonitors |
+| [Monitoring Setup](MONITORING-SETUP.md) | Gateway and container signals, dashboards provisioned from Git |
+| [Application Contract](APPLICATION-CONTRACT.md) | What an app brings, what the platform provides, and how to swap it |
 | [DORA Metrics](DORA-METRICS.md) | Engineering metrics collection |
 
 ### CI/CD & Development

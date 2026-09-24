@@ -1,4 +1,4 @@
-# NetworkPolicy - Controls traffic to/from load-harness pods
+# NetworkPolicy - Controls traffic to/from ${APP_NAME} pods
 #
 # Approach: Permissive egress, restricted ingress
 # - Ingress: Only allow known sources (NGINX, Prometheus, self)
@@ -10,14 +10,14 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: load-harness
+  name: ${APP_NAME}
   namespace: applications
 spec:
   podSelector:
     matchExpressions:
       - key: app
         operator: In
-        values: [load-harness, load-harness-primary]
+        values: ["${APP_NAME}", "${APP_NAME}-primary"]
   policyTypes:
     - Ingress
     - Egress
@@ -31,7 +31,7 @@ spec:
               kubernetes.io/metadata.name: flux-system
       ports:
         - protocol: TCP
-          port: 5000
+          port: ${APP_PORT}
     # Allow traffic from NGINX Ingress Controller
     - from:
         - namespaceSelector:
@@ -39,7 +39,7 @@ spec:
               kubernetes.io/metadata.name: ingress-nginx
       ports:
         - protocol: TCP
-          port: 5000
+          port: ${APP_PORT}
 
     # Allow Prometheus to scrape /metrics
     - from:
@@ -48,19 +48,19 @@ spec:
               kubernetes.io/metadata.name: observability
       ports:
         - protocol: TCP
-          port: 5000
+          port: ${APP_PORT}
 
-    # Allow load-harness pods to communicate with each other
+    # Allow ${APP_NAME} pods to communicate with each other
     # (needed for distributed load testing feature)
     - from:
         - podSelector:
             matchLabels:
-              app: load-harness
+              app: ${APP_NAME}
       ports:
         - protocol: TCP
-          port: 5000
+          port: ${APP_PORT}
 
   # EGRESS: Allow all outbound traffic for now
-  # App needs: Prometheus (9090), DNS (53), self (5000)
+  # The app may reach anything; ingress is what this policy restricts.
   egress:
     - {}

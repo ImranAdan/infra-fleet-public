@@ -1,3 +1,9 @@
+# Canary analysis measures the app at the gateway, so any HTTP app can be
+# analysed without exporting its own metrics.
+# ponytail: Envoy Gateway keeps primary and canary endpoints in one cluster per
+# route rule, so these are route-wide; a failing canary still breaks the gates
+# because its share of traffic fails. Per-backend stats need an EnvoyProxy
+# telemetry change if the gates ever need canary-only precision.
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
 metadata:
@@ -8,8 +14,8 @@ spec:
     type: prometheus
     address: http://kube-prometheus-stack-prometheus.observability:9090
   query: |
-    sum(rate(flask_http_request_total{namespace="{{ namespace }}",pod=~"{{ target }}-[a-z0-9]+-[a-z0-9]+",status!~"5.."}[{{ interval }}]))
-    / sum(rate(flask_http_request_total{namespace="{{ namespace }}",pod=~"{{ target }}-[a-z0-9]+-[a-z0-9]+"}[{{ interval }}])) * 100
+    sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~"httproute/{{ namespace }}/{{ target }}/rule/.*",envoy_response_code!~"5.."}[{{ interval }}]))
+    / sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~"httproute/{{ namespace }}/{{ target }}/rule/.*"}[{{ interval }}])) * 100
 ---
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
@@ -20,5 +26,6 @@ spec:
   provider:
     type: prometheus
     address: http://kube-prometheus-stack-prometheus.observability:9090
+  # Envoy records upstream time in milliseconds.
   query: |
-    histogram_quantile(0.99, sum(rate(flask_http_request_duration_seconds_bucket{namespace="{{ namespace }}",pod=~"{{ target }}-[a-z0-9]+-[a-z0-9]+"}[{{ interval }}])) by (le)) * 1000
+    histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~"httproute/{{ namespace }}/{{ target }}/rule/.*"}[{{ interval }}])) by (le))

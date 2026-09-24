@@ -150,9 +150,10 @@ curl -s "http://localhost:9090/api/v1/query?query=dora_workflow_deploy_event"
 
 ## Troubleshooting
 
-- Flagger rollback spikes or missing canary metrics usually mean traffic did not
-  pass through the NGINX ingress. Ensure load tests set the `Host` header and
-  target the ingress service (see `k8s/applications/load-harness/canary.yaml`).
+- Flagger rollback spikes or missing canary metrics usually mean load-test
+  traffic did not reach the app's route. The load test must target the ingress
+  service with `hey -host`; hey ignores `-H 'Host: …'` (see
+  `k8s/applications/platform/canary.yaml`).
 
 ## Known Limitations
 

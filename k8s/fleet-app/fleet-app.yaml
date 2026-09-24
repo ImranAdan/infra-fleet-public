@@ -1,0 +1,24 @@
+# The application this fleet runs, as Flux and the local facade read it.
+# Do not edit here: run scripts/select-app.sh <name>, which copies
+# k8s/applications/<name>/fleet-app.yaml and selects that app's manifests.
+# tests/profiles/app-contract.sh keeps the two identical.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fleet-app
+  namespace: flux-system
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
+data:
+  # Names the Deployment, its container, its pod `app` label and its image.
+  APP_NAME: load-harness
+  # Build context, containing the Dockerfile.
+  APP_SOURCE: applications/load-harness
+  APP_PORT: "5000"
+  APP_HEALTH_PATH: /health
+  # Requested through the gateway while Flagger analyses a canary.
+  APP_LOAD_PATH: /apispec.json
+  # Space-separated secret:key pairs the platform generates in `applications`.
+  APP_SECRETS: load-harness-api-key:api-key load-harness-secret-key:secret-key
+  # NAME=value that makes the app fail requests; the rollback test sets it.
+  APP_FAULT_ENV: FAIL_RATE=1.0

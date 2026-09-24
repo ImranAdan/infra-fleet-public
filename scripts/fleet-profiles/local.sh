@@ -228,18 +228,32 @@ local_publish_snapshot() {
   [ "$published_sha" = "$FLEET_SHA" ] || fail 'Local Git source did not publish the selected revision.'
 }
 
+# One value of the app contract (k8s/fleet-app/fleet-app.yaml) at the revision
+# being deployed, so a build never mixes one commit's app with another's.
+local_app() {
+  local value
+  value=$(git show "$FLEET_SHA:k8s/fleet-app/fleet-app.yaml" |
+    awk -v key="$1" '$1 == key":" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }')
+  [ -n "$value" ] || [ "${2:-}" = optional ] || fail "k8s/fleet-app/fleet-app.yaml does not set $1." || return 1
+  printf '%s' "$value"
+}
+
 local_build_image() {
-  local build_directory
+  local build_directory app_name app_source
+  app_name=$(local_app APP_NAME) || return 1
+  app_source=$(local_app APP_SOURCE) || return 1
+  [[ "$app_name" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || fail "Invalid APP_NAME: $app_name" || return 1
+  [[ "$app_source" =~ ^applications/[a-z0-9][-a-z0-9]*$ ]] || fail "Invalid APP_SOURCE: $app_source" || return 1
   build_directory=$(mktemp -d "$FLEET_STATE/build.XXXXXX")
-  git archive "$FLEET_SHA" applications/load-harness | tar -x -C "$build_directory"
+  git archive "$FLEET_SHA" "$app_source" | tar -x -C "$build_directory"
   if docker build --build-arg "APP_VERSION=$FLEET_TAG" \
-    -t "localhost:5001/load-harness:$FLEET_TAG" "$build_directory/applications/load-harness"; then
+    -t "localhost:5001/$app_name:$FLEET_TAG" "$build_directory/$app_source"; then
     rm -rf "$build_directory"
   else
     rm -rf "$build_directory"
     return 1
   fi
-  docker push "localhost:5001/load-harness:$FLEET_TAG"
+  docker push "localhost:5001/$app_name:$FLEET_TAG"
 }
 
 local_configuration() {
@@ -250,22 +264,28 @@ local_configuration() {
     --from-literal=TRAFFIC_PROVIDER=gatewayapi:v1 \
     --from-literal=TRAFFIC_ENDPOINT="$traffic_endpoint" \
     --from-literal=APP_HOSTNAME=localhost \
+    --from-literal=ENVIRONMENT=kind \
+    --from-literal=PUBLIC_SCHEME=http \
     --from-literal=RUNTIME_CONFIG_REVISION="$FLEET_SHA" \
     --dry-run=client -o yaml | kctl apply -f -
   kctl label configmap fleet-config -n flux-system reconcile.fluxcd.io/watch=Enabled --overwrite >/dev/null
 }
 
 local_secrets() {
-  local secret filename namespace key credential
+  local secret filename namespace key credential entry app_secrets
   for namespace in flux-system applications observability; do
     kctl create namespace "$namespace" --dry-run=client -o yaml | \
       kctl apply --server-side --field-manager=fleet-local-facade -f - >/dev/null
   done
-  for secret in load-harness-api-key load-harness-secret-key grafana-admin-credentials; do
+  app_secrets=$(local_app APP_SECRETS optional) || return 1
+  # Each app secret holds one random key, cached so repeated starts keep it.
+  for entry in $app_secrets grafana-admin-credentials:admin-password; do
+    secret=${entry%%:*} key=${entry#*:}
+    [[ "$secret" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ && "$key" =~ ^[-._a-zA-Z0-9]+$ ]] ||
+      fail "Invalid APP_SECRETS entry: $entry" || return 1
     case "$secret" in
-      load-harness-api-key) filename=api-key; namespace=applications; key=api-key ;;
-      load-harness-secret-key) filename=session-key; namespace=applications; key='secret-key' ;;
-      grafana-admin-credentials) filename=grafana-password; namespace=observability; key=admin-password ;;
+      grafana-admin-credentials) filename=grafana-password; namespace=observability ;;
+      *) filename="secret-$secret"; namespace=applications ;;
     esac
     if [ ! -f "$FLEET_STATE/$filename" ]; then
       openssl rand -hex 32 | tr -d '\r\n' > "$FLEET_STATE/$filename"
@@ -410,6 +430,8 @@ local_up() {
   kctl wait --for=condition=Ready kustomization/infrastructure -n flux-system --timeout=15m
   local_wait_gateway
   local_configuration "$(local_gateway_service).envoy-gateway-system"
+  # A sync interrupted between suspend and resume must not leave the app held.
+  kctl patch kustomization applications -n flux-system --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
   fctl reconcile kustomization applications --with-source --timeout=15m
   kctl wait --for=condition=Ready kustomization/policies -n flux-system --timeout=5m
   echo 'Local Kubernetes is ready. Use ./fleet access --profile local and ./fleet credentials --profile local.'
@@ -420,14 +442,26 @@ local_sync() {
   local_revision "$1"
   local_build_image
   local_publish_snapshot
-  local_secrets
-  local_configuration "$(local_gateway_service).envoy-gateway-system"
-  fctl reconcile kustomization fleet-root --with-source --timeout=5m
-  fctl reconcile kustomization infrastructure --timeout=15m
-  local_wait_gateway
-  fctl reconcile kustomization routing --timeout=15m
-  fctl reconcile kustomization policies --timeout=15m
-  fctl reconcile kustomization applications --timeout=15m
+  # The revision, its app contract and fleet-config (which holds the image
+  # tag) change together. Hold the app layer until all three are consistent:
+  # applying any one early pairs manifests with an image that does not exist.
+  fctl suspend kustomization applications >/dev/null
+  if ! local_sync_platform; then
+    fctl resume kustomization applications --timeout=15m || true
+    return 1
+  fi
+  fctl resume kustomization applications --timeout=15m
+}
+
+local_sync_platform() {
+  fctl reconcile source git fleet-local --timeout=5m &&
+    local_secrets &&
+    local_configuration "$(local_gateway_service).envoy-gateway-system" &&
+    fctl reconcile kustomization fleet-root --timeout=5m &&
+    fctl reconcile kustomization infrastructure --timeout=15m &&
+    local_wait_gateway &&
+    fctl reconcile kustomization routing --timeout=15m &&
+    fctl reconcile kustomization policies --timeout=15m
 }
 
 local_down() {
@@ -473,9 +507,13 @@ profile_main() {
       esac ;;
     credentials)
       local_existing_cluster
-      printf 'Application API key: '
-      kctl get secret load-harness-api-key -n applications -o jsonpath='{.data.api-key}' | openssl base64 -d -A
-      printf '\nGrafana user: admin\nGrafana password: '
+      # The deployed contract names the app's secrets.
+      for entry in $(kctl get configmap fleet-app -n flux-system -o jsonpath='{.data.APP_SECRETS}'); do
+        printf '%s: ' "${entry%%:*}"
+        kctl get secret "${entry%%:*}" -n applications -o jsonpath="{.data.${entry#*:}}" | openssl base64 -d -A
+        printf '\n'
+      done
+      printf 'Grafana user: admin\nGrafana password: '
       kctl get secret grafana-admin-credentials -n observability -o jsonpath='{.data.admin-password}' | openssl base64 -d -A
       printf '\n' ;;
     test) source "$fleet_root/scripts/fleet-profiles/test-local.sh"; test_local ;;

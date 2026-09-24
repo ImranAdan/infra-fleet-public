@@ -1,5 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - platform
+  # The selected app; must match APP_NAME in k8s/fleet-app/fleet-app.yaml.
   - load-harness
   - observability

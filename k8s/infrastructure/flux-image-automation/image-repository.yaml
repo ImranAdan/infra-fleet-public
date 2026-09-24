@@ -1,15 +1,15 @@
-# ImageRepository - Scans ECR for new load-harness images
+# ImageRepository - Scans ECR for new images of the selected app
 # Flux image-reflector-controller uses this to discover available tags
 # See: https://fluxcd.io/flux/components/image/imagerepositories/
 ---
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: load-harness
+  name: app
   namespace: flux-system
 spec:
   # ECR repository URL
-  image: ${IMAGE_REGISTRY}/load-harness
+  image: ${IMAGE_REGISTRY}/${APP_NAME}
   # Scan interval - check for new images every minute
   interval: 1m
   # AWS provider enables automatic ECR authentication

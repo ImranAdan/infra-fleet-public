@@ -18,3 +18,5 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: fleet-config
+      - kind: ConfigMap
+        name: fleet-app

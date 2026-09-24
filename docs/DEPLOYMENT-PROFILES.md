@@ -45,9 +45,11 @@ In separate terminals, forward only the services you need:
 ./fleet credentials --profile local                 # explicitly display login credentials
 ```
 
-Local application authentication is enabled. Use the application API key to log
-in; Grafana's username is `admin`. The bootstrap generates runtime credentials
-and retains them across repeated starts. Port forwarding binds to loopback.
+`credentials` prints every secret the app contract declares (`APP_SECRETS`) and
+the Grafana login. Load Harness, the default app, authenticates with the
+`load-harness-api-key` value; Grafana's username is `admin`. The bootstrap
+generates these values and retains them across repeated starts. Pods see
+`ENVIRONMENT=kind` and `PUBLIC_SCHEME=http`. Port forwarding binds to loopback.
 The registry binds to `127.0.0.1:5001`; it is intended only for this lab.
 
 After committing a change:
@@ -95,15 +97,17 @@ Existing `terraform-outputs` values are translated into the common
 `fleet-config` contract by the AWS profile.
 
 AWS keeps its current NGINX staging preview and related ingress metrics.
-Local uses Envoy Gateway and canary application metrics. This local profile does
-not certify AWS routing, IAM or production readiness.
+Local uses Envoy Gateway and gates canaries on Envoy's route metrics. This
+local profile does not certify AWS routing, IAM or production readiness.
 
 ## Verification boundary
 
 The local profile has been exercised end to end with a real kind cluster. Its
 acceptance suite verifies Flux reconciliation and drift repair, Kyverno
-rejections, Calico isolation, Prometheus target discovery, healthy canary
-promotion and forced-failure rollback. Operator smoke tests cover application
+rejections, Calico isolation, Prometheus visibility of the app, healthy canary
+promotion and forced-failure rollback, for whichever app the
+[application contract](APPLICATION-CONTRACT.md) selects. It has passed with
+both Load Harness and podinfo. Operator smoke tests cover application
 authentication, the UI, Grafana health and Prometheus.
 
 Pull-request CI renders, schema-checks and policy-checks both profiles without
@@ -134,8 +138,10 @@ evidence that AWS resources were created or destroyed successfully.
 
 ## Layout and checks
 
-- `k8s/applications/`: shared application base, including hardened Gunicorn
-  deployment, HPA, PodMonitor, network policy and canary thresholds.
+- `k8s/fleet-app/`: the app contract: which app runs, its port, paths,
+  secrets and fault switch. Change it with `scripts/select-app.sh`.
+- `k8s/applications/platform/`: the canary, HPA and network policy, written
+  once for any app; `k8s/applications/<app>/`: each app's own manifests.
 - `k8s/infrastructure/`: reusable controllers and AWS infrastructure components.
 - `k8s/profiles/local/`: local controllers, Gateway API, metrics and registry policy.
 - `k8s/profiles/aws-staging/`: AWS configuration adapter, networking and ECR policy.

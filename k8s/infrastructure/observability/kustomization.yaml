@@ -4,4 +4,4 @@ resources:
   - kube-prometheus-stack.yaml
   - namespace.yaml
   - pushgateway.yaml
-  - ../../../applications/load-harness/monitoring
+  - dashboards

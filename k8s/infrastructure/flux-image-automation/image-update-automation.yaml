@@ -6,7 +6,7 @@
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageUpdateAutomation
 metadata:
-  name: load-harness
+  name: app
   namespace: flux-system
 spec:
   # Check for policy changes every 5 minutes
@@ -24,7 +24,7 @@ spec:
         name: fluxcdbot
         email: fluxcdbot@users.noreply.github.com
       messageTemplate: |
-        chore: Update load-harness image
+        chore: update ${APP_NAME} image
 
         {{range .Changed.Changes}}
         - {{.OldValue}} -> {{.NewValue}}

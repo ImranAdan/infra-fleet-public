@@ -1,0 +1,8 @@
+# Platform-owned objects for whichever app k8s/fleet-app names. Flux fills the
+# ${APP_*} values from that ConfigMap, so nothing here names a specific app.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - hpa.yaml
+  - networkpolicy.yaml
+  - canary.yaml

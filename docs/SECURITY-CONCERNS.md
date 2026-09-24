@@ -59,7 +59,7 @@ spec:
 **Fix:** Created NetworkPolicy restricting ingress to NGINX and Prometheus only.
 
 ```yaml
-# k8s/applications/load-harness/networkpolicy.yaml
+# Historical excerpt; the policy now lives in k8s/applications/platform/networkpolicy.yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

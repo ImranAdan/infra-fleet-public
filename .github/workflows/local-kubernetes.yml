@@ -60,7 +60,7 @@ jobs:
         run: |
           ./fleet status --profile local || true
           kubectl --kubeconfig .git/fleet/local/kubeconfig --context kind-infra-fleet-local get pods -A || true
-          kubectl --kubeconfig .git/fleet/local/kubeconfig --context kind-infra-fleet-local describe canary load-harness -n applications || true
+          kubectl --kubeconfig .git/fleet/local/kubeconfig --context kind-infra-fleet-local describe canaries -n applications || true
 
       - name: Stop the local profile
         if: always()

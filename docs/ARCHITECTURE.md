@@ -11,6 +11,7 @@ section below zooms into a single step of it and can be read on its own.
 | How do I pick where the platform runs? | [Profiles](#profiles) |
 | How does the AWS profile get credentials and a cluster? | [AWS onboarding](#aws-onboarding) |
 | How does a change reach a cluster? | [GitOps delivery](#gitops-delivery) |
+| How do I run a different application? | [Application contract](#application-contract) |
 | How is a new version released safely? | [Progressive delivery](#progressive-delivery) |
 | How does traffic reach the application? | [Request paths](#request-paths) |
 | What do I see while it runs? | [Observability](#observability) |
@@ -62,17 +63,34 @@ flowchart LR
     Git[("Fleet repository")] --> Flux["Flux in the cluster"]
     Base["Shared application base"] --> Overlay["Profile overlay<br/>local or aws-staging"]
     Overlay --> Flux
-    Flux --> Cluster["Platform + Load Harness"]
+    Flux --> Cluster["Platform + the selected app"]
 ```
 
 Locally, Flux reads a committed revision from a read-only local Git server, so
 uncommitted edits never deploy. On AWS it reads GitHub. Flux repairs drift back to what Git declares.
 See [GitOps setup](GITOPS-SETUP.md).
 
+## Application contract
+
+The platform names no application. It reads the one it runs from a small
+contract, so the app is a plug-in and Load Harness is only the default.
+
+```mermaid
+flowchart LR
+    Select["scripts/select-app.sh"] --> Contract["k8s/fleet-app<br/>name, port, paths, secrets"]
+    Contract --> Platform["Platform layer<br/>canary, HPA, policy, build, test"]
+    AppDir["k8s/applications/&lt;app&gt;<br/>Deployment + Service"] --> Platform
+    Platform --> Running(["Running app"])
+```
+
+CI selects every app in turn and renders both profiles, and fails if any
+platform file names an app. See the [application contract](APPLICATION-CONTRACT.md).
+
 ## Progressive delivery
 
 A release tag builds, scans and publishes an image. Flux picks up the new tag and
-Flagger shifts traffic to it only while metrics stay healthy.
+Flagger shifts traffic to it only while gateway metrics stay healthy, so any
+HTTP app can be analysed without exporting metrics of its own.
 
 ```mermaid
 flowchart LR
@@ -95,7 +113,7 @@ planned Gateway API migration replaces the retired ingress-nginx controller.
 
 ```mermaid
 flowchart LR
-    Local(["Local browser"]) --> Envoy["Envoy Gateway"] --> App["Load Harness"]
+    Local(["Local browser"]) --> Envoy["Envoy Gateway"] --> App["The selected app"]
     Users(["Users"]) -.->|resolve name| DNS["Cloudflare DNS<br/>unproxied CNAME"]
     Users --> NLB["AWS NLB"] --> NGINX["ingress-nginx<br/>preview"] --> App
 ```
@@ -105,11 +123,13 @@ See [TLS and DNS](TLS-SSL-SETUP.md).
 
 ## Observability
 
-The application and platform expose metrics; delivery events add DORA signals.
+The gateway and the kubelet describe any app; an app may add its own metrics,
+and delivery events add DORA signals. Dashboards are provisioned from Git.
 
 ```mermaid
 flowchart LR
-    App["Load Harness<br/>and platform"] --> Prometheus[("Prometheus")]
+    Gateway["Gateway and kubelet<br/>requests, CPU, memory"] --> Prometheus[("Prometheus")]
+    App["App /metrics<br/>(optional)"] -.-> Prometheus
     Delivery["Delivery workflows"] -->|DORA events| Pushgateway["Pushgateway"] --> Prometheus
     Prometheus --> Grafana["Grafana dashboards"]
     Prometheus --> Flagger["Flagger analysis"]
