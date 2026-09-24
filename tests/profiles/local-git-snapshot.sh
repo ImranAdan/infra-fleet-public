@@ -6,6 +6,13 @@ root=$(git rev-parse --show-toplevel)
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 
+# The Advisor may render a non-bootstrap Flux source only when Fleet declares
+# that the source mirrors the reviewed checkout. Keep that declaration coupled
+# to the exact-revision publication test below.
+git_source=$(sed -n '1,/^---$/p' "$root/platform/local/flux-source.yaml")
+grep -q '^kind: GitRepository$' <<< "$git_source"
+grep -q '^    infra-fleet.io/checkout-mirror: "true"$' <<< "$git_source"
+
 git clone --quiet --depth 1 "file://$root" "$scratch/shallow"
 cd "$scratch/shallow"
 fleet_root=$PWD

@@ -3,6 +3,8 @@ kind: GitRepository
 metadata:
   name: fleet-local
   namespace: flux-system
+  annotations:
+    infra-fleet.io/checkout-mirror: "true"
 spec:
   interval: 30s
   url: http://fleet-local-git.flux-system.svc.cluster.local:8080/cgi-bin/git/fleet.git
