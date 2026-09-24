@@ -147,8 +147,8 @@ Via `prometheus-flask-exporter`:
 
 - `flask_http_request_total` — Request count by endpoint and status
 - `flask_http_request_duration_seconds` — Request latency histogram
-- `process_cpu_seconds_total` — Process CPU time
-- `process_resident_memory_bytes` — Process memory usage
+- Metrics aggregate across Gunicorn workers (multiprocess mode), so there are
+  no `process_*` series; CPU and memory come from cAdvisor per container.
 
 ## Dockerfile
 

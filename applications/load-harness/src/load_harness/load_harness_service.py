@@ -71,6 +71,24 @@ from load_harness.workers.memory_worker import memory_worker_target
 _PROCESS_CONTEXT = multiprocessing.get_context("spawn")
 
 
+def _get_cpu_limit_cores() -> Optional[float]:
+    """The container's CPU limit in cores (0.5 for a 500m limit); None if unlimited."""
+    try:
+        with open('/sys/fs/cgroup/cpu.max', 'r') as f:
+            quota, period = f.read().split()
+        return None if quota == 'max' else int(quota) / int(period)
+    except (FileNotFoundError, ValueError, PermissionError):
+        pass
+    try:
+        with open('/sys/fs/cgroup/cpu/cpu.cfs_quota_us', 'r') as f:
+            quota_us = int(f.read().strip())
+        with open('/sys/fs/cgroup/cpu/cpu.cfs_period_us', 'r') as f:
+            period_us = int(f.read().strip())
+        return quota_us / period_us if quota_us > 0 else None
+    except (FileNotFoundError, ValueError, PermissionError):
+        return None
+
+
 def _get_available_cpu_cores() -> int:
     """
     Get the number of CPU cores available, respecting cgroup limits (K8s).
@@ -292,6 +310,7 @@ class LoadHarnessService:
 
         return {
             "cpu_cores": cpu_cores,
+            "cpu_limit_cores": _get_cpu_limit_cores(),
             "cpu_cores_physical": multiprocessing.cpu_count(),
             "memory_total_mb": memory_total_mb,
             "memory_available_mb": memory_available_mb,
@@ -599,13 +618,21 @@ class LoadHarnessService:
         # Schedule automatic cleanup
         self.job_manager.schedule_cleanup(job_id, duration_seconds)
 
+        # A worker per requested core, but the kernel caps the container at its
+        # CPU limit; say so rather than claim cores it cannot have.
+        limit = _get_cpu_limit_cores()
+        message = f"CPU load started with {cores} worker(s)."
+        if limit is not None and limit < cores:
+            message += f" The container is limited to {limit:g} core(s), which they share."
+        message += " Health probes remain responsive."
         return {
             "status": "started",
             "job_id": job_id,
             "cores": cores,
             "duration_seconds": duration_seconds,
             "intensity": intensity,
-            "message": f"CPU load started on {cores} core(s). Health probes remain responsive.",
+            "cpu_limit_cores": limit,
+            "message": message,
             "check_status": "/load/cpu/status",
             "stop_endpoint": "/load/cpu/stop",
             "timestamp": datetime.now(timezone.utc).isoformat(),

@@ -106,7 +106,7 @@ Stress-test CPU on the current pod/container with background worker processes.
 
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
-| Cores | 1-16 | 1 | Number of CPU workers to spawn |
+| Cores | 1-16 | 1 | Number of CPU worker processes to spawn. They share the container's CPU limit, which the response and UI state (`cpu_limit_cores`): one worker in a 0.5-core container gets half a core, not a full one |
 | Duration | 10s-15m | 60s | How long to run the load |
 | Intensity | 1-10 | 5 | Computational intensity per cycle |
 
@@ -189,8 +189,8 @@ Real-time system metrics displayed on the right side, auto-refreshes every 5 sec
 
 | Metric | Local Mode | Cluster Mode |
 |--------|------------|--------------|
-| **CPU Usage** | Single % (process CPU / available cores) | `avg X% \| max Y%` (% of 100m limit) |
-| **Memory Usage** | Single % (RSS / system RAM) | `avg X% \| max Y%` (% of 1Gi limit) |
+| **CPU Usage** | Single % (process CPU / available cores) | `avg X% \| max Y%` (% of each pod's declared CPU limit) |
+| **Memory Usage** | Single % (RSS / system RAM) | `avg X% \| max Y%` (% of each pod's declared memory limit) |
 | **Pod Count** | Always 1 | 1-8 with "HPA Scaled" badge |
 | **Request Rate** | req/s from Prometheus | req/s aggregated across pods |
 
@@ -369,8 +369,14 @@ resources:
     cpu: "50m"
   limits:
     memory: "1Gi"
-    cpu: "100m"
+    cpu: "500m"
 ```
+
+At 100m the container was throttled in most scheduling periods under the
+canary's own load test, and healthy releases failed the latency gate. The
+image runs one Gunicorn process with eight threads: load jobs hold live child
+processes that only the process that started them can report or stop, and CPU
+load runs in spawned processes, so threads do not serialise it.
 
 ### HPA Configuration
 
