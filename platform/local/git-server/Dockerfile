@@ -1,4 +1,4 @@
-FROM alpine/git:2.49.1@sha256:c0280cf9572316299b08544065d3bf35db65043d5e3963982ec50647d2746e26
+FROM alpine/git:v2.54.0@sha256:ae0f6f4bce38d2b8c40becc0d6241a08d9f57186ea03029de2189a2b5e722d94
 # Alpine packages the read-only Git transport separately from the client.
 RUN apk add --no-cache git-daemon=2.49.1-r0 busybox-extras=1.37.0-r20
 COPY git-http-backend /web/cgi-bin/git
