@@ -54,4 +54,6 @@ spec:
         metadata:
           type: cmd
           # This public endpoint participates in chaos injection; probes do not.
-          cmd: "hey -z 10s -q 10 -c 2 -H 'Host: ${APP_HOSTNAME}' http://${TRAFFIC_ENDPOINT}${APP_LOAD_PATH}"
+          # hey ignores -H 'Host: …' (Go takes the host from the URL), so the
+          # routed hostname needs -host or every request misses the app's route.
+          cmd: "hey -z 10s -q 10 -c 2 -host ${APP_HOSTNAME} http://${TRAFFIC_ENDPOINT}${APP_LOAD_PATH}"
