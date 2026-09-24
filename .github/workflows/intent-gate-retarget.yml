@@ -13,12 +13,13 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: intent-gate-retarget-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 jobs:
   intent:
     name: Intent gate (retargeted)
     if: github.event.changes.base != null
+    # Job-level, so a later title or body edit (whose job is skipped) cannot
+    # cancel a retarget gate that is still running; only another retarget can.
+    concurrency:
+      group: intent-gate-retarget-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     uses: ./.github/workflows/intent-gate-run.yml
