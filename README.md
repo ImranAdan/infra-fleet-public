@@ -162,10 +162,10 @@ follow **[CONFIGURATION.md](CONFIGURATION.md)** for AWS staging. The AWS profile
 needs an AWS account and HCP Terraform organisation; a first cluster build
 commonly takes 25–40 minutes. A custom domain is optional.
 
-The sample application is meant to be replaced. Doing so requires preserving
-the Service, probe, metrics, image-automation, and canary contracts—not only
-adding `/health` and `/metrics` endpoints. See
-[replacing the Harness](applications/load-harness/docs/APPLICATION-ROADMAP.md#extending-or-replacing-the-harness).
+The sample application is meant to be replaced, and the platform names none of
+its own: `scripts/select-app.sh podinfo` swaps in a second, unrelated app, and
+CI proves every app can be selected. See the
+[application contract](docs/APPLICATION-CONTRACT.md).
 
 ---
 ## Architecture

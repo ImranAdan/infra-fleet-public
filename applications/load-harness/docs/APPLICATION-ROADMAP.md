@@ -199,30 +199,8 @@ Currently deployed:
 The Harness exists to give the platform something real to deploy, scale,
 canary and measure. It is meant to be replaced.
 
-Replacing it is a small migration, not an image-only toggle. Preserve or
-deliberately update this contract:
-
-1. The Deployment must expose the Service's named HTTP port, provide distinct
-   liveness and readiness endpoints, keep resource requests for HPA, and expose
-   Prometheus metrics compatible with the `PodMonitor`.
-2. The image repository, immutable bootstrap tag, release-please package name,
-   Flux `ImageRepository`/`ImagePolicy`, and CI `ECR_REPOSITORY` must move
-   together. `scripts/validate-template-contract.sh` checks that the AWS
-   profile keeps a release tag and the Flux tag setter. It deliberately does
-   not compare that tag to the release manifest: release-please advances the
-   manifest before the image is published, so the two legitimately differ while
-   a release is building.
-3. Flagger's `targetRef`, `autoscalerRef`, Service port, ingress reference,
-   webhook routes, and MetricTemplates must match the replacement. Local
-   analysis reads application metrics; AWS staging reads NGINX ingress metrics.
-   Both profiles use the public `/health` and `/ready` endpoints.
-4. Update the Kubernetes Secret contract if the replacement does not use the
-   Harness's optional API key and required Flask session key.
-
-Validate the replacement through build, schema and policy checks first. Canary
-promotion, rollback, HPA behavior, and teardown still require an approved live
-cycle in a configured private copy.
-
-Keeping the Harness alongside your own workload is also reasonable - it is a
-useful way to generate load and confirm autoscaling still behaves after a
-change.
+Replacing it is a contract, not a migration: the platform reads the app from
+[`k8s/fleet-app`](../../../k8s/fleet-app/fleet-app.yaml), and
+`scripts/select-app.sh <name>` swaps it. See the
+[application contract](../../../docs/APPLICATION-CONTRACT.md), and
+[podinfo](../../podinfo/README.md) for a second app that runs through it.

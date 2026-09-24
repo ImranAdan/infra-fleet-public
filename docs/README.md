@@ -8,6 +8,9 @@ This is the documentation for **Infra Fleet**, a template for local Kubernetes
 or an AWS EKS platform and the sample application — the Harness — that runs on
 it.
 
+The application is a plug-in: see the [application contract](APPLICATION-CONTRACT.md)
+to swap Load Harness for another app.
+
 If you are adopting the template, start with
 [../CONFIGURATION.md](../CONFIGURATION.md). For repository review and
 recommendation delivery, see [Advisor Integration](ADVISOR-INTEGRATION.md).
