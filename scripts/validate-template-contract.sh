@@ -39,9 +39,8 @@ if git grep -n -E "^[[:space:]]+version:[[:space:]]+['\"]?v?[0-9]+\\.x['\"]?" \
   failed=true
 fi
 
-version=$(jq -er '."applications/load-harness"' .release-please-manifest.json)
-if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "The release manifest does not contain a semantic load-harness version." >&2
+if ! jq -e 'length > 0 and all(.[]; test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' .release-please-manifest.json >/dev/null; then
+  echo "Every released application needs a semantic version in the release manifest." >&2
   failed=true
 fi
 
@@ -81,7 +80,7 @@ done
 
 while IFS= read -r -d '' shell_file; do
   bash -n "$shell_file"
-done < <(find scripts ops applications/load-harness/local-dev -type f -name '*.sh' -print0)
+done < <(find scripts ops applications -type f -name '*.sh' -print0)
 
 while IFS= read -r -d '' json_file; do
   jq empty "$json_file"
