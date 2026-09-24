@@ -174,8 +174,10 @@ These metrics are exposed by the Flask application at `/metrics` endpoint:
 | `flask_http_request_duration_seconds_bucket` | Histogram | Bucketed request durations for percentile calculation |
 | `flask_http_request_duration_seconds_sum` | Counter | Sum of all request durations |
 | `flask_http_request_duration_seconds_count` | Counter | Count of requests (for average calculation) |
-| `process_cpu_seconds_total` | Counter | Total CPU time consumed by the Python process |
-| `process_resident_memory_bytes` | Gauge | Current memory used by the Python process |
+
+The exporter runs in multiprocess mode, so counters aggregate across Gunicorn
+workers and no `process_*` series are exported. Per-pod CPU and memory come
+from cAdvisor, below, and include the load workers the app spawns.
 
 ### Container Metrics (from cAdvisor via kubelet)
 
@@ -248,7 +250,7 @@ All metrics flow through a collection pipeline:
 
 | Component | What It Does | Metrics Provided |
 |-----------|--------------|------------------|
-| **Flask App** | Exposes application metrics via prometheus_flask_exporter | `flask_http_*`, `process_*` |
+| **Flask App** | Exposes application metrics via prometheus_flask_exporter | `flask_http_*` |
 | **kube-state-metrics** | Watches Kubernetes API, exposes object states | `kube_*` (deployments, HPAs, pods) |
 | **node-exporter** | DaemonSet that exposes node-level metrics | `node_*` (CPU, memory, disk) |
 | **cAdvisor** | Built into kubelet, exposes container metrics | `container_*` (CPU, memory per container) |

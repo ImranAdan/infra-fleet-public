@@ -230,8 +230,8 @@ Queries Prometheus for real-time metrics. Requires the dashboard backend to quer
 
 | Metric | Prometheus Query | Display |
 |--------|-----------------|---------|
-| CPU Usage | `rate(process_cpu_seconds_total{...}[1m])` | Percentage bar |
-| Memory Usage | `process_resident_memory_bytes{...}` | Percentage bar |
+| CPU Usage | cAdvisor CPU rate ÷ the pod's declared CPU limit | Percentage bar |
+| Memory Usage | cAdvisor working set ÷ the pod's declared memory limit | Percentage bar |
 | Pod Count | `kube_deployment_status_replicas{deployment="load-harness"}` | Count with visual |
 | Request Rate | `rate(flask_http_request_total{...}[1m])` | Requests/sec |
 | Avg Response | `rate(flask_http_request_duration_seconds_sum[1m]) / rate(flask_http_request_duration_seconds_count[1m])` | Milliseconds |
