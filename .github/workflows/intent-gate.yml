@@ -10,6 +10,8 @@ name: Intent Gate
 on:
   pull_request:
     branches: [main]
+    # `edited` covers a pull request retargeted to main without a new commit.
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
@@ -21,6 +23,8 @@ concurrency:
 jobs:
   gate:
     name: Declared intent
+    # Title and body edits do not change what merges; only a base change does.
+    if: github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
