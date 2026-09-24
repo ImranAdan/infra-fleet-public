@@ -83,37 +83,24 @@ PROM_QUERY_POD_COUNT = (
     'pod=~"load-harness.*", phase="Running"})'
 )
 
-# CPU usage queries (percentage of 100m limit)
-PROM_QUERY_CPU_AVG = (
-    'avg(rate(container_cpu_usage_seconds_total{namespace="applications", '
-    'pod=~"load-harness.*", container="load-harness"}[1m])) * 100 / 0.1'
+# CPU and memory as a percentage of each pod's own limit, read from
+# kube-state-metrics, so the figures follow whatever the Deployment declares.
+_CPU_PERCENT_PER_POD = (
+    'sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="applications", pod=~"load-harness.*", container="load-harness"}[1m])) '
+    '/ sum by (pod) (kube_pod_container_resource_limits{namespace="applications", pod=~"load-harness.*", container="load-harness", resource="cpu"}) * 100'
+)
+_MEMORY_PERCENT_PER_POD = (
+    'sum by (pod) (container_memory_working_set_bytes{namespace="applications", pod=~"load-harness.*", container="load-harness"}) '
+    '/ sum by (pod) (kube_pod_container_resource_limits{namespace="applications", pod=~"load-harness.*", container="load-harness", resource="memory"}) * 100'
 )
 
-PROM_QUERY_CPU_MAX = (
-    'max(rate(container_cpu_usage_seconds_total{namespace="applications", '
-    'pod=~"load-harness.*", container="load-harness"}[1m])) * 100 / 0.1'
-)
+PROM_QUERY_CPU_AVG = f"avg({_CPU_PERCENT_PER_POD})"
+PROM_QUERY_CPU_MAX = f"max({_CPU_PERCENT_PER_POD})"
+PROM_QUERY_CPU_PER_POD = _CPU_PERCENT_PER_POD
 
-PROM_QUERY_CPU_PER_POD = (
-    'rate(container_cpu_usage_seconds_total{namespace="applications", '
-    'pod=~"load-harness.*", container="load-harness"}[1m]) * 100 / 0.1'
-)
-
-# Memory usage queries (percentage of 1Gi limit)
-PROM_QUERY_MEMORY_AVG = (
-    'avg(container_memory_working_set_bytes{namespace="applications", '
-    'pod=~"load-harness.*", container="load-harness"}) / (1024 * 1024 * 1024) * 100'
-)
-
-PROM_QUERY_MEMORY_MAX = (
-    'max(container_memory_working_set_bytes{namespace="applications", '
-    'pod=~"load-harness.*", container="load-harness"}) / (1024 * 1024 * 1024) * 100'
-)
-
-PROM_QUERY_MEMORY_PER_POD = (
-    'container_memory_working_set_bytes{namespace="applications", '
-    'pod=~"load-harness.*", container="load-harness"} / (1024 * 1024 * 1024) * 100'
-)
+PROM_QUERY_MEMORY_AVG = f"avg({_MEMORY_PERCENT_PER_POD})"
+PROM_QUERY_MEMORY_MAX = f"max({_MEMORY_PERCENT_PER_POD})"
+PROM_QUERY_MEMORY_PER_POD = _MEMORY_PERCENT_PER_POD
 
 # Request rate queries
 PROM_QUERY_REQUEST_RATE_LOCAL = (

@@ -79,8 +79,13 @@ EXPOSE 8080
 # unanswered until the liveness probe restarted the pod. The dashboard now calls
 # the service in-process, so no request waits on this same worker pool.
 #
+# One worker process with threads: load jobs hold live child processes, which
+# only the process that started them can report or stop. With two workers,
+# status and stop reached the wrong one about half the time. CPU load itself
+# runs in spawned processes, so threads do not serialise it.
+#
 # PROMETHEUS_MULTIPROC_DIR makes /metrics aggregate every worker. It lives under
 # /tmp (an emptyDir in Kubernetes) and is emptied on start so a restarted
 # container never reports the previous run's counters.
 ENV PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-multiproc
-CMD ["sh", "-c", "rm -rf \"$PROMETHEUS_MULTIPROC_DIR\" && mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && exec gunicorn --config python:load_harness.gunicorn_config --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 120 load_harness.wsgi:app"]
+CMD ["sh", "-c", "rm -rf \"$PROMETHEUS_MULTIPROC_DIR\" && mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && exec gunicorn --config python:load_harness.gunicorn_config --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 8 --timeout 120 load_harness.wsgi:app"]
