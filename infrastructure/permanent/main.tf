@@ -32,4 +32,14 @@ terraform {
 
 provider "aws" {
   region = "eu-west-2"
+
+  # Cost-allocation tags applied to every taggable resource. The permanent
+  # foundation is shared by every staging rebuild, hence Environment = shared.
+  default_tags {
+    tags = {
+      Environment = "shared"
+      Service     = "infra-fleet"
+      Owner       = var.cost_owner
+    }
+  }
 }

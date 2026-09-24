@@ -22,3 +22,9 @@ variable "eks_admin_principal_arns" {
     error_message = "Each EKS admin principal must be an IAM role or user ARN."
   }
 }
+
+variable "cost_owner" {
+  description = "Owner cost-allocation tag applied to every taggable AWS resource by default."
+  type        = string
+  default     = "infra-fleet"
+}

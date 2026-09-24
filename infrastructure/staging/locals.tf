@@ -22,4 +22,12 @@ locals {
     Environment = local.environment
     ManagedBy   = "terraform"
   }
+
+  # Cost-allocation tags the AWS provider applies to every taggable resource,
+  # so billed usage can be split by environment, service and owner.
+  cost_tags = {
+    Environment = local.environment
+    Service     = "infra-fleet"
+    Owner       = var.cost_owner
+  }
 }

@@ -29,3 +29,9 @@ variable "github_deployment_environment" {
     error_message = "github_deployment_environment must not be empty."
   }
 }
+
+variable "cost_owner" {
+  description = "Owner cost-allocation tag applied to every taggable AWS resource by default."
+  type        = string
+  default     = "infra-fleet"
+}
