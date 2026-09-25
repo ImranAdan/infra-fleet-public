@@ -65,8 +65,9 @@ and what they showed (see `.github/pull_request_template.md`). An agent may
 merge a pull request it raised only when
 `python3 .claude/skills/merge-gate/merge_ready.py <PR>` reports `READY`, and
 must then say what merged and why. `SURFACE` means stop and tell the owner:
-a permission, credential, dependency, decision-record or scope change is a
-human decision, as is disagreeing with a review finding. `BLOCKED` means fix
+a permission, credential, dependency, policy, intent, decision-record,
+product-requirements, permanent-infrastructure or scope change is a human
+decision, as is disagreeing with a review finding. `BLOCKED` means fix
 and run the gate again.
 
 ## Shared cluster
