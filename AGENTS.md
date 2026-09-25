@@ -70,6 +70,15 @@ product-requirements, permanent-infrastructure or scope change is a human
 decision, as is disagreeing with a review finding. `BLOCKED` means fix
 and run the gate again.
 
+## When a decision is not yours
+
+If you cannot decide between options, or a decision belongs to the owner (see
+the merge gate's owner categories), do not guess and do not stall. Open an
+issue from the **Decision needed** template (`.github/ISSUE_TEMPLATE/decision.md`):
+a short TL;DR, evidence for each option, one decision card per question with
+your recommendation, and a reply template. The owner answers with a comment,
+and you take it from there. Meanwhile carry on with other work.
+
 ## Shared cluster
 
 The local cluster is shared by everyone working in this checkout. Run
