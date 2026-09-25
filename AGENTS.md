@@ -79,6 +79,16 @@ a short TL;DR, evidence for each option, one decision card per question with
 your recommendation, and a reply template. The owner answers with a comment,
 and you take it from there. Meanwhile carry on with other work.
 
+## Picking up decisions
+
+The **Decision collector** workflow records the owner's answers on decision
+issues as they arrive and labels an issue `decided` once every card is
+answered, so the owner never has to report back. At the start of work, run
+`gh issue list --label decided --state open`. The collector's summary comment
+holds the record, `<!-- decisions {"D1": "A", ...} -->`. Act on it, then close
+the issue with a comment linking the pull request that carries it out. Never
+post `D1:`-style answers yourself: only the owner's count.
+
 ## Shared cluster
 
 The local cluster is shared by everyone working in this checkout. Run
