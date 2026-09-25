@@ -52,7 +52,8 @@ progressive delivery, request paths, observability and guardrails.
 | Nodes | t3.large spot | Cost-optimized compute |
 | Flux | v2.7.5 local / v2.7.3 AWS | GitOps operator |
 | Flagger | 1.45.0 | Progressive delivery |
-| nginx-ingress | 4.15.1 (retired; do not expose publicly) | Ingress + canary traffic |
+| Envoy Gateway | 1.9.1 local | Gateway API routing + canary traffic |
+| nginx-ingress | 4.15.1 AWS preview (retired; do not expose publicly) | Ingress + canary traffic |
 | cert-manager | v1.21.1 | TLS certificates |
 | Prometheus | kube-prometheus-stack | Metrics collection |
 | Grafana | kube-prometheus-stack | Dashboards |
@@ -128,8 +129,7 @@ review current AWS pricing before deployment.
 - [x] Kyverno policy validation in CI
 
 ### Known follow-up work
-- [ ] Replace retired ingress-nginx with a maintained Gateway API path
-- [ ] GitOps Grafana dashboard provisioning (Issue #124)
+- [ ] Replace retired ingress-nginx in the AWS profile with a maintained Gateway API path
 - [ ] IAM least-privilege permissions (Issue #296)
 
 ### Possible extensions

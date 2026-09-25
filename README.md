@@ -79,9 +79,9 @@ Fork this and you have a platform that does the following, on day one:
 | | |
 |---|---|
 | **Models staged delivery** | Choose local Kubernetes or AWS staging; Flux reconciles the selected profile and Flagger evaluates a canary. AWS routing remains a non-public preview |
-| **Runs any app** | The platform names no application: Load Harness is the default, `scripts/select-app.sh podinfo` swaps in another, and CI proves every app can be selected |
+| **Runs a swappable app** | The platform names no application: Load Harness is the default, `scripts/select-app.sh podinfo` swaps in another, and CI proves every contract-compliant app can be selected |
 | **Exposes useful signals** | Gateway golden signals and a Fleet Application dashboard for whatever runs, provisioned from Git, plus an explicitly heuristic DORA-signal pipeline |
-| **Makes cost visible** | Spot instances, a slim Flux install, nginx ingress, and a manual teardown workflow for when you are not using it |
+| **Makes cost visible** | Spot instances, a slim Flux install, profile-specific routing, and a manual teardown workflow for when you are not using it |
 | **Proves itself in CI** | Both profiles rendered and checked, local Flux/Kyverno/canary behaviour exercised, Terraform and images scanned, commits linted |
 | **Connects intent to improvement** | Infra Fleet Advisor evaluates declared positions against versioned repository evidence and proposes work for review |
 
@@ -244,12 +244,13 @@ measurement system:
 | Change Failure Rate | Workflow failures + Flagger rollbacks |
 | MTTR | Failure → Recovery time tracking |
 
-### TLS/HTTPS
+### TLS/HTTPS (AWS preview)
 
 Automated certificate management:
 - **cert-manager** with Let's Encrypt ClusterIssuer
 - **Cloudflare DNS** automatically updated on cluster rebuild
-- **nginx-ingress** handles TLS termination
+- **nginx-ingress** handles TLS termination in the current AWS preview; local
+  Kubernetes uses Envoy Gateway without public DNS or TLS
 
 ---
 
@@ -281,7 +282,7 @@ Automated certificate management:
 │   ├── infrastructure/             # Shared Helm releases and namespaces
 │   │   ├── cert-manager/           # TLS certificates
 │   │   ├── flagger/                # Progressive delivery
-│   │   ├── nginx-ingress-controller/
+│   │   ├── nginx-ingress-controller/ # AWS preview only
 │   │   └── observability/          # Prometheus, Grafana, Pushgateway
 │   ├── fleet-app/                  # App contract: which app runs, port, paths
 │   └── applications/
@@ -310,7 +311,8 @@ Automated certificate management:
 ### Platform Services
 | Component | Purpose |
 |-----------|---------|
-| nginx-ingress | Ingress controller + canary traffic splitting |
+| Envoy Gateway | Local Gateway API routing + canary traffic splitting |
+| nginx-ingress | AWS preview routing; retired upstream and not for public exposure |
 | cert-manager | Automated TLS certificates |
 | Flagger | Progressive delivery / canary deployments |
 | metrics-server | HPA scaling metrics |

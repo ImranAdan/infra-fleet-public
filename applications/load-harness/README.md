@@ -9,7 +9,7 @@ A **synthetic workload generator** for Kubernetes platforms with a web-based das
 - **Web Dashboard** - Interactive UI for triggering and monitoring load tests
 - **Three Load Types** - CPU (single-pod), Cluster (distributed), Memory
 - **Real-time Metrics** - Live CPU, memory, pod count, and request rate
-- **Kubernetes-native** - HPA integration, Prometheus metrics, and NGINX ingress through an AWS NLB
+- **Kubernetes-native** - HPA integration, Prometheus metrics, Envoy Gateway locally, and the AWS NGINX preview
 - **Local & Cluster Modes** - Automatic behavior adaptation based on environment
 
 ---
@@ -374,16 +374,17 @@ resources:
 
 At 100m the container was throttled in most scheduling periods under the
 canary's own load test, and healthy releases failed the latency gate. The
-image runs one Gunicorn process with eight threads: load jobs hold live child
-processes that only the process that started them can report or stop, and CPU
-load runs in spawned processes, so threads do not serialise it.
+image runs one Gunicorn process with eight threads: background load jobs hold
+live child processes that only the process that started them can report or stop,
+and their CPU work runs in spawned processes. The synchronous `/load/cpu/work`
+path runs in request threads with bounded admission so probe capacity remains.
 
 ### HPA Configuration
 
 | Setting | Value |
 |---------|-------|
 | Min Replicas | 1 |
-| Max Replicas | 8 |
+| Max Replicas | 3 local / 8 AWS staging |
 | CPU Target | 50% utilization |
 | Scale Up | 1 pod every 15s |
 | Scale Down | 1 pod every 60s (stabilization: 60s) |
@@ -395,11 +396,14 @@ load runs in spawned processes, so threads do not serialise it.
 | Liveness | `/health` | 30s | 10s |
 | Readiness | `/ready` | 5s | 10s |
 
-### Ingress
+### Cluster routing
 
-- Type: community NGINX ingress exposed through an AWS NLB
-- Scheme: internet-facing
-- Path: `/` (all traffic routed to load-harness)
+| Profile | Route |
+|---|---|
+| Local | Envoy Gateway and Gateway API on loopback |
+| AWS staging preview | Community NGINX ingress through an internet-facing NLB |
+
+Both route `/` to the selected application.
 
 The community ingress controller is retired and receives no security fixes.
 Treat this cluster route as a private preview until the planned Gateway API
