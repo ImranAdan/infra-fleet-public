@@ -283,6 +283,13 @@ Response:
 ```
 
 **POST /load/cpu/work** - Synchronous Work (for distributed testing)
+
+Each pod admits up to six concurrent long-running operations, counting both
+cluster-dashboard handlers and synchronous work requests, and returns `429`
+when that capacity is busy. This keeps two Gunicorn threads available for
+health probes and lightweight endpoints while CPU work holds Python's
+interpreter.
+
 ```json
 {
   "iterations": 500000

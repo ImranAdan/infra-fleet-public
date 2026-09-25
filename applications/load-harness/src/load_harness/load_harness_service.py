@@ -10,6 +10,7 @@ import time
 import uuid
 import logging
 import multiprocessing
+import threading
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple
 
@@ -30,6 +31,7 @@ from load_harness.constants import (
     CPU_WORK_MAX_ITERATIONS,
     CPU_WORK_MIN_ITERATIONS,
     CPU_WORK_DEFAULT_ITERATIONS,
+    CPU_WORK_MAX_CONCURRENCY,
     MEMORY_MAX_SIZE_MB,
     MEMORY_LIMIT_HEADROOM,
     MEMORY_MIN_SIZE_MB,
@@ -213,6 +215,7 @@ class LoadHarnessService:
         self.available_cores = _get_available_cpu_cores()
         self.memory_limit_mb = _get_memory_limit_mb()
         self.memory_budget = MemoryBudget(self.memory_limit_mb)
+        self.cpu_work_slots = threading.BoundedSemaphore(CPU_WORK_MAX_CONCURRENCY)
 
         # The dashboard blueprint runs in this same process and used to reach
         # these endpoints over HTTP against 127.0.0.1, which deadlocked the
@@ -220,6 +223,14 @@ class LoadHarnessService:
         app.extensions["load_harness"] = self
 
         self._register_routes()
+
+    def try_acquire_cpu_work_slot(self) -> bool:
+        """Reserve one long-lived request slot without making the caller wait."""
+        return self.cpu_work_slots.acquire(blocking=False)
+
+    def release_cpu_work_slot(self) -> None:
+        """Return a long-lived request slot reserved by this process."""
+        self.cpu_work_slots.release()
 
     def _register_routes(self):
         """Wire endpoints to Flask routes."""
@@ -721,15 +732,24 @@ class LoadHarnessService:
                 "error": f"iterations must be between {CPU_WORK_MIN_ITERATIONS:,} and {CPU_WORK_MAX_ITERATIONS:,}"
             }, 400
 
-        start_time = time.time()
+        if not self.try_acquire_cpu_work_slot():
+            return {
+                "error": "CPU work capacity is busy; retry later",
+                "retryable": True,
+            }, 429
 
-        # Perform CPU-intensive work (blocking)
-        result = 0.0
-        for i in range(iterations):
-            result += math.sqrt(i + 1) * math.sin(i)
-            result = result % 1_000_000  # Prevent overflow
+        try:
+            start_time = time.time()
 
-        duration_ms = (time.time() - start_time) * 1000.0
+            # Perform CPU-intensive work (blocking)
+            result = 0.0
+            for i in range(iterations):
+                result += math.sqrt(i + 1) * math.sin(i)
+                result = result % 1_000_000  # Prevent overflow
+
+            duration_ms = (time.time() - start_time) * 1000.0
+        finally:
+            self.release_cpu_work_slot()
 
         # Get pod name for visibility into load distribution
         pod_name = os.environ.get("HOSTNAME", "unknown")

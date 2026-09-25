@@ -22,6 +22,9 @@ CPU_DEFAULT_INTENSITY = 5
 CPU_WORK_MAX_ITERATIONS = 10_000_000
 CPU_WORK_MIN_ITERATIONS = 1_000
 CPU_WORK_DEFAULT_ITERATIONS = 100_000
+# Gunicorn has eight request threads. Keep two free so long-running dashboard
+# handlers and their GIL-bound work requests cannot starve Kubernetes probes.
+CPU_WORK_MAX_CONCURRENCY = 6
 
 # =============================================================================
 # Memory Load Limits
