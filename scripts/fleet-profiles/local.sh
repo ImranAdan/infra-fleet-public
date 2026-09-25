@@ -397,12 +397,22 @@ local_gateway_service() {
 }
 
 local_wait_gateway() {
-  local deadline=$((SECONDS + 300))
+  local deadline=$((SECONDS + 300)) deployment
   until kctl get gateway fleet -n envoy-gateway-system >/dev/null 2>&1; do
     [ "$SECONDS" -lt "$deadline" ] || fail 'Gateway was not created within 300s.' || return 1
     sleep 3
   done
-  kctl wait --for=condition=Programmed gateway/fleet -n envoy-gateway-system --timeout=5m
+  # Envoy Gateway can leave the top-level Programmed condition stale after a
+  # transient probe failure even while its listener and data-plane deployment
+  # are healthy. Waiting on that stale condition made every sync pause for five
+  # minutes and then fail. Accepted proves the controller owns the Gateway;
+  # the generated deployment's rollout is the live readiness signal we need.
+  kctl wait --for=condition=Accepted gateway/fleet -n envoy-gateway-system --timeout=5m
+  deployment=$(kctl get deployment -n envoy-gateway-system \
+    -l gateway.envoyproxy.io/owning-gateway-name=fleet \
+    -o jsonpath='{.items[0].metadata.name}')
+  [ -n "$deployment" ] || fail 'Envoy Gateway did not create a data-plane deployment.' || return 1
+  kctl rollout status deployment/"$deployment" -n envoy-gateway-system --timeout=5m
 }
 
 local_up() {
