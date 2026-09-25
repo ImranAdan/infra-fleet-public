@@ -40,6 +40,12 @@ sleep "$scrape"; t1=$(date +%s)
 status=$(sed -n 's/^ *\[\([0-9]\{3\}\)\][[:space:]]*\([0-9]*\) responses.*/\1 \2/p' "$evidence/hey.txt")
 [ "$(wc -l <<<"$status" | tr -d ' ')" = 1 ] || { echo "Expected one status code, got: $status" >&2; exit 1; }
 code=${status% *} sent=${status#* }
+# hey lists failed attempts under "Error distribution"; only completed
+# requests reach the counter, so all N must have completed.
+if [ "$sent" != "$n" ] || grep -q 'Error distribution' "$evidence/hey.txt"; then
+  echo "inconclusive: $sent of $n requests completed; see $evidence/hey.txt" | tee "$evidence/verdict.txt" >&2
+  exit 1
+fi
 before=$(count "$code" "$t0") after=$(count "$code" "$t1")
 counted=$((after - before))
 {

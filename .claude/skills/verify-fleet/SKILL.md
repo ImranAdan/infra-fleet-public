@@ -101,7 +101,8 @@ The map rots as the fleet changes. After changing a user-visible surface
 (a `./fleet` action, the app contract, canary gates, a dashboard, a policy),
 re-drive the affected feature and update its file in the same change. A
 periodic pass reads each feature file against the source, drives every feature
-live once, and ends `clean`, `changed` (one PR, confined to this directory) or
-`blocked` (name the blocker). Never edit product code in that pass: a behavior
+live once, and ends `clean`, `changed` (proven corrections, confined to this
+directory, kept local and proposed as a pull request for the owner to approve)
+or `blocked` (name the blocker). Never edit product code in that pass: a behavior
 the map describes that the fleet no longer has is either map drift (fix the
 map) or a regression (report it).

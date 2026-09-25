@@ -53,8 +53,12 @@ head_app=$(awk '$1 == "APP_NAME:" { print $2; exit }' "$root/k8s/fleet-app/fleet
 if [ -n "$live_app" ]; then ok "running app: $live_app"; else bad 'no fleet-app contract in the cluster'; fi
 [ "$live_app" = "$head_app" ] || warn "checkout selects $head_app but the cluster runs $live_app"
 
-unhealthy=$(k get pods -A --no-headers 2>/dev/null | awk '$4 != "Running" && $4 != "Completed" { print $1 "/" $2 " " $4 }')
-if [ -z "$unhealthy" ]; then ok 'every pod Running or Completed'
+# Running is not enough: a failing readiness probe leaves a Running pod at 0/1.
+unhealthy=$(k get pods -A --no-headers 2>/dev/null | awk '
+  $4 == "Completed" { next }
+  { split($3, ready, "/") }
+  $4 != "Running" || ready[1] != ready[2] { print $1 "/" $2 " " $4 " " $3 }')
+if [ -z "$unhealthy" ]; then ok 'every pod Running and Ready, or Completed'
 else bad "unhealthy pods: $(tr '\n' ';' <<<"$unhealthy")"; fi
 
 phase=$(k get canary "$live_app" -n applications -o jsonpath='{.status.phase}' 2>/dev/null)
