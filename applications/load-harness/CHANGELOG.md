@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.7.1...v1.8.0) (2026-09-25)
+
+
+### Features
+
+* make the application swappable through an app contract ([cea2278](https://github.com/ImranAdan/infra-fleet-public/commit/cea22780d7ae2ee42a7e028c17bba5bdfcbc4778))
+* **observability:** provision Grafana dashboards from Git ([4107fb7](https://github.com/ImranAdan/infra-fleet-public/commit/4107fb7c01b07b1eb8c80c0230fb6a273b2954a3))
+
+
+### Bug Fixes
+
+* **load-harness:** aggregate metrics across gunicorn workers ([e225f4c](https://github.com/ImranAdan/infra-fleet-public/commit/e225f4c216ba19a2af86a3b583644de937a246f1))
+* **load-harness:** report the load and limits the app really has ([1d2e037](https://github.com/ImranAdan/infra-fleet-public/commit/1d2e03748132ca353f56efd802c120de36b41313))
+* **load-harness:** set multiprocess metrics only for Gunicorn ([dbb3d33](https://github.com/ImranAdan/infra-fleet-public/commit/dbb3d33a0c1058a559535b78457d22be2c2b95ad))
+* **observability:** chart pod CPU and memory from cAdvisor ([076b2dd](https://github.com/ImranAdan/infra-fleet-public/commit/076b2dd8d0fa4f7bdbaeb864223a86f1c66cb2e9))
+
 ## [1.7.1](https://github.com/ImranAdan/infra-fleet-public/compare/v1.7.0...v1.7.1) (2026-09-15)
 
 
