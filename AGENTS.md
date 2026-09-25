@@ -52,9 +52,22 @@ the history proves the work: the failing check, then the fix.
   behavior. Use it before claiming a fleet change works.
 - `blast-radius`: what a change breaks beyond its diff, with the places grep
   cannot see in this repository.
+- `merge-gate`: `merge_ready.py <PR>` decides whether an agent may merge a
+  pull request unread: `READY`, `SURFACE` (a human decides) or `BLOCKED`.
 
 When a verification lesson recurs, encode it as a check (a doctor line, a
 contract test, a validator rule) rather than another paragraph here.
+
+## Merging
+
+Every pull request carries a `## Verification` section with the commands run
+and what they showed (see `.github/pull_request_template.md`). An agent may
+merge a pull request it raised only when
+`python3 .claude/skills/merge-gate/merge_ready.py <PR>` reports `READY`, and
+must then say what merged and why. `SURFACE` means stop and tell the owner:
+a permission, credential, dependency, decision-record or scope change is a
+human decision, as is disagreeing with a review finding. `BLOCKED` means fix
+and run the gate again.
 
 ## Shared cluster
 
