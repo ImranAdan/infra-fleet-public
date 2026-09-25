@@ -82,6 +82,10 @@ for required_contract in \
     failed=true
   fi
 done
+if ! grep -Fq 'app: ${{ fromJSON(needs.discover_apps.outputs.apps) }}' "$local_deployment_workflow"; then
+  echo "The local deployment workflow must discover every shipped app contract." >&2
+  failed=true
+fi
 
 while IFS= read -r -d '' shell_file; do
   bash -n "$shell_file"

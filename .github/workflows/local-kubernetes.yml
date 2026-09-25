@@ -16,14 +16,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  discover_apps:
+    name: Discover application contracts
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.contracts.outputs.apps }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Build the application matrix
+        id: contracts
+        shell: bash
+        run: |
+          shopt -s nullglob
+          contracts=(k8s/applications/*/fleet-app.yaml)
+          if [ "${#contracts[@]}" -lt 2 ]; then
+            echo 'At least two application contracts are required.' >&2
+            exit 1
+          fi
+          apps=()
+          for contract in "${contracts[@]}"; do
+            app="${contract%/fleet-app.yaml}"
+            app="${app##*/}"
+            if [[ ! "$app" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] ||
+              ! grep -Eq "^  APP_NAME: $app$" "$contract"; then
+              echo "Invalid application contract: $contract" >&2
+              exit 1
+            fi
+            apps+=("$app")
+          done
+          apps_json="$(printf '%s\n' "${apps[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
+          printf 'apps=%s\n' "$apps_json" >> "$GITHUB_OUTPUT"
+
   acceptance:
-    # The platform names no app, so prove it runs more than one: the same
-    # cycle runs with the default app and with podinfo swapped in.
+    needs: discover_apps
+    # Every shipped contract gets its own cluster. Adding an app does not
+    # require a second workflow edit that can be forgotten.
     name: Acceptance (${{ matrix.app }})
     strategy:
       fail-fast: false
       matrix:
-        app: [load-harness, podinfo]
+        app: ${{ fromJSON(needs.discover_apps.outputs.apps) }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment:
@@ -45,7 +82,7 @@ jobs:
           {
             echo '### Local profile deployment'
             echo
-            printf -- '- Revision: [`%s`](https://github.com/%s/commit/%s)\n' "$SOURCE_SHA" "$GITHUB_REPOSITORY" "$SOURCE_SHA"
+            printf -- '- Source revision: [`%s`](https://github.com/%s/commit/%s)\n' "$SOURCE_SHA" "$GITHUB_REPOSITORY" "$SOURCE_SHA"
             printf -- '- Ref: `%s`\n' "$SOURCE_REF"
             printf -- '- Trigger: `%s`\n' "$TRIGGER"
             printf -- '- Application: `%s`\n' "$APP"

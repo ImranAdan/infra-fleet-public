@@ -91,6 +91,7 @@ platform file names an app, or if any app cannot be selected: each is swapped
 in on a scratch worktree and both profiles must render completely.
 `./fleet test --profile local` then proves drift repair, admission, monitoring,
 isolation, promotion and rollback for whichever app is selected. The **Local
-Kubernetes** workflow runs that full cycle for every app, Load Harness and
-podinfo each on their own disposable cluster, weekly and whenever it is
-dispatched, so a platform change that only works for one app fails there.
+Kubernetes** workflow discovers every shipped `fleet-app.yaml` contract and
+runs that full cycle for each app on its own disposable cluster, weekly and
+whenever it is dispatched. Adding an app contract automatically adds it to the
+matrix, so a platform change that works for only some apps fails there.
