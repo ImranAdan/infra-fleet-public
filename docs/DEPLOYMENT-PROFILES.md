@@ -106,8 +106,9 @@ The local profile has been exercised end to end with a real kind cluster. Its
 acceptance suite verifies Flux reconciliation and drift repair, Kyverno
 rejections, Calico isolation, Prometheus visibility of the app, healthy canary
 promotion and forced-failure rollback, for whichever app the
-[application contract](APPLICATION-CONTRACT.md) selects. It has passed with
-both Load Harness and podinfo. Operator smoke tests cover application
+[application contract](APPLICATION-CONTRACT.md) selects. The weekly workflow
+discovers all shipped contracts; the current set is Load Harness and podinfo.
+Operator smoke tests cover application
 authentication, the UI, Grafana health and Prometheus.
 
 Pull-request CI renders, schema-checks and policy-checks both profiles without
