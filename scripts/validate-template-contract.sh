@@ -65,6 +65,7 @@ trap 'rm -rf "$rendered_root"' EXIT
 ./tests/profiles/facade.sh
 ./tests/profiles/aws-onboarding.sh
 ./tests/profiles/local-git-snapshot.sh
+./tests/profiles/local-gateway-readiness.sh
 ./tests/profiles/cluster-ownership.sh
 ./tests/profiles/app-contract.sh
 
