@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/ImranAdan/infra-fleet-public/compare/v1.8.0...v1.8.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **load-harness:** preserve probe capacity under CPU work ([#101](https://github.com/ImranAdan/infra-fleet-public/issues/101)) ([1bccdd9](https://github.com/ImranAdan/infra-fleet-public/commit/1bccdd91683e48d03b771221ff01243d5a6818ca))
+
 ## [1.8.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.7.1...v1.8.0) (2026-09-25)
 
 
