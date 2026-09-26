@@ -69,9 +69,10 @@ reports `READY`; this binds the merge to the checked head SHA. It must then say
 what merged and why. An agent never adds the `owner-approved` label and never
 posts or imitates a merge-judge comment. The workflow binds an owner-applied
 label to the exact head SHA; a label without that trusted record does not
-approve a merge. `PARK` means stop and tell the owner. `JUDGE` means wait for
-the independent base-branch judge. `BLOCKED` means fix the reported defect and
-run the gate again.
+approve a merge, and the gate also requires the latest label event to come from
+the repository owner. `PARK` means stop and tell the owner. `JUDGE` means wait
+for the independent base-branch judge. `BLOCKED` means fix the reported defect
+and run the gate again.
 
 ## When a decision is not yours
 
