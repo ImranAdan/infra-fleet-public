@@ -5,6 +5,7 @@ by the behaviour they protect, not by the module they touch.
 """
 
 import time
+import threading
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -97,6 +98,114 @@ class TestDashboardCallsInProcess:
         with patch.dict("os.environ", {"ENVIRONMENT": "staging"}):
             url = dashboard_routes._get_k8s_service_url()
         assert url == "http://load-harness.applications.svc.cluster.local:5000"
+
+
+# =============================================================================
+# Synchronous CPU work must leave web capacity for probes
+# =============================================================================
+
+
+class TestCpuWorkAdmission:
+    """Long-running work must not occupy every Gunicorn request thread."""
+
+    def test_busy_capacity_rejects_immediately_and_recovers(self, app):
+        service = app.extensions["load_harness"]
+        service.cpu_work_slots = threading.BoundedSemaphore(1)
+        started = threading.Event()
+        release = threading.Event()
+        original_sqrt = __import__("math").sqrt
+
+        def slow_first_sqrt(value):
+            started.set()
+            assert release.wait(timeout=2)
+            return original_sqrt(value)
+
+        result = []
+        with patch("load_harness.load_harness_service.math.sqrt", side_effect=slow_first_sqrt):
+            worker = threading.Thread(target=lambda: result.append(service.run_cpu_work(1000)))
+            worker.start()
+            assert started.wait(timeout=1)
+
+            body, status = service.run_cpu_work(1000)
+            assert status == 429
+            assert body["retryable"] is True
+
+            release.set()
+            worker.join(timeout=2)
+
+        assert not worker.is_alive()
+        assert result[0][1] == 200
+        assert service.run_cpu_work(1000)[1] == 200
+
+    def test_busy_dashboard_response_is_visible_to_htmx(self, client, app):
+        """The retry partial must be swapped into the dashboard despite its 429."""
+        service = app.extensions["load_harness"]
+        service.cpu_work_slots = threading.BoundedSemaphore(1)
+        assert service.try_acquire_cpu_work_slot()
+        try:
+            response = client.post(
+                "/ui/partials/cluster-result",
+                data={"concurrency": 1, "iterations": 1000},
+            )
+        finally:
+            service.release_cpu_work_slot()
+
+        assert response.status_code == 429
+        assert b"CPU work capacity is busy; retry later" in response.data
+        javascript = client.get("/static/js/dashboard.js").data
+        assert b"event.detail.xhr.status === 429" in javascript
+        assert b"event.detail.shouldSwap = true" in javascript
+        assert b"event.detail.isError = false" in javascript
+
+    def test_dashboard_fanout_counts_handlers_and_leaves_health_live(self, app):
+        """Dashboard handlers and their inner work share one admission budget."""
+        service = app.extensions["load_harness"]
+        service.cpu_work_slots = threading.BoundedSemaphore(4)
+        both_work_requests_started = threading.Barrier(3)
+        release = threading.Event()
+        seen_threads = set()
+        seen_lock = threading.Lock()
+        original_sqrt = __import__("math").sqrt
+        responses = []
+
+        def slow_first_sqrt(value):
+            thread_id = threading.get_ident()
+            with seen_lock:
+                is_first_call = thread_id not in seen_threads
+                seen_threads.add(thread_id)
+            if is_first_call:
+                both_work_requests_started.wait(timeout=2)
+                assert release.wait(timeout=2)
+            return original_sqrt(value)
+
+        def request_cluster_work():
+            with app.test_client() as threaded_client:
+                responses.append(threaded_client.post(
+                    "/ui/partials/cluster-result",
+                    data={"concurrency": 1, "iterations": 1000},
+                ))
+
+        with patch("load_harness.load_harness_service.math.sqrt", side_effect=slow_first_sqrt):
+            workers = [threading.Thread(target=request_cluster_work) for _ in range(2)]
+            for worker in workers:
+                worker.start()
+            both_work_requests_started.wait(timeout=2)
+
+            # Two HTTP dashboard handlers and their two work requests consume
+            # all four test slots. Further work fails immediately, while the
+            # independent health route can still answer.
+            body, status = service.run_cpu_work(1000)
+            assert status == 429
+            assert body["retryable"] is True
+            with app.test_client() as health_client:
+                assert health_client.get("/health").status_code == 200
+
+            release.set()
+            for worker in workers:
+                worker.join(timeout=2)
+
+        assert all(not worker.is_alive() for worker in workers)
+        assert [response.status_code for response in responses] == [200, 200]
 
 
 # =============================================================================

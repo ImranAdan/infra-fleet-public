@@ -283,6 +283,15 @@
         renderJobs();
     }
 
+    // HTMX does not swap 4xx responses by default. A busy cluster request is
+    // an expected, rendered result, so show its retry message in the target.
+    document.body.addEventListener('htmx:beforeSwap', function(event) {
+        if (event.detail.target.id === 'result' && event.detail.xhr.status === 429) {
+            event.detail.shouldSwap = true;
+            event.detail.isError = false;
+        }
+    });
+
     // Listen for successful load responses via HTMX
     document.body.addEventListener('htmx:afterSwap', function(event) {
         if (event.detail.target.id === 'result') {

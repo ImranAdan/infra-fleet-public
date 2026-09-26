@@ -413,6 +413,14 @@ def _run_work_local(service, iterations: int, request_id: int) -> dict:
 @dashboard.route("/partials/cluster-result", methods=["POST"])
 def cluster_result():
     """Run distributed load test across the cluster."""
+    service = _service()
+    if not service.try_acquire_cpu_work_slot():
+        return render_template(
+            "partials/result.html",
+            status="error",
+            message="CPU work capacity is busy; retry later",
+        ), 429
+
     try:
         concurrency = int(request.form.get("concurrency", 10))
         iterations = int(request.form.get("iterations", 500000))
@@ -439,7 +447,7 @@ def cluster_result():
             headers = {"X-API-Key": api_key} if api_key else {}
             run = partial(_send_work_request, service_url, iterations, headers=headers)
         else:
-            run = partial(_run_work_local, _service(), iterations)
+            run = partial(_run_work_local, service, iterations)
 
         # Send concurrent requests using ThreadPoolExecutor
         results = []
@@ -498,6 +506,11 @@ def cluster_result():
             status="error",
             message=str(e),
         )
+    finally:
+        # This handler occupies a Gunicorn request thread while its fan-out is
+        # running. Count it against the same budget as the inner work requests
+        # so probes always retain request capacity, including on one replica.
+        service.release_cpu_work_slot()
 
 
 @dashboard.route("/partials/active-jobs")

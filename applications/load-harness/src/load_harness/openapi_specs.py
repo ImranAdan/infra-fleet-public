@@ -549,6 +549,16 @@ CPU_LOAD_WORK_SPEC = {
                 },
             },
         },
+        429: {
+            "description": "Per-pod synchronous CPU work capacity is busy; retry later",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "error": {"type": "string"},
+                    "retryable": {"type": "boolean", "example": True},
+                },
+            },
+        },
     },
 }
 
