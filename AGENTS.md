@@ -66,9 +66,11 @@ and what they showed (see `.github/pull_request_template.md`). An agent may
 merge a pull request it raised only when
 `python3 .claude/skills/merge-gate/merge_ready.py <PR>` reports `READY`, and
 must then say what merged and why. An agent never adds the `owner-approved`
-label and never posts or imitates a merge-judge comment. `PARK` means stop and
-tell the owner. `JUDGE` means wait for the independent base-branch judge.
-`BLOCKED` means fix the reported defect and run the gate again.
+label and never posts or imitates a merge-judge comment. The workflow binds an
+owner-applied label to the exact head SHA; a label without that trusted record
+does not approve a merge. `PARK` means stop and tell the owner. `JUDGE` means
+wait for the independent base-branch judge. `BLOCKED` means fix the reported
+defect and run the gate again.
 
 ## When a decision is not yours
 
