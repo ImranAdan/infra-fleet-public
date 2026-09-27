@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/**'
+      - '.claude/skills/merge-gate/**'
 
 permissions:
   contents: read
@@ -67,6 +68,11 @@ jobs:
             echo "  - Type mismatches in workflow configuration"
             exit 1
           fi
+
+      - name: Self-test merge gate and judge
+        run: |
+          python3 .claude/skills/merge-gate/merge_ready.py --self-test
+          python3 .claude/skills/merge-gate/judge.py --self-test
 
       - name: Check PR workflow changes
         if: github.event_name == 'pull_request'

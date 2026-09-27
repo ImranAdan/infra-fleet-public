@@ -63,9 +63,9 @@ the workflow records a trusted approval for that exact head SHA; the gate
 requires that record, the label, and a latest label event from the repository
 owner. Judge decisions are bound to the current head SHA too.
 The judge runs only for branches in this repository, so a fork pull request
-stays at `JUDGE` for human handling. It uses GitHub Models through the workflow
-token by default and prefers the policy's Anthropic model when
-`ANTHROPIC_API_KEY` is configured. A provider outage posts no verdict and
+stays at `JUDGE` for human handling. It calls the policy's Anthropic model and
+needs the `ANTHROPIC_API_KEY` Actions secret; without it the gate stays at
+`JUDGE`. A provider outage or unreadable provider response posts no verdict and
 leaves the gate at `JUDGE`; invalid structured output records `REJECT`.
 Declared intent and its required advisor gate remain the first authority, so a
 judge approval cannot override them. The judge handles only reversible
