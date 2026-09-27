@@ -12,6 +12,8 @@ on:
       - 'applications/load-harness/tests/**'
       - 'applications/load-harness/Dockerfile'
       - 'applications/load-harness/requirements.txt'
+      - 'applications/load-harness/ci/**'
+      - '.release-please-manifest.json'
       - '.github/workflows/load-harness-ci.yml'
   workflow_dispatch:
     inputs:

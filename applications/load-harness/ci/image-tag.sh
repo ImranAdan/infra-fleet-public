@@ -7,13 +7,13 @@ manifest=${RELEASE_MANIFEST:-"$repository_root/.release-please-manifest.json"}
 
 if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
   image_tag=${GITHUB_REF_NAME:-}
-  if [[ ! "$image_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if [[ ! "$image_tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
     echo "Release tags must use vMAJOR.MINOR.PATCH format." >&2
     exit 1
   fi
 elif [ "${PUBLISH_TO_ECR:-false}" = "true" ]; then
   version=$(jq -er '.["applications/load-harness"] | strings' "$manifest")
-  if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
     echo "Invalid load-harness version in .release-please-manifest.json" >&2
     exit 1
   fi
