@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.2](https://github.com/ImranAdan/infra-fleet-public/compare/v1.8.1...v1.8.2) (2026-09-27)
+
+
+### Bug Fixes
+
+* **release:** keep tag logic with application ([6c3a4df](https://github.com/ImranAdan/infra-fleet-public/commit/6c3a4df67bb7bdcf476148cc4b2a43ed4002e0f2))
+* **release:** select manual image version ([72104f0](https://github.com/ImranAdan/infra-fleet-public/commit/72104f04fae75997f7eaed85b719ff0c3f8c982a))
+* **release:** tighten image tag validation ([e2bdcad](https://github.com/ImranAdan/infra-fleet-public/commit/e2bdcad52b46222ce7720d1f7004955e0af9be6c))
+
 ## [1.8.1](https://github.com/ImranAdan/infra-fleet-public/compare/v1.8.0...v1.8.1) (2026-09-27)
 
 
