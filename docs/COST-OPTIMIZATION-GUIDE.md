@@ -19,12 +19,30 @@ This guide helps you minimize AWS costs for the infra-fleet platform while maint
 
 ---
 
-## Your Usage Pattern (GMT Timezone)
+## Worker Capacity and the Usage Window
 
-- **Start Time**: 10 AM GMT (manual rebuild)
-- **End Time**: 7-8 PM GMT (manual destroy)
-- **Failsafe**: 8 PM GMT (scheduled destroy if manual forgotten)
-- **Frequency**: Variable (daily to few times per week)
+While the stack exists, its workers follow a usage window (intent C-001),
+defined in `infrastructure/staging/cluster-autoscaler.tf`:
+
+- **08:00 Monday to Friday (Europe/London)**: one worker is restored. Workloads
+  return from cluster state, within the accepted 30-minute startup delay.
+- **20:00 Monday to Friday**: every worker is released. Nothing runs on
+  weekends. The EKS control plane, NAT gateway and load balancer are still
+  billed; destroy the stack when you are away for longer.
+- **In the window**: cluster-autoscaler adds workers up to three when pods are
+  pending, and removes idle ones (intent C-002).
+
+Change the window with the `usage_window_start`, `usage_window_stop` and
+`usage_window_time_zone` variables. To work outside it, raise the group by
+hand. The next scheduled release still applies:
+
+```bash
+aws autoscaling update-auto-scaling-group \
+  --auto-scaling-group-name "$(aws autoscaling describe-auto-scaling-groups \
+    --filters Name=tag-key,Values=k8s.io/cluster-autoscaler/staging \
+    --query 'AutoScalingGroups[0].AutoScalingGroupName' --output text)" \
+  --min-size 1 --desired-capacity 1
+```
 
 ---
 
