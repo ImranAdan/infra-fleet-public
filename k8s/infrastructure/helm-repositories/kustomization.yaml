@@ -4,6 +4,5 @@ resources:
   - autoscaler.yaml
   - eks-charts.yaml
   - flagger
-  - ingress-nginx.yaml
-  - jetstack.yaml
+  - jetstack
   - prometheus-community

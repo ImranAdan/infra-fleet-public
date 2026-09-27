@@ -91,5 +91,5 @@ builds and Flux reconciles; neither is evidence of a failed deployment.
 The advisor is supplementary static review. Platform CI remains responsible
 for Terraform, manifest, policy, application, and container checks. A live
 apply, rollout, rollback, and destroy cycle is required to validate an adopted
-deployment. The ingress-nginx replacement and remaining IAM scoping are tracked
+deployment. The AWS live cycle of the Gateway route and remaining IAM scoping are tracked
 in [template readiness](TEMPLATE-READINESS.md).

@@ -5,6 +5,9 @@ resources:
   - ../../../infrastructure/namespaces
   - ../../../infrastructure/helm-repositories/prometheus-community
   - ../../../infrastructure/helm-repositories/flagger
+  - ../../../infrastructure/helm-repositories/jetstack
+  - ../../../infrastructure/envoy-gateway
+  - ../../../infrastructure/cert-manager
   - ../../../infrastructure/observability
   - ../../../infrastructure/flagger
   - ../../../infrastructure/flagger-loadtester

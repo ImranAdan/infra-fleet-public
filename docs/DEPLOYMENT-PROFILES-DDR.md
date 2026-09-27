@@ -37,6 +37,11 @@ canaries at the gateway (Envoy route metrics locally, ingress metrics on AWS),
 so the application needs no metrics of its own and can be swapped; see the
 [application contract](APPLICATION-CONTRACT.md).
 
+> **Superseded in part (2026-09-27).** The NGINX route and ingress metrics
+> above describe the original decision. Both profiles now share one Envoy
+> Gateway route over HTTPS and gate canaries on Envoy route metrics, and local
+> access uses HTTPS; see [Architecture](ARCHITECTURE.md#request-paths).
+
 Full profile acceptance is a deployment gate, not a default commit gate. Fast
 PR checks validate rendered resources, schemas, policy behavior, application
 tests, the container and its image. A maintainer dispatches the full local

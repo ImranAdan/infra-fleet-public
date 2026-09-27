@@ -9,11 +9,10 @@ progressive delivery, and observable workloads behind the `./fleet` command.
 [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
 > [!IMPORTANT]
-> The AWS profile is a staging preview. Its request path still uses the retired
-> community `ingress-nginx` controller, which no longer receives fixes. Do not expose
-> that profile as production infrastructure until the planned Gateway API migration has
-> been implemented and verified. The local profile already uses Envoy Gateway and
-> Gateway API.
+> The AWS profile is a staging preview. Both profiles share one Envoy Gateway request
+> path that serves the app over HTTPS only; it is live-tested on the local profile but
+> has not completed an AWS apply, certificate issue and teardown cycle. Do not expose
+> the AWS profile as production infrastructure until it has.
 
 ## Scope
 
@@ -47,8 +46,9 @@ cd infra-fleet-public
 ./fleet access --profile local --service app
 ```
 
-Open <http://localhost:8080/ui/>. The `access` command keeps the port forward open until
-it is stopped. Use separate terminals for other services:
+Open <https://localhost:8443/ui/> and accept the self-signed certificate. The `access`
+command keeps the port forward open until it is stopped. Use separate terminals for
+other services:
 
 ```bash
 ./fleet access --profile local --service prometheus  # http://localhost:9090
@@ -95,7 +95,7 @@ owns its provisioning, routing, registry, and environment-specific policy.
 | Kubernetes | kind on the operator workstation | EKS in the configured AWS account |
 | Git source | read-only committed snapshot served locally | configured GitHub repository |
 | Registry | loopback development registry | Amazon ECR |
-| Request path | Envoy Gateway on loopback | AWS NLB and `ingress-nginx` preview |
+| Request path | Envoy Gateway over HTTPS on loopback (self-signed) | Envoy Gateway over HTTPS behind an AWS NLB (Let's Encrypt) |
 | Observability | Prometheus and Grafana with ephemeral storage | Prometheus and Grafana in staging |
 | Intended use | development and platform acceptance | account-specific staging evaluation |
 | Lifecycle | direct local operations | reviewed GitHub Actions workflows |

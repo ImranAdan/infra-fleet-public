@@ -1,0 +1,8 @@
+# Local certificates are self-signed: nothing outside the machine can reach the
+# cluster, and Flagger's load tests skip verification.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: fleet-issuer
+spec:
+  selfSigned: {}

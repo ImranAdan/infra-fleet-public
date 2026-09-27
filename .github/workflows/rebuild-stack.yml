@@ -415,7 +415,7 @@ jobs:
       # -----------------------------------------------------------------------
       # INFRASTRUCTURE BAKE TIME
       # Wait for Flux to deploy workloads and AWS to provision resources.
-      # The NLB for ingress-nginx typically takes 3-8 minutes to provision.
+      # The NLB for the fleet Gateway typically takes 3-8 minutes to provision.
       # -----------------------------------------------------------------------
       - name: Infrastructure Bake Time
         run: |
@@ -436,16 +436,12 @@ jobs:
           APP_HOSTNAME: ${{ needs.preflight.outputs.app_hostname }}
         run: |
           set -euo pipefail
-          echo "Waiting for NGINX Ingress NLB to be provisioned..."
+          echo "Waiting for the fleet Gateway NLB to be provisioned..."
 
-          # Wait for the ingress-nginx namespace to exist
-          kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/ingress-nginx --timeout=300s || true
-
-          # Wait for NLB service to get external hostname (may take a few minutes)
+          # Envoy Gateway names the Service fleet-gateway (k8s/routing/gateway.yaml).
           for i in {1..30}; do
-            NLB_HOST=$(kubectl get svc -n ingress-nginx \
-              -l app.kubernetes.io/name=ingress-nginx \
-              -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            NLB_HOST=$(kubectl get svc fleet-gateway -n envoy-gateway-system \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
 
             if [ -n "$NLB_HOST" ]; then
               echo "NLB hostname: $NLB_HOST"

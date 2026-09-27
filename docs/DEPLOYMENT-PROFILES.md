@@ -39,7 +39,7 @@ snapshot contract test couples that promise to exact-revision publication.
 In separate terminals, forward only the services you need:
 
 ```bash
-./fleet access --profile local --service app         # http://localhost:8080/ui/
+./fleet access --profile local --service app         # https://localhost:8443/ui/ (self-signed)
 ./fleet access --profile local --service prometheus  # http://localhost:9090
 ./fleet access --profile local --service grafana     # http://localhost:3000
 ./fleet credentials --profile local                 # explicitly display login credentials
@@ -49,7 +49,7 @@ In separate terminals, forward only the services you need:
 the Grafana login. Load Harness, the default app, authenticates with the
 `load-harness-api-key` value; Grafana's username is `admin`. The bootstrap
 generates these values and retains them across repeated starts. Pods see
-`ENVIRONMENT=kind` and `PUBLIC_SCHEME=http`. Port forwarding binds to loopback.
+`ENVIRONMENT=kind` and `PUBLIC_SCHEME=https`. Port forwarding binds to loopback.
 The registry binds to `127.0.0.1:5001`; it is intended only for this lab.
 
 After committing a change:
@@ -96,9 +96,11 @@ the operator types `destroy staging`; unattended use must set
 Existing `terraform-outputs` values are translated into the common
 `fleet-config` contract by the AWS profile.
 
-AWS keeps its current NGINX staging preview and related ingress metrics.
-Local uses Envoy Gateway and gates canaries on Envoy's route metrics. This
-local profile does not certify AWS routing, IAM or production readiness.
+Both profiles use the shared Envoy Gateway route (HTTPS only) and gate
+canaries on Envoy's route metrics; they differ in exposure (port-forward vs
+NLB) and certificate issuer (self-signed vs Let's Encrypt). This local profile
+does not certify the AWS load balancer, Let's Encrypt, IAM or production
+readiness.
 
 ## Verification boundary
 

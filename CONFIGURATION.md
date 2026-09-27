@@ -7,10 +7,10 @@ template.
 The supported deployment is one `eu-west-2` staging cluster. A production
 environment is not included.
 
-> **Before deploying publicly:** the canary implementation currently uses the
-> retired community `ingress-nginx` controller. It receives no further security
-> fixes. Treat cloud deployment as a private learning environment until the
-> Gateway API migration is complete and live-cycle tested.
+> **Before deploying publicly:** the Envoy Gateway request path is live-tested
+> on the local profile only. Treat cloud deployment as a private learning
+> environment until an AWS apply, certificate issue, canary and teardown cycle
+> has passed.
 
 ## Prerequisites
 

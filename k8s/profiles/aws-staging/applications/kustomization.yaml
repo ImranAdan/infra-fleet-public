@@ -2,33 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../../applications
-  - ingress-nginx.yaml
-  - metrictemplate.yaml
 images:
   # Every app's container image is named `app`. Flux image automation keeps
   # this tag on the newest release of ${IMAGE_REGISTRY}/${APP_NAME}.
   - name: app
     newName: ${IMAGE_REGISTRY}/${APP_NAME}
     newTag: v1.6.4 # {"$imagepolicy": "flux-system:app:tag"}
-patches:
-  - target:
-      kind: Canary
-    patch: |-
-      - op: add
-        path: /spec/ingressRef
-        value:
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          name: ${APP_NAME}
-      - op: replace
-        path: /spec/analysis/metrics/0/templateRef/name
-        value: nginx-request-success-rate
-      - op: add
-        path: /spec/analysis/metrics/0/templateVariables
-        value: {ingress: "${APP_NAME}"}
-      - op: replace
-        path: /spec/analysis/metrics/1/templateRef/name
-        value: nginx-request-duration
-      - op: add
-        path: /spec/analysis/metrics/1/templateVariables
-        value: {ingress: "${APP_NAME}"}

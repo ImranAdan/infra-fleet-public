@@ -6,6 +6,8 @@
 set -euo pipefail
 
 n=${1:-200}
+# hey gives each of its 2 workers n/2 requests, so an odd N silently sends N-1.
+[[ "$n" =~ ^[0-9]+$ ]] && (( n > 0 && n % 2 == 0 )) || { echo "N must be a positive even number." >&2; exit 2; }
 [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt 0 ] || { echo "Usage: $0 [N]" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
 common=$(git -C "$root" rev-parse --git-common-dir)
@@ -34,7 +36,7 @@ scrape=20            # longer than the 15 s scrape interval
 t0=$(date +%s); sleep "$scrape"
 # hey ignores -H 'Host: …'; -host is the flag that routes to the app.
 kubectl exec -n flux-system deploy/flagger-loadtester -- \
-  hey -n "$n" -c 2 -host "$host" "http://$gateway.envoy-gateway-system$path" > "$evidence/hey.txt"
+  hey -n "$n" -c 2 -host "$host" "https://$gateway.envoy-gateway-system$path" > "$evidence/hey.txt"
 sleep "$scrape"; t1=$(date +%s)
 
 status=$(sed -n 's/^ *\[\([0-9]\{3\}\)\][[:space:]]*\([0-9]*\) responses.*/\1 \2/p' "$evidence/hey.txt")

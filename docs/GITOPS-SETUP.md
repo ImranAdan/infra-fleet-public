@@ -30,8 +30,8 @@ k8s/
 ├── applications/                  # shared workload and delivery contract
 ├── infrastructure/                # shared controllers and observability
 ├── profiles/
-│   ├── local/                     # Envoy, local metrics and registry policy
-│   └── aws-staging/               # AWS adapter, NGINX and ECR policy
+│   ├── local/                     # self-signed issuer, local metrics and registry policy
+│   └── aws-staging/               # AWS adapter, NLB exposure, Let's Encrypt and ECR policy
 ├── clusters/
 │   ├── local/                     # local Flux dependency graph
 │   └── aws-staging/               # AWS Flux dependency graph
@@ -106,7 +106,7 @@ All selected Kustomizations and HelmReleases should report `Ready=True`.
 
 ## AWS routing limitation
 
-AWS retains the retired community `ingress-nginx` controller while its Gateway
-API replacement is designed. Its artifacts are pinned, but upstream no longer
-provides security fixes. Keep this staging route private. The local profile
-uses Envoy Gateway and does not certify the AWS ingress, IAM, DNS or TLS path.
+Both profiles use the shared Envoy Gateway route in `k8s/routing`. The local
+profile proves the Gateway, HTTPS redirect, certificate and canary path; it does
+not certify the AWS load balancer, IAM, DNS or Let's Encrypt issuance. Keep the
+staging route private until an AWS apply and teardown cycle has passed.

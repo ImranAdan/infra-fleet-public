@@ -265,7 +265,7 @@ local_configuration() {
     --from-literal=TRAFFIC_ENDPOINT="$traffic_endpoint" \
     --from-literal=APP_HOSTNAME=localhost \
     --from-literal=ENVIRONMENT=kind \
-    --from-literal=PUBLIC_SCHEME=http \
+    --from-literal=PUBLIC_SCHEME=https \
     --from-literal=RUNTIME_CONFIG_REVISION="$FLEET_SHA" \
     --dry-run=client -o yaml | kctl apply -f -
   kctl label configmap fleet-config -n flux-system reconcile.fluxcd.io/watch=Enabled --overwrite >/dev/null
@@ -510,7 +510,10 @@ profile_main() {
     access)
       local_existing_cluster
       case "$service" in
-        app) kctl port-forward -n envoy-gateway-system "service/$(local_gateway_service)" 8080:80 --address=127.0.0.1 ;;
+        app)
+          # The Gateway serves the app over HTTPS only; its certificate is self-signed.
+          echo 'Open https://localhost:8443/ and accept the self-signed certificate.' >&2
+          kctl port-forward -n envoy-gateway-system "service/$(local_gateway_service)" 8443:443 --address=127.0.0.1 ;;
         prometheus) kctl port-forward -n observability service/kube-prometheus-stack-prometheus 9090:9090 --address=127.0.0.1 ;;
         grafana) kctl port-forward -n observability service/kube-prometheus-stack-grafana 3000:80 --address=127.0.0.1 ;;
         *) fail 'Choose --service app, prometheus or grafana.' ;;

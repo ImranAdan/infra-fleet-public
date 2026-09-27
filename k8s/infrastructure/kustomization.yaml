@@ -7,7 +7,7 @@ resources:
   - observability
   - aws-load-balancer-controller
   - cluster-autoscaler
-  - nginx-ingress-controller
+  - envoy-gateway
   - cert-manager
   - flagger
   - flagger-loadtester

@@ -26,10 +26,10 @@ metadata:
   name: cert-manager
   namespace: flux-system
 spec:
-  # Wait for AWS LB Controller (its webhook intercepts Service resources)
+  # The Gateway API CRDs must exist before cert-manager starts with Gateway support.
   dependsOn:
-    - name: aws-load-balancer-controller
-      namespace: kube-system
+    - name: envoy-gateway
+      namespace: envoy-gateway-system
   targetNamespace: cert-manager
   interval: 1h
   chart:
@@ -49,6 +49,12 @@ spec:
   values:
     # Install CRDs with Helm (required for ClusterIssuer)
     installCRDs: true
+
+    # ACME HTTP-01 challenges are answered through the fleet Gateway (HTTPRoute).
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      kind: ControllerConfiguration
+      enableGatewayAPI: true
 
     # Resource limits for t3.large node
     resources:
