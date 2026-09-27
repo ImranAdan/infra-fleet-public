@@ -32,12 +32,15 @@ loopback HTTP access. Compose keeps its existing development behaviour.
 
 The local routing implementation is Envoy Gateway/Gateway API. AWS retains its
 current staging NGINX preview; moving AWS routing is a separate migration.
-(2026-09-27: that migration moved AWS onto the same shared Envoy Gateway route;
-see [Architecture](ARCHITECTURE.md#request-paths).)
 Metrics adapters follow the actual traffic provider. Both profiles gate
 canaries at the gateway (Envoy route metrics locally, ingress metrics on AWS),
 so the application needs no metrics of its own and can be swapped; see the
 [application contract](APPLICATION-CONTRACT.md).
+
+> **Superseded in part (2026-09-27).** The NGINX route and ingress metrics
+> above describe the original decision. Both profiles now share one Envoy
+> Gateway route over HTTPS and gate canaries on Envoy route metrics, and local
+> access uses HTTPS; see [Architecture](ARCHITECTURE.md#request-paths).
 
 Full profile acceptance is a deployment gate, not a default commit gate. Fast
 PR checks validate rendered resources, schemas, policy behavior, application
