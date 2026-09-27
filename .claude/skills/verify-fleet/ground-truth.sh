@@ -6,6 +6,8 @@
 set -euo pipefail
 
 n=${1:-200}
+# hey gives each of its 2 workers n/2 requests, so an odd N silently sends N-1.
+[[ "$n" =~ ^[0-9]+$ ]] && (( n > 0 && n % 2 == 0 )) || { echo "N must be a positive even number." >&2; exit 2; }
 [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -gt 0 ] || { echo "Usage: $0 [N]" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
 common=$(git -C "$root" rev-parse --git-common-dir)

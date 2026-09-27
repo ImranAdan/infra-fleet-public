@@ -2,12 +2,11 @@
 
 ## Known deployment limitation
 
-The current progressive-delivery path depends on the retired community
-`ingress-nginx` controller. Upstream no longer provides bug or security fixes.
-Do not expose a new public deployment as production infrastructure. Replacing
-the Ingress/NGINX metric path with a maintained Gateway API implementation
-requires an apply, canary rollout, rollback, and destroy validation cycle; it
-is not treated as a mechanical dependency bump.
+Both profiles serve the app through a maintained Envoy Gateway that redirects
+plain HTTP to HTTPS. The route is live-tested on the local profile; on AWS it
+has not yet passed an apply, canary rollout, rollback, and destroy validation
+cycle. Do not expose a new public deployment as production infrastructure until
+it has.
 
 ## Deployment scope
 

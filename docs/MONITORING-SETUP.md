@@ -13,7 +13,7 @@ kube-state-metrics and node-exporter. On top of it the platform adds:
 
 | Signal | Source | Needs anything from the app? |
 |---|---|---|
-| Request rate, errors, latency | The gateway: Envoy locally (`envoy-proxy` PodMonitor), ingress-nginx on AWS | No |
+| Request rate, errors, latency | The Envoy gateway (`envoy-proxy` PodMonitor), in both profiles | No |
 | CPU, memory, restarts, pods, replicas | cAdvisor and kube-state-metrics | No |
 | App-level metrics | The app's own `PodMonitor`, if it ships one | Optional |
 | Delivery (DORA) | Pushgateway, fed by the delivery workflows on AWS | No |
@@ -23,7 +23,7 @@ canary gates and the platform dashboard work for any HTTP service.
 
 ```mermaid
 flowchart LR
-    Gateway["Gateway<br/>Envoy or ingress-nginx"] --> Prometheus[("Prometheus")]
+    Gateway["Envoy Gateway"] --> Prometheus[("Prometheus")]
     Kubelet["cAdvisor and<br/>kube-state-metrics"] --> Prometheus
     App["App /metrics<br/>(optional)"] -.-> Prometheus
     Prometheus --> Grafana["Grafana"]
@@ -85,10 +85,9 @@ pinned-fetch rule, because it reads data and following `main` is the point.
 
 | Question | Query |
 |---|---|
-| Requests per second (local) | `sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~"httproute/applications/.*"}[1m]))` |
-| 5xx rate (local) | `sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~"httproute/applications/.*",envoy_response_code=~"5.."}[5m]))` |
-| p99 latency, ms (local) | `histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~"httproute/applications/.*"}[5m])) by (le))` |
-| Requests per second (AWS) | `sum(rate(nginx_ingress_controller_requests{exported_namespace="applications"}[1m]))` |
+| Requests per second | `sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~"httproute/applications/.*"}[1m]))` |
+| 5xx rate | `sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~"httproute/applications/.*",envoy_response_code=~"5.."}[5m]))` |
+| p99 latency, ms | `histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~"httproute/applications/.*"}[5m])) by (le))` |
 | CPU by pod, as % of limit | `sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="applications",container!=""}[1m])) / sum by (pod) (kube_pod_container_resource_limits{namespace="applications",resource="cpu"}) * 100` |
 
 Envoy Gateway keeps a route's primary and canary backends in one Envoy cluster,
@@ -97,8 +96,8 @@ so the gateway signals are route-wide rather than per revision.
 ## Troubleshooting
 
 **A panel shows no data.** Run its query in Prometheus. Gateway panels need
-traffic through the gateway; AWS-only series (ingress-nginx, DORA) are
-expected to be empty locally.
+traffic through the gateway; AWS-only series (DORA) are expected to be empty
+locally.
 
 **An app's own metrics are missing.** Check that its `PodMonitor` exists and
 selects both `<app>` and `<app>-primary` pods, since Flagger renames the primary's

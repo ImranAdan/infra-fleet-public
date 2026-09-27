@@ -17,9 +17,9 @@ Development can now focus primarily on the advisor.
 
 The local cluster has proved Git delivery, policy enforcement, network
 isolation, monitoring, canary promotion and forced rollback. Static CI still
-does not prove an AWS apply, rollout, rollback or clean teardown. Retired
-ingress-nginx remains an AWS deployment blocker; the local profile uses Envoy
-Gateway instead.
+does not prove an AWS apply, rollout, rollback or clean teardown. Both
+profiles now share the Envoy Gateway route; its AWS live cycle is the remaining
+deployment blocker.
 
 ## PR closeout
 
@@ -66,10 +66,9 @@ closing those tickets does not mean their missing checks are implemented.
 
 ## Work before public deployment
 
-1. Replace ingress-nginx through an approved Gateway API design and test real
-   traffic analysis, canary promotion, rollback, optional TLS and teardown in
-   one private staging copy. Retain the deployment-preview notice until this
-   cycle succeeds.
+1. Test the shared Gateway API route on AWS: real traffic analysis, canary
+   promotion, rollback, Let's Encrypt TLS and teardown in one private staging
+   copy. Retain the deployment-preview notice until this cycle succeeds.
 2. Validate the narrower IAM policies through a complete apply, rebuild and
    destroy cycle. Derive missing actions and resource scopes from actual
    plan/API evidence instead of restoring service wildcards.

@@ -2,9 +2,9 @@
 
 [Documentation index](README.md)
 
-> **Deployment preview:** the local profile uses Envoy Gateway. AWS staging
-> retains retired community `ingress-nginx`, which no longer receives security
-> fixes, so that route is a private preview. See [../SECURITY.md](../SECURITY.md).
+> **Deployment preview:** both profiles use one Envoy Gateway route over HTTPS.
+> It is live-tested locally; the AWS route stays a private preview until an AWS
+> apply and teardown cycle has passed. See [../SECURITY.md](../SECURITY.md).
 
 Every new revision of the application reaches users gradually. Flagger shifts
 traffic to it in steps, measures it at the gateway, and promotes or rolls it
@@ -56,8 +56,7 @@ under `k8s/profiles/<profile>/applications/`:
 
 | Profile | Source | Notes |
 |---|---|---|
-| local | Envoy `envoy_cluster_upstream_rq*` for `httproute/<namespace>/<canary>/rule/*` | Envoy Gateway keeps primary and canary endpoints in one cluster per route rule, so the gates are route-wide. A failing canary still breaks them as its share of traffic rises. |
-| aws-staging | ingress-nginx `nginx_ingress_controller_*` for the app's Ingress | prometheus-operator relabels the app's namespace to `exported_namespace`. |
+| local and aws-staging | Envoy `envoy_cluster_upstream_rq*` for `httproute/<namespace>/<canary>/rule/*` | Envoy Gateway keeps primary and canary endpoints in one cluster per route rule, so the gates are route-wide. A failing canary still breaks them as its share of traffic rises. |
 
 ## Try it
 

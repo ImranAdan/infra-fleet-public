@@ -53,8 +53,8 @@ The contract values:
 
 ## What the platform provides
 
-- **Progressive delivery.** A Flagger canary analysed at the gateway (Envoy
-  locally, ingress-nginx on AWS), so the app needs no metrics of its own.
+- **Progressive delivery.** A Flagger canary analysed at the Envoy gateway, so
+  the app needs no metrics of its own.
 - **Autoscaling and isolation.** An HPA on CPU and a NetworkPolicy that admits
   only the gateway, observability and Flux.
 - **Monitoring.** Container CPU, memory and restarts from cAdvisor and

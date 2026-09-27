@@ -1,13 +1,16 @@
 # TLS and optional DNS
 
-The staging manifests contain a cert-manager `ClusterIssuer` and an
-application TLS route. Deployment-specific values are injected by Flux from
-the `terraform-outputs` ConfigMap; no real hostname or email address is
-committed.
+Both profiles serve the app through one Envoy Gateway (`k8s/routing`): its
+`http` listener only redirects to HTTPS, and its `https` listener terminates TLS
+with the cert-manager certificate `envoy-gateway-system/fleet-tls` for
+`APP_HOSTNAME`. Each profile supplies the `fleet-issuer` ClusterIssuer:
+self-signed locally, Let's Encrypt on AWS. Deployment-specific values are
+injected by Flux from the `terraform-outputs` ConfigMap; no real hostname or
+email address is committed.
 
-> The current route uses retired community `ingress-nginx`. Do not expose a
-> new public deployment until the Gateway API migration has been implemented
-> and live-cycle tested. See [../SECURITY.md](../SECURITY.md).
+> The AWS route is live-tested locally only. Do not expose a new public
+> deployment until an AWS apply, certificate issue and teardown cycle has
+> passed. See [../SECURITY.md](../SECURITY.md).
 
 ## Without a domain
 
@@ -34,10 +37,11 @@ For automated DNS, also set both `CLOUDFLARE_API_TOKEN` and
 only for the relevant zone. The rebuild workflow rejects partial domain or
 Cloudflare configuration before creating infrastructure.
 
-After Flux creates the ingress load balancer, the workflow creates or updates
-an unproxied CNAME for the full `APP_HOSTNAME`. cert-manager then completes the
-Let's Encrypt HTTP-01 challenge and stores the certificate in
-`applications/load-harness-tls`.
+After Flux creates the Gateway's load balancer (the `fleet-gateway` Service),
+the workflow creates or updates an unproxied CNAME for the full `APP_HOSTNAME`.
+cert-manager then completes the Let's Encrypt HTTP-01 challenge through a
+temporary route on the Gateway's `http` listener and stores the certificate in
+`envoy-gateway-system/fleet-tls`.
 
 You may manage the same CNAME outside Cloudflare; omit both Cloudflare secrets
 in that case.
@@ -45,9 +49,9 @@ in that case.
 ## Inspect status
 
 ```bash
-kubectl get ingress -n applications load-harness
-kubectl get certificate,certificaterequest,challenge -n applications
-kubectl describe certificate -n applications load-harness-tls
+kubectl get gateway,httproute -A
+kubectl get certificate,certificaterequest,challenge -n envoy-gateway-system
+kubectl describe certificate -n envoy-gateway-system fleet-tls
 ```
 
 The non-routable default is intentional. A certificate cannot become ready

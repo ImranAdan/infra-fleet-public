@@ -108,14 +108,18 @@ Critical or High vulnerabilities with a fix block publication. See
 
 ## Request paths
 
-Each profile has its own way in. The AWS route is a non-public preview until the
-planned Gateway API migration replaces the retired ingress-nginx controller.
+Both profiles share one way in (`k8s/routing`): an Envoy Gateway whose `http`
+listener only redirects to HTTPS and whose `https` listener terminates TLS with a
+cert-manager certificate for `APP_HOSTNAME`. Locally the certificate is
+self-signed and the Gateway is reached by port-forward; on AWS it sits behind an
+NLB with a Let's Encrypt certificate. The AWS route has not yet completed a live
+apply and teardown cycle.
 
 ```mermaid
 flowchart LR
-    Local(["Local browser"]) --> Envoy["Envoy Gateway"] --> App["The selected app"]
+    Local(["Local browser"]) -->|port-forward :8443| Envoy["Envoy Gateway<br/>HTTPS only"] --> App["The selected app"]
     Users(["Users"]) -.->|resolve name| DNS["Cloudflare DNS<br/>unproxied CNAME"]
-    Users --> NLB["AWS NLB"] --> NGINX["ingress-nginx<br/>preview"] --> App
+    Users --> NLB["AWS NLB"] --> Envoy
 ```
 
 Cloudflare only resolves the name; application traffic goes straight to the NLB.
