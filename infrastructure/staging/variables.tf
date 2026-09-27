@@ -28,3 +28,22 @@ variable "cost_owner" {
   type        = string
   default     = "infra-fleet"
 }
+
+# The owner-defined usage window for staging workers (intent C-001).
+variable "usage_window_start" {
+  description = "Cron recurrence that restores staging workers"
+  type        = string
+  default     = "0 8 * * MON-FRI"
+}
+
+variable "usage_window_stop" {
+  description = "Cron recurrence that releases every staging worker"
+  type        = string
+  default     = "0 20 * * MON-FRI"
+}
+
+variable "usage_window_time_zone" {
+  description = "IANA time zone for the usage window"
+  type        = string
+  default     = "Europe/London"
+}

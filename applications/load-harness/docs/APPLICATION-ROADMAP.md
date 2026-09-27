@@ -31,15 +31,17 @@ eks_managed_node_groups = {
     capacity_type  = "SPOT"
     desired_size   = 1
     min_size       = 1
-    max_size       = 2
+    max_size       = 3
   }
 }
 ```
 
 Notes:
 
-- With `min=1`, `max=2`, autoscaling is possible but limited.
-- Real autoscaling tests require Cluster Autoscaler or Karpenter.
+- cluster-autoscaler adds workers up to `max=3` when HPA-scaled pods are
+  pending, so node scale-out can be tested.
+- Workers are released outside the usage window; see the
+  [cost guide](../../../docs/COST-OPTIMIZATION-GUIDE.md).
 - The cluster already runs core system pods (kube-system, flux, observability).
 - The NGINX ingress Service provisions an AWS NLB through AWS Load Balancer
   Controller.

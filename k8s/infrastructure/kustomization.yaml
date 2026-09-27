@@ -6,6 +6,7 @@ resources:
   - helm-repositories
   - observability
   - aws-load-balancer-controller
+  - cluster-autoscaler
   - nginx-ingress-controller
   - cert-manager
   - flagger
