@@ -74,6 +74,12 @@ the repository owner. `PARK` means stop and tell the owner. `JUDGE` means wait
 for the independent base-branch judge. `BLOCKED` means fix the reported defect
 and run the gate again.
 
+The base-branch judge uses GitHub Models through its workflow token by default
+and prefers Anthropic when `ANTHROPIC_API_KEY` is configured. It decides only
+reversible categories after required checks. A judge approval cannot override
+the required intent gate: declared intent and the advisor remain the first
+authority.
+
 ## When a decision is not yours
 
 Decisions should almost never reach the owner: constant approvals defeat the
