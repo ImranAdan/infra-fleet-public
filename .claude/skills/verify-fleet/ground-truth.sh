@@ -34,7 +34,7 @@ scrape=20            # longer than the 15 s scrape interval
 t0=$(date +%s); sleep "$scrape"
 # hey ignores -H 'Host: …'; -host is the flag that routes to the app.
 kubectl exec -n flux-system deploy/flagger-loadtester -- \
-  hey -n "$n" -c 2 -host "$host" "http://$gateway.envoy-gateway-system$path" > "$evidence/hey.txt"
+  hey -n "$n" -c 2 -host "$host" "https://$gateway.envoy-gateway-system$path" > "$evidence/hey.txt"
 sleep "$scrape"; t1=$(date +%s)
 
 status=$(sed -n 's/^ *\[\([0-9]\{3\}\)\][[:space:]]*\([0-9]*\) responses.*/\1 \2/p' "$evidence/hey.txt")

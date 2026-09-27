@@ -47,5 +47,5 @@ Preconditions:
   to the window edges (about 3% high in practice).
 - `/metrics` of a multi-process server must aggregate its workers. A dashboard
   once showed half the real traffic because each scrape saw one gunicorn worker.
-- AWS-only series (ingress-nginx, DORA) are empty locally by design.
+- AWS-only series (DORA) are empty locally by design.
 - The advisor row needs outbound HTTPS from Grafana to GitHub.

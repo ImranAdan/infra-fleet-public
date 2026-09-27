@@ -4,17 +4,14 @@ profile=${1:-}
 case "$profile" in local|aws-staging) ;; *) echo 'Unsupported deployment profile.' >&2; exit 2 ;; esac
 repository_root=$(git rev-parse --show-toplevel)
 cd "$repository_root"
-components=(infrastructure policies applications)
+components=(infrastructure policies applications routing)
 image_registry=123456789012.dkr.ecr.eu-west-2.amazonaws.com
-traffic_provider=nginx
+traffic_provider=gatewayapi:v1
 environment=staging
 public_scheme=https
 if [ "$profile" = local ]; then
-  components+=(routing)
   image_registry=fleet-local-registry:5000
-  traffic_provider=gatewayapi:v1
   environment=kind
-  public_scheme=http
 else
   components+=(configuration)
 fi

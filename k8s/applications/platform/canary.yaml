@@ -16,6 +16,13 @@ spec:
   service:
     port: ${APP_PORT}
     targetPort: ${APP_PORT}
+    # Flagger owns the app's HTTPRoute on the Gateway's HTTPS listener.
+    hosts:
+      - ${APP_HOSTNAME}
+    gatewayRefs:
+      - name: fleet
+        namespace: envoy-gateway-system
+        sectionName: https
   analysis:
     interval: 30s
     maxWeight: 50
@@ -55,7 +62,7 @@ spec:
         timeout: 45s
         metadata:
           type: cmd
-          cmd: "hey -z 30s -q 10 -c 2 -host ${APP_HOSTNAME} http://${TRAFFIC_ENDPOINT}${APP_LOAD_PATH}"
+          cmd: "hey -z 30s -q 10 -c 2 -host ${APP_HOSTNAME} https://${TRAFFIC_ENDPOINT}${APP_LOAD_PATH}"
       - name: load-test
         type: rollout
         url: http://flagger-loadtester.flux-system/
@@ -65,4 +72,4 @@ spec:
           # This public endpoint participates in chaos injection; probes do not.
           # hey ignores -H 'Host: …' (Go takes the host from the URL), so the
           # routed hostname needs -host or every request misses the app's route.
-          cmd: "hey -z 10s -q 10 -c 2 -host ${APP_HOSTNAME} http://${TRAFFIC_ENDPOINT}${APP_LOAD_PATH}"
+          cmd: "hey -z 10s -q 10 -c 2 -host ${APP_HOSTNAME} https://${TRAFFIC_ENDPOINT}${APP_LOAD_PATH}"

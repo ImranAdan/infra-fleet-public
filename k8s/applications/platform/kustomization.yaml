@@ -6,3 +6,4 @@ resources:
   - hpa.yaml
   - networkpolicy.yaml
   - canary.yaml
+  - metrictemplate.yaml

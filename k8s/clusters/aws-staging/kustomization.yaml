@@ -5,5 +5,5 @@ resources:
   - policies.yaml
   - configuration.yaml
   - infrastructure.yaml
-  - cert-manager-issuer.yaml
+  - routing.yaml
   - applications.yaml

@@ -9,8 +9,8 @@
 # =============================================================================
 # TRAFFIC PROVIDER: SELECTED BY THE DEPLOYMENT PROFILE
 # =============================================================================
-# Local uses gatewayapi:v1 with Envoy Gateway. AWS staging uses nginx. Both
-# providers support the configured weighted progression from 10% through 50%.
+# Both profiles use gatewayapi:v1 with Envoy Gateway, which supports the
+# configured weighted progression from 10% through 50%.
 #
 # Metrics: Prometheus via kube-prometheus-stack
 # =============================================================================

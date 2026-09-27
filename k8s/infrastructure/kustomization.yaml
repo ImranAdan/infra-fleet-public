@@ -6,7 +6,7 @@ resources:
   - helm-repositories
   - observability
   - aws-load-balancer-controller
-  - nginx-ingress-controller
+  - envoy-gateway
   - cert-manager
   - flagger
   - flagger-loadtester

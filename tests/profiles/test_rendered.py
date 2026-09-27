@@ -44,7 +44,7 @@ def test_profiles_select_distinct_images_routing_and_registry_policies():
     assert local_container["image"] == f"fleet-local-registry:5000/{app_name()}:git-validation"
     assert aws_container["image"].startswith("123456789012.dkr.ecr.eu-west-2.amazonaws.com/")
     assert one(local, "Canary", app_name())["spec"]["provider"] == "gatewayapi:v1"
-    assert one(aws, "Canary", app_name())["spec"]["provider"] == "nginx"
+    assert one(aws, "Canary", app_name())["spec"]["provider"] == "gatewayapi:v1"
     one(local, "ValidatingPolicy", "require-local-images")
     one(aws, "ValidatingPolicy", "require-ecr-images")
     assert not any(r.get("metadata", {}).get("name") == "require-ecr-images" for r in local)
@@ -57,3 +57,28 @@ def test_only_aws_profile_contains_aws_runtime_resources():
     assert not any(r.get("metadata", {}).get("name") == "aws-load-balancer-controller" for r in local)
     one(aws, "HelmRelease", "aws-load-balancer-controller")
     one(local, "Gateway", "fleet")
+
+
+def test_both_profiles_serve_the_app_over_https_through_one_gateway():
+    for profile in ("local", "aws-staging"):
+        resources = load(profile)
+        assert not [r for r in resources if r.get("kind") == "Ingress"], profile
+        listeners = {l["name"]: l for l in one(resources, "Gateway", "fleet")["spec"]["listeners"]}
+        assert set(listeners) == {"http", "https"}, profile
+        https = listeners["https"]
+        assert https["protocol"] == "HTTPS" and https["tls"]["mode"] == "Terminate"
+        secret = https["tls"]["certificateRefs"][0]["name"]
+        certificate = one(resources, "Certificate", "fleet-tls")["spec"]
+        assert certificate["secretName"] == secret
+        assert certificate["dnsNames"] == [https["hostname"]]
+        one(resources, "ClusterIssuer", certificate["issuerRef"]["name"])
+        # Plain HTTP only redirects; application routes may not attach to it.
+        assert listeners["http"]["allowedRoutes"]["namespaces"]["from"] == "Same"
+        redirect = one(resources, "HTTPRoute", "https-redirect")["spec"]
+        assert redirect["parentRefs"] == [{"name": "fleet", "sectionName": "http"}]
+        assert redirect["rules"] == [
+            {"filters": [{"type": "RequestRedirect", "requestRedirect": {"scheme": "https", "statusCode": 301}}]}
+        ]
+        service = one(resources, "Canary", app_name())["spec"]["service"]
+        assert service["gatewayRefs"] == [{"name": "fleet", "namespace": "envoy-gateway-system", "sectionName": "https"}]
+        assert service["hosts"] == [https["hostname"]]

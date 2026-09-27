@@ -16,4 +16,20 @@ patches:
     patch: |-
       - op: add
         path: /spec/dependsOn
-        value: [{name: nginx-ingress-controller, namespace: ingress-nginx}]
+        value: [{name: envoy-gateway, namespace: envoy-gateway-system}]
+  # The AWS Load Balancer Controller's webhook intercepts Service resources, so
+  # controllers that create Services install after it.
+  - target:
+      kind: HelmRelease
+      name: envoy-gateway
+    patch: |-
+      - op: add
+        path: /spec/dependsOn
+        value: [{name: aws-load-balancer-controller, namespace: kube-system}]
+  - target:
+      kind: HelmRelease
+      name: cert-manager
+    patch: |-
+      - op: add
+        path: /spec/dependsOn/-
+        value: {name: aws-load-balancer-controller, namespace: kube-system}

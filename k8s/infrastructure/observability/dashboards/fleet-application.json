@@ -19,7 +19,7 @@
       "id": 1,
       "type": "stat",
       "title": "Requests per second",
-      "description": "Measured at the gateway (Envoy locally, ingress-nginx on AWS), so it works for any HTTP app.",
+      "description": "Measured at the Envoy gateway, so it works for any HTTP app.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -46,7 +46,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~\"httproute/applications/.*\"}[1m])) or sum(rate(nginx_ingress_controller_requests{exported_namespace=\"applications\"}[1m]))",
+          "expr": "sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~\"httproute/applications/.*\"}[1m]))",
           "legendFormat": "requests/s",
           "datasource": {
             "type": "prometheus",
@@ -59,7 +59,7 @@
       "id": 2,
       "type": "stat",
       "title": "5xx error rate",
-      "description": "Measured at the gateway (Envoy locally, ingress-nginx on AWS), so it works for any HTTP app.",
+      "description": "Measured at the Envoy gateway, so it works for any HTTP app.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -86,7 +86,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * (sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~\"httproute/applications/.*\",envoy_response_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~\"httproute/applications/.*\"}[5m])) or 100 * (sum(rate(nginx_ingress_controller_requests{exported_namespace=\"applications\",status=~\"5..\"}[5m])) or vector(0)) / sum(rate(nginx_ingress_controller_requests{exported_namespace=\"applications\"}[5m]))",
+          "expr": "100 * (sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~\"httproute/applications/.*\",envoy_response_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(envoy_cluster_upstream_rq{envoy_cluster_name=~\"httproute/applications/.*\"}[5m]))",
           "legendFormat": "5xx %",
           "datasource": {
             "type": "prometheus",
@@ -99,7 +99,7 @@
       "id": 3,
       "type": "stat",
       "title": "p99 latency",
-      "description": "Measured at the gateway (Envoy locally, ingress-nginx on AWS), so it works for any HTTP app.",
+      "description": "Measured at the Envoy gateway, so it works for any HTTP app.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -126,7 +126,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~\"httproute/applications/.*\"}[5m])) by (le)) or 1000 * histogram_quantile(0.99, sum(rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_namespace=\"applications\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~\"httproute/applications/.*\"}[5m])) by (le))",
           "legendFormat": "p99",
           "datasource": {
             "type": "prometheus",
@@ -139,7 +139,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "Traffic by status",
-      "description": "Measured at the gateway (Envoy locally, ingress-nginx on AWS), so it works for any HTTP app.",
+      "description": "Measured at the Envoy gateway, so it works for any HTTP app.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -171,15 +171,6 @@
             "type": "prometheus",
             "uid": "prometheus"
           }
-        },
-        {
-          "refId": "B",
-          "expr": "sum by (status) (rate(nginx_ingress_controller_requests{exported_namespace=\"applications\"}[1m]))",
-          "legendFormat": "{{status}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
         }
       ]
     },
@@ -187,7 +178,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Latency percentiles",
-      "description": "Measured at the gateway (Envoy locally, ingress-nginx on AWS), so it works for any HTTP app.",
+      "description": "Measured at the Envoy gateway, so it works for any HTTP app.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -213,7 +204,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~\"httproute/applications/.*\"}[1m])) by (le)) or 1000 * histogram_quantile(0.5, sum(rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_namespace=\"applications\"}[1m])) by (le))",
+          "expr": "histogram_quantile(0.5, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~\"httproute/applications/.*\"}[1m])) by (le))",
           "legendFormat": "p50",
           "datasource": {
             "type": "prometheus",
@@ -222,7 +213,7 @@
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~\"httproute/applications/.*\"}[1m])) by (le)) or 1000 * histogram_quantile(0.95, sum(rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_namespace=\"applications\"}[1m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~\"httproute/applications/.*\"}[1m])) by (le))",
           "legendFormat": "p95",
           "datasource": {
             "type": "prometheus",
@@ -231,7 +222,7 @@
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~\"httproute/applications/.*\"}[1m])) by (le)) or 1000 * histogram_quantile(0.99, sum(rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_namespace=\"applications\"}[1m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name=~\"httproute/applications/.*\"}[1m])) by (le))",
           "legendFormat": "p99",
           "datasource": {
             "type": "prometheus",
