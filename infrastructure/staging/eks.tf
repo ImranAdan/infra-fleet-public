@@ -40,8 +40,11 @@ module "eks" {
       instance_types = ["t3.large"] # Upgraded from t3.medium: 35 pods vs 17, 8GB RAM vs 4GB (required for HPA scaling)
       capacity_type  = "SPOT"       # Lower cost with interruption risk; suitable for this learning stack
       desired_size   = 1
-      min_size       = 1
-      max_size       = 2
+      # Always-on baseline inside the usage window: this single group also runs Flux, CoreDNS,
+      # the ALB controller and cluster-autoscaler itself. Outside the window it is released to
+      # zero (cluster-autoscaler.tf); cluster-autoscaler adds workers up to max_size on demand.
+      min_size = 1
+      max_size = 3
 
       # Enforce IMDSv2 for enhanced metadata security
       # https://avd.aquasec.com/misconfig/aws-autoscaling-enforce-http-token-imds

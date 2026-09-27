@@ -1,0 +1,43 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cluster-autoscaler
+  namespace: kube-system
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: cluster-autoscaler
+      version: 9.59.0 # cluster-autoscaler 1.35.0, matching the EKS minor version
+      sourceRef:
+        kind: HelmRepository
+        name: autoscaler
+        namespace: flux-system
+      interval: 1h
+  values:
+    cloudProvider: aws
+    awsRegion: ${AWS_REGION}
+    # EKS managed node groups carry the auto-discovery tags for this cluster.
+    autoDiscovery:
+      clusterName: ${CLUSTER_NAME}
+
+    # The IAM role is managed by Terraform (infrastructure/staging/cluster-autoscaler.tf)
+    # and associated with this service account via EKS Pod Identity.
+    rbac:
+      serviceAccount:
+        create: true
+        name: cluster-autoscaler
+
+    extraArgs:
+      balance-similar-node-groups: true
+      skip-nodes-with-system-pods: false
+
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
