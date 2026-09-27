@@ -53,7 +53,8 @@ the history proves the work: the failing check, then the fix.
 - `blast-radius`: what a change breaks beyond its diff, with the places grep
   cannot see in this repository.
 - `merge-gate`: `merge_ready.py <PR>` decides whether an agent may merge a
-  pull request unread: `READY`, `SURFACE` (a human decides) or `BLOCKED`.
+  pull request unread: `READY`, `PARK` (the owner decides), `JUDGE` (the
+  independent judge decides) or `BLOCKED`.
 
 When a verification lesson recurs, encode it as a check (a doctor line, a
 contract test, a validator rule) rather than another paragraph here.
@@ -62,12 +63,15 @@ contract test, a validator rule) rather than another paragraph here.
 
 Every pull request carries a `## Verification` section with the commands run
 and what they showed (see `.github/pull_request_template.md`). An agent may
-merge a pull request it raised only when
-`python3 .claude/skills/merge-gate/merge_ready.py <PR>` reports `READY`, and
-must then say what merged and why. `SURFACE` means stop and tell the owner:
-a permission, credential, dependency, policy, intent, decision-record,
-product-requirements, permanent-infrastructure or scope change is a human
-decision, as is disagreeing with a review finding. `BLOCKED` means fix
+merge a pull request it raised only by rerunning
+`python3 .claude/skills/merge-gate/merge_ready.py <PR> --merge` after the gate
+reports `READY`; this binds the merge to the checked head SHA. It must then say
+what merged and why. An agent never adds the `owner-approved` label and never
+posts or imitates a merge-judge comment. The workflow binds an owner-applied
+label to the exact head SHA; a label without that trusted record does not
+approve a merge, and the gate also requires the latest label event to come from
+the repository owner. `PARK` means stop and tell the owner. `JUDGE` means wait
+for the independent base-branch judge. `BLOCKED` means fix the reported defect
 and run the gate again.
 
 ## When a decision is not yours
