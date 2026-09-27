@@ -70,12 +70,11 @@ The gate sends reversible choices defined in
 `.claude/skills/merge-gate/decision-policy.toml` to an independent judge;
 changes to durable authority or access remain with the repository owner.
 
-The judge uses GitHub Models through the workflow token by default. Maintainers
-may add `ANTHROPIC_API_KEY` as a repository Actions secret to prefer the policy's
-Anthropic model. If either provider fails before a response, the workflow
-records no approval and the gate remains at `JUDGE`. An invalid structured
-response records `REJECT`, and the gate becomes `BLOCKED` for the affected
-rules. Fork pull requests are never sent to a model and continue through human
+Maintainers enable the judge by adding `ANTHROPIC_API_KEY` as a repository
+Actions secret. If it is absent, or the provider fails or returns an unreadable
+response, the workflow records no approval and the gate remains at `JUDGE`. An
+invalid structured response records `REJECT`, and the gate becomes `BLOCKED`
+for the affected rules. Fork pull requests are never sent to a model and continue through human
 review. The required intent gate retains its veto over a judge approval. See the
 [merge-gate guide](.claude/skills/merge-gate/SKILL.md) for verdicts and the
 exact-head merge command.
