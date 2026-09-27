@@ -60,7 +60,9 @@ case "${1:-} ${2:-}" in
   'secret delete'|'variable delete')
     printf 'gh %s delete %s\n' "$1" "$3" >> "$FLEET_TEST_CALLS" ;;
   'api --method')
-    cat >/dev/null || true
+    # Consume a request body only when one is piped; -f fields need no stdin,
+    # and reading an inherited open stdin would block forever.
+    case " $* " in *' --input - '*) cat >/dev/null ;; esac
     printf 'gh api %s %s\n' "$3" "$4" >> "$FLEET_TEST_CALLS" ;;
   'api repos/example/fleet/environments/staging')
     printf 'gh api GET %s\n' "$2" >> "$FLEET_TEST_CALLS"
