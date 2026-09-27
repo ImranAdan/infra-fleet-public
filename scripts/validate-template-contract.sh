@@ -68,7 +68,6 @@ trap 'rm -rf "$rendered_root"' EXIT
 ./tests/profiles/local-gateway-readiness.sh
 ./tests/profiles/cluster-ownership.sh
 ./tests/profiles/app-contract.sh
-./tests/profiles/release-image-tag.sh
 
 local_deployment_workflow=.github/workflows/local-kubernetes.yml
 if grep -Eq '^  (pull_request|push):' "$local_deployment_workflow"; then

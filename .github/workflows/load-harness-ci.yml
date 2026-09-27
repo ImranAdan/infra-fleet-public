@@ -63,6 +63,9 @@ jobs:
         run: |
           pytest tests/ -v -W error::DeprecationWarning
 
+      - name: Test image tag selection
+        run: ./ci/test-image-tag.sh
+
   docker-build:
     name: Build & Test Container
     runs-on: ubuntu-latest
@@ -76,7 +79,7 @@ jobs:
         id: image
         run: |
           set -euo pipefail
-          image_tag=$(../../scripts/load-harness-image-tag.sh)
+          image_tag=$(./ci/image-tag.sh)
           echo "IMAGE_TAG=$image_tag" >> "$GITHUB_ENV"
           echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
           echo "Building image: $image_tag"
