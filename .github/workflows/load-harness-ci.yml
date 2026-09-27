@@ -12,6 +12,8 @@ on:
       - 'applications/load-harness/tests/**'
       - 'applications/load-harness/Dockerfile'
       - 'applications/load-harness/requirements.txt'
+      - 'applications/load-harness/ci/**'
+      - '.release-please-manifest.json'
       - '.github/workflows/load-harness-ci.yml'
   workflow_dispatch:
     inputs:
@@ -63,6 +65,9 @@ jobs:
         run: |
           pytest tests/ -v -W error::DeprecationWarning
 
+      - name: Test image tag selection
+        run: ./ci/test-image-tag.sh
+
   docker-build:
     name: Build & Test Container
     runs-on: ubuntu-latest
@@ -76,28 +81,7 @@ jobs:
         id: image
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            image_tag="${GITHUB_REF_NAME}"
-            if [[ ! "$image_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Release tags must use vMAJOR.MINOR.PATCH format." >&2
-              exit 1
-            fi
-          elif [ "${PUBLISH_TO_ECR}" = "true" ]; then
-            version=$(jq -er '.\"applications/load-harness\"' ../../.release-please-manifest.json)
-            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Invalid load-harness version in .release-please-manifest.json" >&2
-              exit 1
-            fi
-            image_tag="v$version"
-          else
-            image_tag="pr-${GITHUB_SHA:0:8}"
-          fi
-
-          if [[ ! "$image_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
-            echo "Generated image tag is not valid for a container registry." >&2
-            exit 1
-          fi
-
+          image_tag=$(./ci/image-tag.sh)
           echo "IMAGE_TAG=$image_tag" >> "$GITHUB_ENV"
           echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
           echo "Building image: $image_tag"
