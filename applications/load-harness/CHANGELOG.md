@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.8.2...v1.9.0) (2026-09-27)
+
+
+### Features
+
+* **staging:** scale workers on demand and release them nightly ([6bbf63f](https://github.com/ImranAdan/infra-fleet-public/commit/6bbf63fed34af7a9f20e34a38deaaafdf2796864))
+
+
+### Bug Fixes
+
+* **iam:** let automation manage worker scheduled actions ([7489681](https://github.com/ImranAdan/infra-fleet-public/commit/7489681e5379018a4ae9d5c312aeac4ac79bf612))
+
 ## [1.8.2](https://github.com/ImranAdan/infra-fleet-public/compare/v1.8.1...v1.8.2) (2026-09-27)
 
 
