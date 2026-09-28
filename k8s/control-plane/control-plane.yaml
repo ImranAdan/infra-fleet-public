@@ -1,0 +1,146 @@
+# The fleet control plane: the application dashboard. It reads the app
+# catalogue and live app state through a read-only role, and changes nothing.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fleet-control
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-plane
+  namespace: fleet-control
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control-plane-catalog
+  namespace: flux-system
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [fleet-catalog, fleet-app]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control-plane-catalog
+  namespace: flux-system
+subjects:
+  - kind: ServiceAccount
+    name: control-plane
+    namespace: fleet-control
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: control-plane-catalog
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control-plane-apps
+  namespace: applications
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [list]
+  - apiGroups: [flagger.app]
+    resources: [canaries]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control-plane-apps
+  namespace: applications
+subjects:
+  - kind: ServiceAccount
+    name: control-plane
+    namespace: fleet-control
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: control-plane-apps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane
+  namespace: fleet-control
+  labels:
+    app: control-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane
+  template:
+    metadata:
+      labels:
+        app: control-plane
+      annotations:
+        infra-fleet.io/runtime-config-revision: "${RUNTIME_CONFIG_REVISION}"
+    spec:
+      serviceAccountName: control-plane
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: control-plane
+          # The same pinned base the apps use; the code is mounted from Git.
+          image: python:3.13-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0
+          command: [python3, /opt/control-plane/server.py]
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: code
+              mountPath: /opt/control-plane
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: control-plane-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: fleet-control
+spec:
+  selector:
+    app: control-plane
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http

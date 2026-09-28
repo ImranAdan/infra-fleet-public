@@ -10,6 +10,7 @@ resources:
   - ../../../infrastructure/cert-manager
   - ../../../infrastructure/observability
   - ../../../infrastructure/flagger
+  - ../../../control-plane
   - ../../../infrastructure/flagger-loadtester
   - controllers.yaml
 patches:

@@ -269,6 +269,19 @@ local_configuration() {
     --from-literal=RUNTIME_CONFIG_REVISION="$FLEET_SHA" \
     --dry-run=client -o yaml | kctl apply -f -
   kctl label configmap fleet-config -n flux-system reconcile.fluxcd.io/watch=Enabled --overwrite >/dev/null
+  local_catalog
+}
+
+# Every app contract at the deployed revision, for the application dashboard.
+local_catalog() {
+  local contract app args=()
+  while IFS= read -r contract; do
+    app=${contract#k8s/applications/}
+    app=${app%/fleet-app.yaml}
+    args+=("--from-literal=$app=$(git show "$FLEET_SHA:$contract")")
+  done < <(git ls-tree -r --name-only "$FLEET_SHA" k8s/applications | grep '/fleet-app\.yaml$')
+  kctl create configmap fleet-catalog -n flux-system "${args[@]}" \
+    --dry-run=client -o yaml | kctl apply -f - >/dev/null
 }
 
 local_secrets() {
@@ -522,7 +535,10 @@ profile_main() {
           kctl port-forward -n applications "service/$app" "8080:$port" --address=127.0.0.1 ;;
         prometheus) kctl port-forward -n observability service/kube-prometheus-stack-prometheus 9090:9090 --address=127.0.0.1 ;;
         grafana) kctl port-forward -n observability service/kube-prometheus-stack-grafana 3000:80 --address=127.0.0.1 ;;
-        *) fail 'Choose --service app, prometheus or grafana.' ;;
+        dashboard)
+          echo 'Open http://localhost:9000/ for the application dashboard.' >&2
+          kctl port-forward -n fleet-control service/control-plane 9000:80 --address=127.0.0.1 ;;
+        *) fail 'Choose --service app, dashboard, prometheus or grafana.' ;;
       esac ;;
     credentials)
       local_existing_cluster

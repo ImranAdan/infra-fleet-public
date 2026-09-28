@@ -35,7 +35,7 @@ Usage: ./fleet ACTION --profile local|aws-staging
   sync         Reconcile a committed local revision (--revision FULL_SHA)
   status       Show local controllers, or recent AWS rebuild runs
   down         Delete this facade's local cluster, or dispatch AWS teardown
-  access       Local port-forward (--service app|prometheus|grafana)
+  access       Local port-forward (--service app|dashboard|prometheus|grafana)
   credentials  Print local application and Grafana credentials on request
   test         Prove local drift correction, admission and canary delivery
 
