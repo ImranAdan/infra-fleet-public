@@ -37,7 +37,7 @@ bypass the Gateway, or carry another hostname, never appear in the gate metrics.
 | File | Purpose |
 |---|---|
 | `k8s/applications/platform/canary.yaml` | The Canary, its gates and webhooks, for any app |
-| `k8s/applications/platform/metrictemplate.yaml` | Envoy gate queries |
+| `k8s/applications/observability/metrictemplate.yaml` | Envoy gate queries |
 | `k8s/routing/gateway.yaml` | The shared Gateway, HTTPS redirect and certificate |
 | `k8s/infrastructure/flagger/helmrelease.yaml` | Flagger |
 | `k8s/infrastructure/flagger-loadtester/helmrelease.yaml` | The load tester that drives analysis traffic |

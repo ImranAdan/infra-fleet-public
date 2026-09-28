@@ -30,14 +30,17 @@
     @keyframes pulse { to { opacity: .3; } }
     .btn { border: 0; border-radius: 10px; padding: 11px; font-weight: 600; font-size: 14px;
            text-align: center; text-decoration: none; color: #fff; background: var(--accent); cursor: pointer; }
-    .btn[aria-disabled="true"] { background: #2a3550; color: var(--dim); cursor: not-allowed; }
+    .btn[aria-disabled="true"] { background: #2a3550; color: var(--dim); cursor: progress; }
+    .btn.secondary { background: transparent; border: 1px solid var(--line); color: var(--dim); }
+    .actions { display: flex; gap: 10px; }
+    .actions .btn { flex: 1; }
     .error { grid-column: 1 / -1; color: #ff8a80; }
   </style>
 </head>
 <body>
   <header>
     <h1>Fleet Applications</h1>
-    <p>Every application the fleet can run, read from its contract in Git, with its live state.</p>
+    <p>Every application the fleet can run, read from its contract in Git. Launch deploys its whole stack on demand.</p>
   </header>
   <main id="apps" aria-live="polite"></main>
   <script src="/dashboard.js"></script>

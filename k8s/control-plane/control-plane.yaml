@@ -1,5 +1,8 @@
 # The fleet control plane: the application dashboard. It reads the app
-# catalogue and live app state through a read-only role, and changes nothing.
+# catalogue and live app state, and launches or stops an app by creating or
+# deleting that app's Flux Kustomizations. Those run as app-deployer, which
+# may change only the applications namespace, so the dashboard can never
+# deploy anything with Flux's own cluster-wide rights.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -21,6 +24,57 @@ rules:
     resources: [configmaps]
     resourceNames: [fleet-catalog, fleet-app]
     verbs: [get]
+  # Launch and stop. Creation cannot be limited by name; the Kustomizations it
+  # creates are confined by their app-deployer service account.
+  - apiGroups: [kustomize.toolkit.fluxcd.io]
+    resources: [kustomizations]
+    verbs: [list, create, delete]
+---
+# The identity launched apps are deployed as: the applications namespace only.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-deployer
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-deployer
+  namespace: applications
+rules:
+  - apiGroups: ["", apps, autoscaling, networking.k8s.io, flagger.app]
+    resources: [services, deployments, horizontalpodautoscalers, networkpolicies, canaries]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-deployer
+  namespace: applications
+subjects:
+  - kind: ServiceAccount
+    name: app-deployer
+    namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: app-deployer
+---
+# Issued by the fleet's local CA; the dashboard uses its ca.crt to verify the
+# Gateway when it forwards to an app.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: control-plane-trust
+  namespace: fleet-control
+spec:
+  secretName: control-plane-trust
+  dnsNames:
+    - control-plane.fleet-control.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: fleet-issuer
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -127,10 +181,20 @@ spec:
             - name: code
               mountPath: /opt/control-plane
               readOnly: true
+            - name: trust
+              mountPath: /etc/fleet-trust
+              readOnly: true
       volumes:
         - name: code
           configMap:
             name: control-plane-code
+        # Only the CA certificate: the proxy verifies the Gateway with it.
+        - name: trust
+          secret:
+            secretName: control-plane-trust
+            items:
+              - key: ca.crt
+                path: ca.crt
 ---
 apiVersion: v1
 kind: Service

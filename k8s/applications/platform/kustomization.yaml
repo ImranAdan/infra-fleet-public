@@ -1,9 +1,9 @@
-# Platform-owned objects for whichever app k8s/fleet-app names. Flux fills the
-# ${APP_*} values from that ConfigMap, so nothing here names a specific app.
+# Platform-owned objects for one app, filled with that app's ${APP_*} values:
+# from k8s/fleet-app for the selected app, or from the app's own contract when
+# the control plane launches it. Shared objects live in ../observability.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - hpa.yaml
   - networkpolicy.yaml
   - canary.yaml
-  - metrictemplate.yaml

@@ -4,5 +4,6 @@ resources:
   - ../../fleet-app
   - infrastructure.yaml
   - routing.yaml
+  - control-plane.yaml
   - policies.yaml
   - applications.yaml

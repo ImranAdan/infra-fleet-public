@@ -10,6 +10,7 @@ traffic_provider=gatewayapi:v1
 environment=staging
 public_scheme=https
 if [ "$profile" = local ]; then
+  components+=(control-plane)
   image_registry=fleet-local-registry:5000
   environment=kind
 else

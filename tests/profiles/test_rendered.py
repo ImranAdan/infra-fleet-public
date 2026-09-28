@@ -70,7 +70,12 @@ def test_both_profiles_serve_the_app_over_https_through_one_gateway():
         secret = https["tls"]["certificateRefs"][0]["name"]
         certificate = one(resources, "Certificate", "fleet-tls")["spec"]
         assert certificate["secretName"] == secret
-        assert certificate["dnsNames"] == [https["hostname"]]
+        # AWS serves one public host; locally every launched app has its own
+        # <app>.localhost host, so the listener takes any host the cert covers.
+        host = https.get("hostname", "localhost")
+        expected = [host] if profile == "aws-staging" else [host, "*.localhost"]
+        assert certificate["dnsNames"] == expected, profile
+        assert ("hostname" in https) == (profile == "aws-staging"), profile
         one(resources, "ClusterIssuer", certificate["issuerRef"]["name"])
         # Plain HTTP only redirects; application routes may not attach to it.
         assert listeners["http"]["allowedRoutes"]["namespaces"]["from"] == "Same"
@@ -81,4 +86,4 @@ def test_both_profiles_serve_the_app_over_https_through_one_gateway():
         ]
         service = one(resources, "Canary", app_name())["spec"]["service"]
         assert service["gatewayRefs"] == [{"name": "fleet", "namespace": "envoy-gateway-system", "sectionName": "https"}]
-        assert service["hosts"] == [https["hostname"]]
+        assert service["hosts"] == [host]

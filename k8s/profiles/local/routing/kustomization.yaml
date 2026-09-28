@@ -3,3 +3,19 @@ kind: Kustomization
 resources:
   - ../../../routing
   - issuer.yaml
+patches:
+  # Locally every app launched from the dashboard gets its own <app>.localhost
+  # host, so the HTTPS listener accepts any host and the certificate covers them.
+  - target:
+      kind: Gateway
+      name: fleet
+    patch: |-
+      - op: remove
+        path: /spec/listeners/1/hostname
+  - target:
+      kind: Certificate
+      name: fleet-tls
+    patch: |-
+      - op: add
+        path: /spec/dnsNames/-
+        value: "*.localhost"

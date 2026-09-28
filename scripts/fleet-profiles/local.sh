@@ -228,20 +228,30 @@ local_publish_snapshot() {
   [ "$published_sha" = "$FLEET_SHA" ] || fail 'Local Git source did not publish the selected revision.'
 }
 
-# One value of the app contract (k8s/fleet-app/fleet-app.yaml) at the revision
-# being deployed, so a build never mixes one commit's app with another's.
-local_app() {
-  local value
-  value=$(git show "$FLEET_SHA:k8s/fleet-app/fleet-app.yaml" |
-    awk -v key="$1" '$1 == key":" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }')
-  [ -n "$value" ] || [ "${2:-}" = optional ] || fail "k8s/fleet-app/fleet-app.yaml does not set $1." || return 1
-  printf '%s' "$value"
+# Every app contract at the deployed revision.
+local_contracts() {
+  git ls-tree -r --name-only "$FLEET_SHA" k8s/applications | grep '/fleet-app\.yaml$'
 }
 
+# One value of a contract at the deployed revision.
+local_contract_value() {
+  git show "$FLEET_SHA:$1" |
+    awk -v key="$2" '$1 == key":" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }'
+}
+
+# Build every app, not only the selected one: the control plane launches any
+# of them on demand, so their images must already be in the local registry.
 local_build_image() {
+  local contract
+  while IFS= read -r contract; do
+    local_build_app "$contract" || return 1
+  done < <(local_contracts)
+}
+
+local_build_app() {
   local build_directory app_name app_source
-  app_name=$(local_app APP_NAME) || return 1
-  app_source=$(local_app APP_SOURCE) || return 1
+  app_name=$(local_contract_value "$1" APP_NAME)
+  app_source=$(local_contract_value "$1" APP_SOURCE)
   [[ "$app_name" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || fail "Invalid APP_NAME: $app_name" || return 1
   [[ "$app_source" =~ ^applications/[a-z0-9][-a-z0-9]*$ ]] || fail "Invalid APP_SOURCE: $app_source" || return 1
   build_directory=$(mktemp -d "$FLEET_STATE/build.XXXXXX")
@@ -279,18 +289,22 @@ local_catalog() {
     app=${contract#k8s/applications/}
     app=${app%/fleet-app.yaml}
     args+=("--from-literal=$app=$(git show "$FLEET_SHA:$contract")")
-  done < <(git ls-tree -r --name-only "$FLEET_SHA" k8s/applications | grep '/fleet-app\.yaml$')
+  done < <(local_contracts)
   kctl create configmap fleet-catalog -n flux-system "${args[@]}" \
     --dry-run=client -o yaml | kctl apply -f - >/dev/null
 }
 
 local_secrets() {
-  local secret filename namespace key credential entry app_secrets
+  local secret filename namespace key credential entry app_secrets contract
   for namespace in flux-system applications observability; do
     kctl create namespace "$namespace" --dry-run=client -o yaml | \
       kctl apply --server-side --field-manager=fleet-local-facade -f - >/dev/null
   done
-  app_secrets=$(local_app APP_SECRETS optional) || return 1
+  # Every app's secrets, not only the selected app's: the control plane can
+  # launch any of them.
+  app_secrets=$(while IFS= read -r contract; do
+    local_contract_value "$contract" APP_SECRETS
+  done < <(local_contracts) | tr '\n' ' ')
   # Each app secret holds one random key, cached so repeated starts keep it.
   for entry in $app_secrets grafana-admin-credentials:admin-password; do
     secret=${entry%%:*} key=${entry#*:}
@@ -457,7 +471,8 @@ local_up() {
   kctl patch kustomization applications -n flux-system --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
   fctl reconcile kustomization applications --with-source --timeout=15m
   kctl wait --for=condition=Ready kustomization/policies -n flux-system --timeout=5m
-  echo 'Local Kubernetes is ready. Use ./fleet access --profile local and ./fleet credentials --profile local.'
+  kctl wait --for=condition=Ready kustomization/control-plane -n flux-system --timeout=10m
+  echo 'Local Kubernetes is ready. Open the dashboard with ./fleet access --profile local --service dashboard.'
 }
 
 local_sync() {
@@ -484,6 +499,7 @@ local_sync_platform() {
     fctl reconcile kustomization infrastructure --timeout=15m &&
     local_wait_gateway &&
     fctl reconcile kustomization routing --timeout=15m &&
+    fctl reconcile kustomization control-plane --timeout=10m &&
     fctl reconcile kustomization policies --timeout=15m
 }
 

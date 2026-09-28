@@ -1,15 +1,23 @@
 """Fleet control plane: the application dashboard. Standard library only.
 
-Reads the app catalogue (every contract at the deployed revision, published by
-the facade as the fleet-catalog ConfigMap) and each app's live state from the
-Kubernetes API. Read-only: it never changes the cluster.
+Lists every app from its contract at the deployed revision (the fleet-catalog
+ConfigMap the facade publishes) with its live state, launches a sleeping app on
+demand, stops a launched one, and proxies http://<app>.localhost:9000 to it.
+
+Launching never edits workloads: it asks Flux to deploy the app from Git, as
+two Kustomizations (the app's manifests and the shared platform templates,
+filled with the app's contract) that run as the app-deployer service account,
+which can change only the applications namespace. Stopping deletes them and
+Flux prunes the stack.
 """
 
+import http.client
 import json
 import os
 import re
 import ssl
 import sys
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,6 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 API = "https://kubernetes.default.svc"
 SA = Path("/var/run/secrets/kubernetes.io/serviceaccount")
+KUSTOMIZATIONS = "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations"
+GATEWAY = "fleet-gateway.envoy-gateway-system"
+TRUST = Path("/etc/fleet-trust/ca.crt")
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
@@ -28,7 +39,9 @@ HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
 }
+HOP_BY_HOP = {"connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade", "te"}
 _LINE = re.compile(r"^  (APP_[A-Z_]+):\s*(.*)$")
+_APP_HOST = re.compile(r"^([a-z0-9]([-a-z0-9]*[a-z0-9])?)\.localhost(:\d+)?$")
 
 
 def contract(text: str) -> dict[str, str]:
@@ -41,17 +54,19 @@ def contract(text: str) -> dict[str, str]:
     return values
 
 
-def app_state(name: str, canaries: dict, deployments: dict) -> str:
-    """running: serving from its primary; starting: its stack exists but is not
-    serving yet; sleeping: nothing of it is deployed."""
+def app_state(name: str, canaries: dict, deployments: dict, launching: bool = False) -> str:
+    """running: serving from its primary; starting: launched or partly deployed
+    but not serving yet; sleeping: nothing of it is deployed."""
     if name not in canaries and name not in deployments:
-        return "sleeping"
+        return "starting" if launching else "sleeping"
     ready = deployments.get(f"{name}-primary", {}).get("readyReplicas", 0)
     phase = canaries.get(name, {}).get("phase", "")
     return "running" if ready and phase not in ("", "Initializing") else "starting"
 
 
-def catalogue(catalog: dict, canaries: dict, deployments: dict, selected: str) -> list[dict]:
+def catalogue(
+    catalog: dict, canaries: dict, deployments: dict, selected: str, launched: set[str]
+) -> list[dict]:
     apps = []
     for key, text in sorted(catalog.items()):
         values = contract(text)
@@ -61,25 +76,124 @@ def catalogue(catalog: dict, canaries: dict, deployments: dict, selected: str) -
                 "name": name,
                 "title": values.get("APP_TITLE") or name,
                 "description": values.get("APP_DESCRIPTION", ""),
-                "state": app_state(name, canaries, deployments),
+                "state": app_state(name, canaries, deployments, name in launched),
                 "phase": canaries.get(name, {}).get("phase", ""),
                 "selected": name == selected,
+                "launched": name in launched,
             }
         )
     return apps
 
 
-def kube(path: str) -> dict:
+def kustomizations(values: dict[str, str]) -> list[dict]:
+    """The two Flux Kustomizations that deploy one app from Git: its manifests,
+    and the shared platform templates (canary, HPA, NetworkPolicy)."""
+    name = values["APP_NAME"]
+    substitute = {key: value for key, value in values.items() if key.startswith("APP_")}
+    substitute["APP_HOSTNAME"] = f"{name}.localhost"
+    common = {
+        "interval": "1m",
+        "prune": True,
+        "wait": False,
+        "timeout": "10m",
+        "serviceAccountName": "app-deployer",
+        "sourceRef": {"kind": "GitRepository", "name": "fleet-local"},
+        "postBuild": {
+            "substitute": substitute,
+            "substituteFrom": [{"kind": "ConfigMap", "name": "fleet-config"}],
+        },
+    }
+    labels = {"infra-fleet.io/launched-app": name}
+    return [
+        {
+            "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+            "kind": "Kustomization",
+            "metadata": {"name": f"app-{name}", "namespace": "flux-system", "labels": labels},
+            "spec": {
+                **common,
+                "path": f"./k8s/applications/{name}",
+                # Every app's image is named `app`; bind it to this app's build.
+                "images": [
+                    {"name": "app", "newName": "${IMAGE_REGISTRY}/" + name, "newTag": "${IMAGE_TAG}"}
+                ],
+            },
+        },
+        {
+            "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+            "kind": "Kustomization",
+            "metadata": {
+                "name": f"app-{name}-platform",
+                "namespace": "flux-system",
+                "labels": labels,
+            },
+            "spec": {
+                **common,
+                "path": "./k8s/applications/platform",
+                "dependsOn": [{"name": f"app-{name}"}],
+                # The local profile's HPA ceiling, as for the selected app.
+                "patches": [
+                    {
+                        "target": {"kind": "HorizontalPodAutoscaler"},
+                        "patch": '[{"op": "replace", "path": "/spec/maxReplicas", "value": 3}]',
+                    }
+                ],
+            },
+        },
+    ]
+
+
+def app_for_host(host: str, catalog_names: set[str]) -> str | None:
+    """The catalogued app a Host header addresses, as <app>.localhost[:port]."""
+    match = _APP_HOST.match(host or "")
+    return match[1] if match and match[1] in catalog_names else None
+
+
+def gateway_host(app: str, selected: str) -> str:
+    """The host an app's route answers on: the selected app keeps the fleet's
+    base host, and every launched app has its own."""
+    return "localhost" if app == selected else f"{app}.localhost"
+
+
+class GatewayConnection(http.client.HTTPSConnection):
+    """HTTPS to the fleet Gateway, verifying its certificate for the app's host
+    name (sent as SNI) against the fleet's local CA."""
+
+    def __init__(self, host: str) -> None:
+        context = ssl.create_default_context(cafile=str(TRUST))
+        super().__init__(GATEWAY, 443, context=context, timeout=30)
+        self.app_host = host
+
+    def connect(self) -> None:
+        http.client.HTTPConnection.connect(self)
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.app_host)
+
+
+def kube(path: str, method: str = "GET", body: dict | None = None) -> dict:
     token = (SA / "token").read_text().strip()
-    request = urllib.request.Request(API + path, headers={"Authorization": f"Bearer {token}"})
+    request = urllib.request.Request(
+        API + path,
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
     context = ssl.create_default_context(cafile=str(SA / "ca.crt"))
-    with urllib.request.urlopen(request, context=context, timeout=5) as response:  # noqa: S310
+    with urllib.request.urlopen(request, context=context, timeout=10) as response:  # noqa: S310
         return json.load(response)
 
 
-def live_apps() -> list[dict]:
+def read_catalog() -> tuple[dict, str]:
     catalog = kube("/api/v1/namespaces/flux-system/configmaps/fleet-catalog")["data"]
     selected = kube("/api/v1/namespaces/flux-system/configmaps/fleet-app")["data"]["APP_NAME"]
+    return catalog, selected
+
+
+def launched_apps() -> set[str]:
+    items = kube(f"{KUSTOMIZATIONS}?labelSelector=infra-fleet.io/launched-app")["items"]
+    return {item["metadata"]["labels"]["infra-fleet.io/launched-app"] for item in items}
+
+
+def live_apps() -> list[dict]:
+    catalog, selected = read_catalog()
     canaries = {
         item["metadata"]["name"]: item.get("status", {})
         for item in kube("/apis/flagger.app/v1beta1/namespaces/applications/canaries")["items"]
@@ -88,25 +202,98 @@ def live_apps() -> list[dict]:
         item["metadata"]["name"]: item.get("status", {})
         for item in kube("/apis/apps/v1/namespaces/applications/deployments")["items"]
     }
-    return catalogue(catalog, canaries, deployments, selected)
+    return catalogue(catalog, canaries, deployments, selected, launched_apps())
+
+
+def launch(name: str) -> None:
+    catalog, selected = read_catalog()
+    texts = {contract(text).get("APP_NAME"): text for text in catalog.values()}
+    if name not in texts or name == selected:
+        raise ValueError(f"{name} is not a launchable app")
+    for body in kustomizations(contract(texts[name])):
+        try:
+            kube(KUSTOMIZATIONS, "POST", body)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 409:  # already launched
+                raise
+
+
+def stop(name: str) -> None:
+    if name not in launched_apps():
+        raise ValueError(f"{name} was not launched from the dashboard")
+    for suffix in ("-platform", ""):
+        kube(f"{KUSTOMIZATIONS}/app-{name}{suffix}", "DELETE")
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
+        self.route()
+
+    def do_POST(self) -> None:
+        self.route()
+
+    def do_PUT(self) -> None:
+        self.route()
+
+    def do_DELETE(self) -> None:
+        self.route()
+
+    def route(self) -> None:
         path = self.path.split("?", 1)[0]
         if path in ("/healthz", "/readyz"):
-            self.reply(200, b"ok\n", "text/plain")
-        elif path == "/api/apps":
+            return self.reply(200, b"ok\n", "text/plain")
+        try:
+            catalog, selected = read_catalog()
+        except (OSError, KeyError, ValueError) as exc:
+            return self.reply(503, json.dumps({"error": str(exc)}).encode(), "application/json")
+        names = {contract(text).get("APP_NAME") for text in catalog.values()}
+        app = app_for_host(self.headers.get("Host", ""), names)
+        if app:
+            return self.proxy(gateway_host(app, selected))
+        if self.command == "GET" and path == "/api/apps":
             try:
-                body = json.dumps({"apps": live_apps()}).encode()
-                self.reply(200, body, "application/json")
+                return self.reply(200, json.dumps({"apps": live_apps()}).encode(), "application/json")
             except (OSError, KeyError, ValueError) as exc:
-                self.reply(503, json.dumps({"error": str(exc)}).encode(), "application/json")
-        elif path in STATIC:
+                return self.reply(503, json.dumps({"error": str(exc)}).encode(), "application/json")
+        action = re.fullmatch(r"/api/apps/([a-z0-9-]+)/(launch|stop)", path)
+        if self.command == "POST" and action:
+            # A custom header cannot be sent cross-site without a CORS preflight,
+            # which this server never grants, so other sites cannot drive it.
+            if self.headers.get("X-Fleet-Action") != "1":
+                return self.reply(403, b"missing X-Fleet-Action\n", "text/plain")
+            try:
+                (launch if action[2] == "launch" else stop)(action[1])
+                return self.reply(202, b'{"ok": true}', "application/json")
+            except (ValueError, OSError) as exc:
+                return self.reply(409, json.dumps({"error": str(exc)}).encode(), "application/json")
+        if self.command == "GET" and path in STATIC:
             name, content_type = STATIC[path]
-            self.reply(200, (ROOT / name).read_bytes(), content_type)
-        else:
-            self.reply(404, b"not found\n", "text/plain")
+            return self.reply(200, (ROOT / name).read_bytes(), content_type)
+        self.reply(404, b"not found\n", "text/plain")
+
+    def proxy(self, host: str) -> None:
+        """Forward to the app through the Gateway, the declared ingress, over TLS
+        verified against the fleet's local CA for the app's own host name."""
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length else None
+        headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
+        headers["Host"] = host
+        connection = GatewayConnection(host)
+        try:
+            connection.request(self.command, self.path, body=body, headers=headers)
+            response = connection.getresponse()
+            data = response.read()
+        except OSError as exc:
+            return self.reply(502, f"{host} is not reachable yet: {exc}\n".encode(), "text/plain")
+        finally:
+            connection.close()
+        self.send_response(response.status)
+        for name, value in response.getheaders():
+            if name.lower() not in HOP_BY_HOP | {"content-length"}:
+                self.send_header(name, value)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def reply(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -132,11 +319,34 @@ data:
     assert app_state("game", {"game": {"phase": "Initializing"}}, serving) == "starting"
     assert app_state("game", {"game": {"phase": "Succeeded"}}, {}) == "starting"
     assert app_state("game", {}, {}) == "sleeping"
-    apps = catalogue({"game": text, "b": "  APP_NAME: b\n"}, {}, {}, "game")
-    assert [(a["name"], a["title"], a["selected"]) for a in apps] == [
-        ("b", "b", False),
-        ("game", "Fleet Runner", True),
+    assert app_state("game", {}, {}, launching=True) == "starting"
+    apps = catalogue({"game": text, "b": "  APP_NAME: b\n"}, {}, {}, "game", {"b"})
+    assert [(a["name"], a["title"], a["selected"], a["launched"], a["state"]) for a in apps] == [
+        ("b", "b", False, True, "starting"),
+        ("game", "Fleet Runner", True, False, "sleeping"),
     ]
+
+    app, platform = kustomizations(contract(text))
+    assert app["metadata"]["name"] == "app-game" and platform["metadata"]["name"] == "app-game-platform"
+    assert app["spec"]["path"] == "./k8s/applications/game"
+    assert platform["spec"]["path"] == "./k8s/applications/platform"
+    assert platform["spec"]["dependsOn"] == [{"name": "app-game"}]
+    for body in (app, platform):
+        spec = body["spec"]
+        assert spec["serviceAccountName"] == "app-deployer"
+        assert spec["postBuild"]["substitute"]["APP_HOSTNAME"] == "game.localhost"
+        assert spec["postBuild"]["substitute"]["APP_PORT"] == "8080"
+        assert body["metadata"]["labels"] == {"infra-fleet.io/launched-app": "game"}
+    assert app["spec"]["images"][0]["newName"] == "${IMAGE_REGISTRY}/game"
+
+    names = {"game", "sample"}
+    assert app_for_host("game.localhost:9000", names) == "game"
+    assert app_for_host("sample.localhost", names) == "sample"
+    assert app_for_host("localhost:9000", names) is None
+    assert app_for_host("evil.localhost:9000", names) is None
+    assert app_for_host("game.localhost.evil.test", names) is None
+    assert gateway_host("game", selected="game") == "localhost"
+    assert gateway_host("sample", selected="game") == "sample.localhost"
     print("self-test passed")
 
 
