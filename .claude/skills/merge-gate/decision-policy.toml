@@ -100,5 +100,6 @@ model = "claude-opus-5-5"
 
 [evidence]
 required_checks = [
-  { name = "Intent gate / Declared intent", workflow = ".github/workflows/intent-gate.yml" },
+  { group = "declared-intent", name = "Intent gate / Declared intent", workflow = ".github/workflows/intent-gate.yml" },
+  { group = "declared-intent", name = "Intent gate (retargeted) / Declared intent", workflow = ".github/workflows/intent-gate-retarget.yml" },
 ]
