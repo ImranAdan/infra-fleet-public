@@ -34,7 +34,10 @@ spec:
           !has(object.spec.sourceRef.namespace) &&
           !has(object.spec.kubeConfig) &&
           !has(object.spec.targetNamespace) &&
-          object.spec.postBuild.substituteFrom == [{'kind': 'ConfigMap', 'name': 'fleet-config'}] &&
+          has(object.spec.postBuild) &&
+          size(object.spec.postBuild.substituteFrom) == 1 &&
+          object.spec.postBuild.substituteFrom[0].kind == 'ConfigMap' &&
+          object.spec.postBuild.substituteFrom[0].name == 'fleet-config' &&
           (
             (object.metadata.name == 'app-' + variables.app &&
              object.spec.path == './k8s/applications/' + variables.app) ||
