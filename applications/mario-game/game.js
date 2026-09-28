@@ -91,7 +91,11 @@ function loseLife() {
 
 function update() {
   if (state.mode !== "play") {
-    if (keys.Enter || keys.KeyR) reset(false);
+    // Enter, R or Jump (the touch pad's button) restarts, but only on a fresh
+    // press: a jump still held when the round ended must not skip the result.
+    const restart = keys.Enter || keys.KeyR || keys.Space;
+    if (restart && state.released) reset(false);
+    if (!restart) state.released = true;
     return;
   }
   const p = state.player;
@@ -209,7 +213,7 @@ function draw() {
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.font = "bold 44px monospace";
     ctx.fillText(state.mode === "won" ? "COURSE CLEAR!" : "GAME OVER", W / 2, H / 2 - 10);
-    ctx.font = "20px monospace"; ctx.fillText(`Score ${state.score}  ·  Enter to play again`, W / 2, H / 2 + 30);
+    ctx.font = "20px monospace"; ctx.fillText(`Score ${state.score}  ·  Enter or Jump to play again`, W / 2, H / 2 + 30);
     ctx.textAlign = "left";
   }
 }
@@ -221,7 +225,10 @@ for (const b of document.querySelectorAll("[data-key]")) {
   b.addEventListener("touchstart", set(true)); b.addEventListener("touchend", set(false));
   b.addEventListener("touchcancel", set(false)); // a gesture can end a touch without touchend
   b.addEventListener("mousedown", set(true)); b.addEventListener("mouseup", set(false));
+  b.addEventListener("mouseleave", set(false)); // released outside the button
 }
+// A key released while the window is unfocused never sends keyup.
+addEventListener("blur", () => { for (const code in keys) keys[code] = false; });
 
 reset(false);
 // Physics and the clock advance in fixed 60 Hz steps whatever the display's

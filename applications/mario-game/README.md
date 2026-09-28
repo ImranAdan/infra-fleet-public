@@ -12,10 +12,10 @@ Play it locally:
 scripts/select-app.sh mario-game
 git commit -am "chore: run mario-game"
 ./fleet sync --profile local
-./fleet access --profile local --service app   # https://localhost:8443/
+./fleet access --profile local --service app   # http://localhost:8080/
 ```
 
-Controls: arrows or A/D to run, Space or W to jump, Enter to play again.
+Controls: arrows or A/D to run, Space or W to jump, Enter or Jump to play again.
 Touch screens get on-screen buttons.
 
 Its fault switch is `GAME_FAULT=true`, which makes every page request fail
