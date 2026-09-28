@@ -71,8 +71,15 @@ trap 'rm -rf "$rendered_root"' EXIT
 ./tests/profiles/app-contract.sh
 
 local_deployment_workflow=.github/workflows/local-kubernetes.yml
-if grep -Eq '^  (pull_request|push):' "$local_deployment_workflow"; then
-  echo "The full local deployment must not run automatically for each PR or main push." >&2
+# Runtime changes are proven live before an unsupervised merge, but the full
+# deployment is too slow to run for every change or again after merging.
+if grep -Eq '^  push:' "$local_deployment_workflow"; then
+  echo "The full local deployment must not run again for each main push." >&2
+  failed=true
+fi
+if grep -Eq '^  pull_request:' "$local_deployment_workflow" &&
+  ! sed -n '/^  pull_request:/,/^[^ ]/p' "$local_deployment_workflow" | grep -Eq '^    paths:'; then
+  echo "The full local deployment may run for a PR only when it changes runtime paths." >&2
   failed=true
 fi
 for required_contract in \

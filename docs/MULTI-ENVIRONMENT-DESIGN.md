@@ -236,7 +236,7 @@ spec:
 
 | Environment | Profile | Trigger | Persistence |
 |-------------|---------|---------|-------------|
-| `local` | `local` | Manual final gate and weekly confidence run | Ephemeral; the workflow tears kind down |
+| `local` | `local` | Runtime-path pull requests, on demand, and weekly confidence run | Ephemeral; the workflow tears kind down |
 | `staging` | `aws-staging` | Reviewed AWS lifecycle workflows | Persistent until the destroy workflow runs |
 
 `staging` retains its name because the AWS OIDC trust policy binds that exact
