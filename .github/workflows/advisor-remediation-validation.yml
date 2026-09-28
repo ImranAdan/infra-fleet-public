@@ -1,0 +1,138 @@
+name: Advisor remediation validation
+
+# GITHUB_TOKEN-created pull requests do not emit pull_request events. The
+# Fleet-owned remediation workflow dispatches this read-only validator on the
+# generated branch so ordinary evidence still binds to the exact candidate SHA.
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Fleet pull request containing the registered remediation
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: advisor-remediation-validation-${{ inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    name: Registered patch scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the generated head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify the pull request and patch boundary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          metadata="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          head="$(jq -r '.head.sha' <<< "$metadata")"
+          base="$(jq -r '.base.sha' <<< "$metadata")"
+          owner="$(jq -r '.head.repo.full_name' <<< "$metadata")"
+          test "$head" = "$(git rev-parse HEAD)"
+          test "$owner" = "$GITHUB_REPOSITORY"
+
+          git diff --unified=0 "$base" "$head" > "$RUNNER_TEMP/remediation.diff"
+          python3 .github/scripts/validate_advisor_remediation.py "$RUNNER_TEMP/remediation.diff"
+
+  gitlint:
+    name: gitlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the generated head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate commit messages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          base_ref="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.base.ref')"
+          python -m pip install -r requirements-dev.txt
+          gitlint --commits "origin/${base_ref}..HEAD"
+
+  declared-intent:
+    name: Advisor remediation intent
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the generated head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the exact comparison
+        id: commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          metadata="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          head="$(jq -r '.head.sha' <<< "$metadata")"
+          test "$head" = "$(git rev-parse HEAD)"
+          echo "base=$(jq -r '.base.sha' <<< "$metadata")" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+
+      - name: Compare declared intent
+        uses: ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@02eef903d0eb54f8477f343baecced81877bb7bf
+        with:
+          base-sha: ${{ steps.commits.outputs.base }}
+          head-sha: ${{ steps.commits.outputs.head }}
+
+  template-contract:
+    name: Template contract
+    needs: scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the generated head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install pinned profile renderer
+        run: |
+          ./scripts/install-profile-tools.sh "$RUNNER_TEMP/fleet-bin"
+          echo "$RUNNER_TEMP/fleet-bin" >> "$GITHUB_PATH"
+
+      - name: Validate template invariants
+        run: ./scripts/validate-template-contract.sh
+
+  workflow-lint:
+    name: Workflow lint
+    needs: scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the generated head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate workflows and merge controls
+        run: |
+          docker run --rm -v "${PWD}:/repo" -w /repo rhysd/actionlint:1.7.9 -shellcheck=
+          python3 .github/scripts/validate_advisor_remediation.py --self-test
+          python3 .claude/skills/merge-gate/merge_ready.py --self-test
+          python3 .claude/skills/merge-gate/judge.py --self-test
+
+  load-harness:
+    needs: scope
+    uses: ./.github/workflows/load-harness-ci.yml
+    with:
+      publish_to_ecr: false

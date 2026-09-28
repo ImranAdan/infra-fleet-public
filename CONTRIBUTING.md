@@ -73,6 +73,10 @@ alternatives, while a missing or same-name substitute fails closed. Changes to
 durable authority, access, migrations, declared intent and the merge system
 remain with the repository owner.
 
+The pull request template opts same-repository branches into the autonomous
+worker. Keep the marker to merge when the gate reaches `READY`; remove it to
+hold the PR. The worker retries after the intent gate and hourly.
+
 This default path needs no model or API key. The Anthropic transport remains
 available only if a future policy category explicitly uses the `judge` decider.
 The required intent gate retains its veto over every approval path. See the

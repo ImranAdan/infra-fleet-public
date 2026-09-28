@@ -149,15 +149,16 @@ Three independent checks stand between a bad change and a running cluster.
 flowchart LR
     PR["Pull request"] --> CI["CI: render, schema,<br/>tests, scans"]
     PR --> Gate["Intent Gate:<br/>declared positions"]
-    CI --> Merge["Merge to main"]
+    CI --> Merge["Exact-head merge gate"]
     Gate --> Merge
     Merge --> Flux["Flux applies"]
     Flux --> Kyverno["Kyverno admission<br/>rejects unsafe objects"]
 ```
 
 After merge, [Infra Fleet Advisor](ADVISOR-INTEGRATION.md) reviews the new
-revision nightly, proposes a report for human approval and turns approved
-findings into issues here.
+revision nightly, merges a changed report only after its Quality and ratchet
+gates pass, and turns eligible findings into issues here. Registered mechanical
+findings can continue through an opted-in Fleet PR and the same gates above.
 
 ---
 

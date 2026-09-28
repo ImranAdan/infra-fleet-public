@@ -65,9 +65,11 @@ Every pull request carries a `## Verification` section with the commands run
 and what they showed (see `.github/pull_request_template.md`). An agent may
 merge a pull request it raised only by rerunning
 `python3 .claude/skills/merge-gate/merge_ready.py <PR> --merge` after the gate
-reports `READY`; this binds the merge to the checked head SHA. It must then say
-what merged and why. An agent never adds the `owner-approved` label and never
-posts or imitates a merge-judge comment. The workflow binds an owner-applied
+reports `READY`, or by leaving the template's `<!-- autonomous-merge -->`
+marker for the trusted default-branch worker to run that exact command. Both
+paths bind the merge to the checked head SHA. Remove the marker to hold a PR
+open. An agent must say what merged and why. It never adds the `owner-approved`
+label and never posts or imitates a merge-judge comment. The workflow binds an owner-applied
 label to the exact head SHA; a label without that trusted record does not
 approve a merge, and the gate also requires the latest label event to come from
 the repository owner. `PARK` means stop and tell the owner. `JUDGE` means wait
@@ -83,6 +85,15 @@ the merge system remain owner decisions. The optional Anthropic path is
 dormant unless a future policy category explicitly names `judge` as its
 decider. No model decision can override declared intent; the advisor is the
 first authority.
+
+The autonomous worker runs when the intent-gate workflow completes and once an
+hour as a retry. It considers only non-draft PRs whose head branch belongs to
+this repository and whose body contains the opt-in marker. `READY` merges;
+`PARK`, `JUDGE`, failed evidence and unresolved review stay open. Advisor
+mechanical remediation uses a read-only planning job and opens an opted-in Fleet
+PR. Because token-authored PRs suppress ordinary pull-request events, trusted
+Fleet code explicitly dispatches read-only validation on the exact generated
+branch; it receives no path around this gate.
 
 ## When a decision is not yours
 

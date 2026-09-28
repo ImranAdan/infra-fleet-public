@@ -78,6 +78,13 @@ into checkout-owned state under `.git/fleet`; it does not modify system packages
 [Local Kubernetes](docs/LOCAL-KUBERNETES.md) and [Deployment
 profiles](docs/DEPLOYMENT-PROFILES.md) for the complete operating procedure.
 
+Routine same-repository pull requests opt into exact-head autonomous merge through
+the pull-request template. Advisor reports and registered mechanical fixes also
+advance without a maintainer click: each generated branch receives explicit
+read-only validation, then the existing intent and merge gates decide it. Policy,
+credentials, IAM, permanent infrastructure, migrations, releases, and merge
+authority still stop for an owner decision. See [Advisor integration](docs/ADVISOR-INTEGRATION.md).
+
 For application-only development, use the Load Harness Docker Compose environment:
 
 ```bash
@@ -134,7 +141,9 @@ flowchart TB
     App --> Signals["Prometheus · Grafana"]
 
     Advisor[Infra Fleet Advisor] -. reads merged revision .-> Repo
-    Advisor -. report PR and approved findings .-> Work[Reviewable Fleet issues]
+    Advisor -. evidence-gated report .-> Work[Reviewable Fleet issues]
+    Work -. registered patch or coding agent .-> Fix[Opted-in Fleet PR]
+    Fix --> Repo
 ```
 
 Git is the desired-state boundary. Flux reconciles each cluster from the selected
@@ -143,8 +152,9 @@ shared platform layer determines how the selected application is deployed, const
 promoted, and observed.
 
 The advisor is separate from the runtime. It evaluates a merged Fleet revision against
-declared intent, opens a report pull request for review, and publishes eligible findings
-as Fleet issues only after that report is approved and merged. See [Advisor
+declared intent, opens an exact-head evidence-gated report, and publishes eligible
+findings after that report merges. Registered mechanical findings can become Fleet PRs;
+every fix still passes Fleet CI, the intent gate, and the merge gate. See [Advisor
 integration](docs/ADVISOR-INTEGRATION.md).
 
 The detailed architecture guide separates the profile, onboarding, GitOps, delivery,

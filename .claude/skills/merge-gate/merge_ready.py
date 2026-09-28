@@ -29,7 +29,8 @@ PATH_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "merge-authority",
         re.compile(
             r"^(?:\.claude/skills/merge-gate/|"
-            r"\.github/workflows/(?:merge-judge|intent-gate(?:-run|-retarget)?)\.ya?ml$|"
+            r"\.github/workflows/(?:advisor-remediation(?:-validation)?|autonomous-merge|merge-judge|intent-gate(?:-run|-retarget)?)\.ya?ml$|"
+            r"\.github/scripts/(?:autonomous_merge|validate_advisor_remediation)\.py$|"
             r"(?:AGENTS|CLAUDE)\.md$)"
         ),
         "merge authority changed",
@@ -425,14 +426,15 @@ def load_policy(path: Path = POLICY_PATH) -> tuple[dict[str, dict[str, str]], di
     for item in required_checks:
         if (
             not isinstance(item, dict)
-            or set(item) != {"group", "name", "workflow"}
+            or set(item) != {"group", "name", "workflow", "event"}
             or any(not isinstance(item[key], str) or not item[key].strip() for key in item)
             or not item["workflow"].startswith(".github/workflows/")
+            or item["event"] not in {"pull_request", "workflow_dispatch"}
         ):
-            raise ValueError("each required check needs exactly a group, name and workflow path")
-        normalized.append(
-            {"group": item["group"], "name": item["name"], "workflow": item["workflow"]}
-        )
+            raise ValueError(
+                "each required check needs a group, name, workflow path and trusted event"
+            )
+        normalized.append({key: item[key] for key in ("group", "name", "workflow", "event")})
     return rules, {
         "trusted_author": judge["trusted_author"],
         "model": judge["model"],
@@ -464,7 +466,7 @@ def required_check_failures(
             and run.get("conclusion") == "success"
             and run.get("app") == "github-actions"
             and workflow_path == spec["workflow"]
-            and provenance.get("event") == "pull_request"
+            and provenance.get("event") == spec["event"]
             and provenance.get("head_sha") == sha
         )
         if not trusted:
@@ -919,6 +921,19 @@ def self_test() -> int:
             "\n".join(_file("app/queries/find_user.sql", "+SELECT * FROM users;"))
         )
     )
+    for merge_path in (
+        ".github/workflows/advisor-remediation.yml",
+        ".github/workflows/advisor-remediation-validation.yml",
+        ".github/workflows/autonomous-merge.yml",
+        ".github/scripts/autonomous_merge.py",
+        ".github/scripts/validate_advisor_remediation.py",
+    ):
+        assert any(
+            category == "merge-authority" and merge_path in description
+            for category, description in scope_findings(
+                "\n".join(_file(merge_path, "+trusted merge code"))
+            )
+        )
     assert _adds_privileged_trigger("pull_request_target:")
     assert _adds_privileged_trigger("on: pull_request_target")
     assert _adds_privileged_trigger("on: [push, pull_request_target]")
@@ -973,11 +988,19 @@ def self_test() -> int:
             "group": "declared-intent",
             "name": "Intent gate / Declared intent",
             "workflow": ".github/workflows/intent-gate.yml",
+            "event": "pull_request",
         },
         {
             "group": "declared-intent",
             "name": "Intent gate (retargeted) / Declared intent",
             "workflow": ".github/workflows/intent-gate-retarget.yml",
+            "event": "pull_request",
+        },
+        {
+            "group": "declared-intent",
+            "name": "Advisor remediation intent",
+            "workflow": ".github/workflows/advisor-remediation-validation.yml",
+            "event": "workflow_dispatch",
         },
     )
     sha = "a" * 40
@@ -999,7 +1022,7 @@ def self_test() -> int:
     assert required_check_failures([required_run], required, workflow_runs, sha) == []
     assert required_check_failures([], required, {}, sha) == [
         "required evidence check did not run: Intent gate / Declared intent or "
-        "Intent gate (retargeted) / Declared intent"
+        "Intent gate (retargeted) / Declared intent or Advisor remediation intent"
     ]
     for changed in (
         {"conclusion": "skipped"},
@@ -1042,6 +1065,20 @@ def self_test() -> int:
         required_check_failures([required_run, retarget_run], required, retarget_provenance, sha)
         == []
     )
+    remediation_run = {
+        **required_run,
+        "name": "Advisor remediation intent",
+        "run_id": "44",
+        "started_at": "2026-09-28T03:00:00Z",
+    }
+    remediation_provenance = {
+        "44": {
+            "path": ".github/workflows/advisor-remediation-validation.yml",
+            "event": "workflow_dispatch",
+            "head_sha": sha,
+        }
+    }
+    assert required_check_failures([remediation_run], required, remediation_provenance, sha) == []
     assert required_check_failures(
         [required_run, {**retarget_run, "conclusion": "failure"}],
         required,

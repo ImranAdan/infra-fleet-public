@@ -46,7 +46,7 @@ out locally; scheduled reviews target merged fleet `main`.
 ## Coverage on the dashboard
 
 Grafana's **Fleet Application** dashboard ends with a **Declared intent** row
-fed by the advisor's latest approved report (`reports/report.json` on the
+fed by the advisor's latest accepted report (`reports/report.json` on the
 advisor's `main`): how many positions are declared, how many evidence decides,
 how many are satisfied or divergent, which fleet commit was reviewed and when,
 and the divergent positions. It sits under the live golden signals, so what the
@@ -58,23 +58,30 @@ fleet declares and how it is running are read together. See
 1. The advisor compiles declared intent into registered deterministic checks.
 2. It records collected evidence, incomplete coverage, and unverified intent.
 3. Its advisory workflow proposes a report PR in the advisor repository.
-4. A reviewer examines and merges the report-only PR. That PR is the
-   issue-creation decision record and the report becomes the lifecycle baseline.
-5. A separate configured issues-only workflow verifies that approval,
+4. The trusted autonomous worker merges the report-only PR only after Quality,
+   the ratchet and the exact-head merge gate pass. Remove its marker to hold it;
+   close it to decline that material report. The merge is the issue-creation
+   decision record and lifecycle baseline.
+5. A separate configured issues-only workflow verifies that merge,
    revalidates its exact report and creates eligible fleet issues. Each new
-   issue links to the approving report PR. Unsupported intent and incomplete
+   issue links to the report PR. Unsupported intent and incomplete
    relevant collection remain report coverage rather than fresh fix requests.
-6. The owner selects valuable fleet issues and asks an agent working in this
-   project to propose PR fixes. Issue creation does not automatically start an
-   agent. Fleet review and CI govern the proposed changes.
+6. Registered deterministic patchers run in a read-only planning job and may
+   open an opted-in Fleet PR through a separate Fleet-owned write job. The job
+   explicitly dispatches bounded validation on that exact branch because
+   `GITHUB_TOKEN` PR creation suppresses ordinary PR events. Other issues wait
+   for a coding-agent runtime. Fleet CI, the intent gate and the merge gate
+   govern every proposed change.
 7. Another advisor run checks the resulting repository state. Existing issue
    identities are reused and resolution notes leave closure to a maintainer.
 
-The optional manual mechanical remediation path remains separate from this
-ordinary agent handoff; opening a fleet proposal needs a write credential.
+Mechanical remediation remains separate from analysis. Advisor code receives no
+Fleet write token; the Fleet workflow owns PR creation with `GITHUB_TOKEN`.
+No report-delivery App or cross-repository contents token is required.
 
-The fleet grants no advisor access to its cloud account. Human decisions control
-issue closure, policy approval, and fleet merges. See the advisor's
+The Fleet grants no advisor access to its cloud account. The owner still controls
+issue closure, policy and intent changes, credentials, IAM, permanent
+infrastructure, migrations and merge authority. See the advisor's
 [setup guide](https://github.com/ImranAdan/infra-fleet-advisor-public/blob/main/docs/setup.md)
 for opt-in variables, credential scopes, report freshness, and current limits.
 See [the operating workflow](https://github.com/ImranAdan/infra-fleet-advisor-public/blob/main/docs/WORKFLOW.md)
