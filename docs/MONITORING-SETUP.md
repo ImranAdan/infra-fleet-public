@@ -73,7 +73,7 @@ so their JSON must not contain `${...}`.
 ## Declared intent next to live signals
 
 The **Declared intent** row reads `reports/report.json` from the advisor's
-`main` branch. That file changes only when a human merges a report PR, so the
+`main` branch. That file changes only when an evidence-gated report PR merges, so the
 row shows the approved decision record, not a draft. It counts positions by
 result, names the reviewed fleet commit and the report's age, and lists what
 diverges. It describes desired state in Git; the panels above it describe the

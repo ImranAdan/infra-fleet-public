@@ -1,0 +1,192 @@
+name: Advisor remediation
+
+# The Fleet owns this write path. Advisor code runs in a read-only planning job
+# and emits a patch artifact. A separate job applies that artifact as data and
+# may only open a PR; the autonomous merge gate decides whether it can land.
+on:
+  schedule:
+    - cron: "47 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: advisor-remediation
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
+      report_sha: ${{ steps.patch.outputs.report_sha }}
+    steps:
+      - name: Check out the Fleet
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: target
+          persist-credentials: false
+
+      - name: Check out the merged Advisor
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ImranAdan/infra-fleet-advisor-public
+          ref: main
+          path: advisor
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Build a bounded remediation patch
+        id: patch
+        run: |
+          set -o pipefail
+          echo 'changed=false' >> "$GITHUB_OUTPUT"
+          if [ ! -f advisor/reports/report.json ]; then
+            echo 'The Advisor has no merged report; nothing to remediate.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          report_sha="$(jq -er '.provenance.source_commit_sha' advisor/reports/report.json)"
+          fleet_sha="$(git -C target rev-parse HEAD)"
+          echo "report_sha=$report_sha" >> "$GITHUB_OUTPUT"
+          if [ "$report_sha" != "$fleet_sha" ]; then
+            echo "The merged report reviews $report_sha while Fleet main is $fleet_sha; waiting for the next report." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          uv sync --project advisor --frozen --no-dev
+          uv run --project advisor --frozen infra-fleet-advisor remediate \
+            --checkout target \
+            --report advisor/reports/report.json \
+            --policy advisor/policy.yaml \
+            --intent-dir advisor/intent \
+            | tee "$RUNNER_TEMP/remediation.txt"
+
+          if git -C target diff --quiet; then
+            echo 'The current report has no registered mechanical remediation.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git -C target diff --check
+          git -C target diff --binary > "$RUNNER_TEMP/remediation.patch"
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Upload the patch as data
+        if: steps.patch.outputs.changed == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: advisor-remediation
+          path: |
+            ${{ runner.temp }}/remediation.patch
+            ${{ runner.temp }}/remediation.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  propose:
+    needs: plan
+    if: needs.plan.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out trusted Fleet main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Download the planned patch
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: advisor-remediation
+          path: ${{ runner.temp }}/advisor-remediation
+
+      - name: Apply and propose the patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT_SHA: ${{ needs.plan.outputs.report_sha }}
+          BRANCH: advisor/remediation
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$REPORT_SHA" ]; then
+            echo 'Fleet main advanced after planning; waiting for the next remediation run.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          patch="$RUNNER_TEMP/advisor-remediation/remediation.patch"
+          notes="$RUNNER_TEMP/advisor-remediation/remediation.txt"
+          python3 .github/scripts/validate_advisor_remediation.py "$patch"
+          git apply --check "$patch"
+          git apply "$patch"
+          git diff --check
+
+          {
+            echo '<!-- autonomous-merge -->'
+            echo
+            echo '## What changed and why'
+            echo
+            echo "The merged Advisor report for Fleet \`${REPORT_SHA}\` justified a registered"
+            echo 'mechanical remediation. The read-only planning job generated this bounded patch;'
+            echo 'the Fleet intent gate and CI remain the authority for merging it.'
+            echo
+            sed 's/^/    /' "$notes"
+            echo
+            echo '## Verification'
+            echo
+            echo '- `infra-fleet-advisor remediate ...` → produced this patch only from merged report evidence'
+            echo '- `git apply --check remediation.patch` → patch applies cleanly to current Fleet main'
+            echo '- `git diff --check` → clean'
+            echo
+            echo '## Scope'
+            echo
+            echo 'No owner decision is requested. The autonomous merge gate will leave the PR open if its evidence does not decide.'
+          } > "$RUNNER_TEMP/pr-body.md"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$BRANCH"
+          git add -u
+          git commit \
+            -m 'ci: apply advisor mechanical remediation' \
+            -m "Derived from the merged Advisor report for ${REPORT_SHA}."
+
+          remote_tip="$(git ls-remote --heads origin "refs/heads/${BRANCH}" | awk '{print $1}')"
+          if [ -n "$remote_tip" ]; then
+            lease="--force-with-lease=refs/heads/${BRANCH}:${remote_tip}"
+          else
+            lease="--force-with-lease=refs/heads/${BRANCH}:"
+          fi
+          git push "$lease" \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/${BRANCH}"
+
+          number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --body-file "$RUNNER_TEMP/pr-body.md"
+          else
+            gh pr create \
+              --base "${{ github.event.repository.default_branch }}" \
+              --head "$BRANCH" \
+              --title 'ci: apply advisor mechanical remediation' \
+              --body-file "$RUNNER_TEMP/pr-body.md" >/dev/null
+            number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')"
+          fi
+
+          # GITHUB_TOKEN does not emit pull_request events. Dispatch the
+          # read-only validator on the exact generated branch instead.
+          gh workflow run advisor-remediation-validation.yml \
+            --ref "$BRANCH" -f "pr_number=$number"
