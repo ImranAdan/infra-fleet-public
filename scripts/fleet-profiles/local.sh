@@ -417,6 +417,16 @@ endpoints:
 EOF
 }
 
+# kubectl port-forward pins one pod and exits when that pod is replaced, as
+# every sync does; reconnect until the operator stops it with Ctrl-C.
+local_forward() {
+  while :; do
+    kctl port-forward "$@" --address=127.0.0.1 || true
+    echo 'Port-forward lost (the pod was replaced); reconnecting...' >&2
+    sleep 2
+  done
+}
+
 local_gateway_service() {
   kctl get service -n envoy-gateway-system \
     -l gateway.envoyproxy.io/owning-gateway-name=fleet \
@@ -548,12 +558,12 @@ profile_main() {
           app=$(kctl get configmap fleet-app -n flux-system -o jsonpath='{.data.APP_NAME}')
           port=$(kctl get configmap fleet-app -n flux-system -o jsonpath='{.data.APP_PORT}')
           echo "Open http://localhost:8080/ for $app." >&2
-          kctl port-forward -n applications "service/$app" "8080:$port" --address=127.0.0.1 ;;
-        prometheus) kctl port-forward -n observability service/kube-prometheus-stack-prometheus 9090:9090 --address=127.0.0.1 ;;
-        grafana) kctl port-forward -n observability service/kube-prometheus-stack-grafana 3000:80 --address=127.0.0.1 ;;
+          local_forward -n applications "service/$app" "8080:$port" ;;
+        prometheus) local_forward -n observability service/kube-prometheus-stack-prometheus 9090:9090 ;;
+        grafana) local_forward -n observability service/kube-prometheus-stack-grafana 3000:80 ;;
         dashboard)
           echo 'Open http://localhost:9000/ for the application dashboard.' >&2
-          kctl port-forward -n fleet-control service/control-plane 9000:80 --address=127.0.0.1 ;;
+          local_forward -n fleet-control service/control-plane 9000:80 ;;
         *) fail 'Choose --service app, dashboard, prometheus or grafana.' ;;
       esac ;;
     credentials)
