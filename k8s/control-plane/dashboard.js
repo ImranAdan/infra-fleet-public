@@ -2,7 +2,7 @@
 
 const LABEL = { running: "Running", starting: "Starting", sleeping: "Not running" };
 const COLORS = ["#e74c3c", "#8e44ad", "#16a085", "#d35400", "#2980b9", "#c0392b", "#27ae60"];
-const APP_URL = "https://localhost:8443/"; // the selected app, via ./fleet access --service app
+const APP_URL = "http://localhost:8080/"; // the running app, via ./fleet access --service app
 
 function color(name) {
   let hash = 0;
