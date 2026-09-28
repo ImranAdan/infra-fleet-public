@@ -73,7 +73,7 @@ def test_both_profiles_serve_the_app_over_https_through_one_gateway():
         # AWS serves one public host; locally every launched app has its own
         # <app>.localhost host, so the listener takes any host the cert covers.
         host = https.get("hostname", "localhost")
-        expected = [host] if profile == "aws-staging" else [host, "*.localhost"]
+        expected = [host] if profile == "aws-staging" else [host, "*.apps.localhost"]
         assert certificate["dnsNames"] == expected, profile
         assert ("hostname" in https) == (profile == "aws-staging"), profile
         one(resources, "ClusterIssuer", certificate["issuerRef"]["name"])

@@ -4,8 +4,9 @@ resources:
   - ../../../routing
   - issuer.yaml
 patches:
-  # Locally every app launched from the dashboard gets its own <app>.localhost
-  # host, so the HTTPS listener accepts any host and the certificate covers them.
+  # Locally every app launched from the dashboard gets its own route host,
+  # <app>.apps.localhost, so the HTTPS listener accepts any host and the
+  # certificate covers them (a wildcard needs two labels after it to verify).
   - target:
       kind: Gateway
       name: fleet
@@ -18,4 +19,4 @@ patches:
     patch: |-
       - op: add
         path: /spec/dnsNames/-
-        value: "*.localhost"
+        value: "*.apps.localhost"

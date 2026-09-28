@@ -90,7 +90,7 @@ def kustomizations(values: dict[str, str]) -> list[dict]:
     and the shared platform templates (canary, HPA, NetworkPolicy)."""
     name = values["APP_NAME"]
     substitute = {key: value for key, value in values.items() if key.startswith("APP_")}
-    substitute["APP_HOSTNAME"] = f"{name}.localhost"
+    substitute["APP_HOSTNAME"] = route_host(name)
     common = {
         "interval": "1m",
         "prune": True,
@@ -148,10 +148,17 @@ def app_for_host(host: str, catalog_names: set[str]) -> str | None:
     return match[1] if match and match[1] in catalog_names else None
 
 
+def route_host(app: str) -> str:
+    """A launched app's route host. Two labels after the certificate's wildcard
+    (*.apps.localhost): TLS clients reject a wildcard directly over a single
+    label such as *.localhost. People still browse to <app>.localhost:9000."""
+    return f"{app}.apps.localhost"
+
+
 def gateway_host(app: str, selected: str) -> str:
     """The host an app's route answers on: the selected app keeps the fleet's
     base host, and every launched app has its own."""
-    return "localhost" if app == selected else f"{app}.localhost"
+    return "localhost" if app == selected else route_host(app)
 
 
 class GatewayConnection(http.client.HTTPSConnection):
@@ -334,7 +341,7 @@ data:
     for body in (app, platform):
         spec = body["spec"]
         assert spec["serviceAccountName"] == "app-deployer"
-        assert spec["postBuild"]["substitute"]["APP_HOSTNAME"] == "game.localhost"
+        assert spec["postBuild"]["substitute"]["APP_HOSTNAME"] == "game.apps.localhost"
         assert spec["postBuild"]["substitute"]["APP_PORT"] == "8080"
         assert body["metadata"]["labels"] == {"infra-fleet.io/launched-app": "game"}
     assert app["spec"]["images"][0]["newName"] == "${IMAGE_REGISTRY}/game"
@@ -346,7 +353,7 @@ data:
     assert app_for_host("evil.localhost:9000", names) is None
     assert app_for_host("game.localhost.evil.test", names) is None
     assert gateway_host("game", selected="game") == "localhost"
-    assert gateway_host("sample", selected="game") == "sample.localhost"
+    assert gateway_host("sample", selected="game") == "sample.apps.localhost"
     print("self-test passed")
 
 
