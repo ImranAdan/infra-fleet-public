@@ -67,8 +67,9 @@ implementing a suggestion you think is wrong is not.
 
 Repository agents use the local merge gate after CI and review are complete.
 The policy lets deterministic exact-head evidence decide reversible categories.
-It also requires a successful intent check whose Actions run comes from the
-declared workflow; a missing or same-name substitute fails closed. Changes to
+It also requires a successful configured intent check whose Actions run comes
+from that check's declared workflow; the standard and retargeted gates are
+alternatives, while a missing or same-name substitute fails closed. Changes to
 durable authority, access, migrations, declared intent and the merge system
 remain with the repository owner.
 

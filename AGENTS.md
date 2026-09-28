@@ -76,12 +76,13 @@ and run the gate again.
 
 The default path is key-free. Reversible categories marked `evidence` in the
 decision policy can reach `READY` only after every head check passes and the
-successful `Intent gate / Declared intent` check is traced to the expected
-GitHub Actions workflow on that exact head. Added authority, credentials, IAM,
-permanent infrastructure, migrations, declared intent and the merge system
-remain owner decisions. The optional Anthropic path is dormant unless a future
-policy category explicitly names `judge` as its decider. No model decision can
-override declared intent; the advisor is the first authority.
+successful declared-intent check—standard or retargeted—is traced to its
+configured GitHub Actions workflow on that exact head. Added authority,
+credentials, IAM, permanent infrastructure, migrations, declared intent and
+the merge system remain owner decisions. The optional Anthropic path is
+dormant unless a future policy category explicitly names `judge` as its
+decider. No model decision can override declared intent; the advisor is the
+first authority.
 
 ## When a decision is not yours
 

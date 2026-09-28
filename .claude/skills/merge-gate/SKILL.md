@@ -30,10 +30,11 @@ python3 .claude/skills/merge-gate/merge_ready.py <PR_NUMBER> --merge
 
 - **Checks:** every check run and status on the head commit completed green.
   One still running is not green.
-- **Advisor evidence:** the declared intent check must complete successfully on
-  this head under GitHub Actions, and its Actions run must come from the exact
-  workflow recorded in `decision-policy.toml`. A missing, skipped or same-name
-  check from another workflow does not count.
+- **Advisor evidence:** one configured declared-intent check must complete
+  successfully on this head under GitHub Actions, and its Actions run must come
+  from that check's corresponding workflow in `decision-policy.toml`. This
+  accepts the standard or retargeted gate while rejecting a missing, skipped or
+  same-name check from another workflow.
 - **Dependency evidence:** remote actions need a full commit SHA, container
   bases need a fixed tag or digest, requirements need exact pins, and changed
   manifests need their sibling lockfiles.
