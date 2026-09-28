@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mario-game
+  namespace: applications
+  labels:
+    app: mario-game
+    managed-by: flux
+spec:
+  type: ClusterIP
+  selector:
+    app: mario-game
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http

@@ -33,6 +33,17 @@ updates:
     commit-message:
       prefix: "deps"
 
+  # Fleet Runner, the game: the same pinned Python base as load-harness
+  - package-ecosystem: "docker"
+    directory: "/applications/mario-game"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+    ignore:
+      - dependency-name: "python"
+        versions: [">=3.14"]
+
   # GitHub Actions - monthly, grouped, no major bumps
   - package-ecosystem: "github-actions"
     directory: "/"

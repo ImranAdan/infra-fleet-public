@@ -5,13 +5,14 @@
 The fleet is a platform; the application is a plug-in. The platform names no
 application of its own: it reads the one it runs from
 [`k8s/fleet-app/fleet-app.yaml`](../k8s/fleet-app/fleet-app.yaml). Load Harness
-is the default. [podinfo](../applications/podinfo/README.md) ships alongside it
-to prove the swap works.
+is the default. [podinfo](../applications/podinfo/README.md) and
+[Fleet Runner](../applications/mario-game/README.md), a browser platform game,
+ship alongside it to prove the swap works.
 
 ## Swap the application
 
 ```bash
-scripts/select-app.sh podinfo      # or load-harness
+scripts/select-app.sh podinfo      # or load-harness, mario-game
 git commit -am "chore: run podinfo"
 ./fleet sync --profile local
 ./fleet test --profile local
@@ -41,15 +42,15 @@ The Deployment must:
 
 The contract values:
 
-| Key | Meaning | Load Harness | podinfo |
-|---|---|---|---|
-| `APP_NAME` | Deployment, container, pod label and image name | `load-harness` | `podinfo` |
-| `APP_SOURCE` | Build context | `applications/load-harness` | `applications/podinfo` |
-| `APP_PORT` | Container and canary port | `5000` | `9898` |
-| `APP_HEALTH_PATH` | Smoke-tested before each canary | `/health` | `/healthz` |
-| `APP_LOAD_PATH` | Requested through the gateway during analysis | `/apispec.json` | `/` |
-| `APP_SECRETS` | `secret:key` pairs the platform generates | API and session keys | none |
-| `APP_FAULT_ENV` | `NAME=value` that makes the app fail requests | `FAIL_RATE=1.0` | `PODINFO_RANDOM_ERROR=true` |
+| Key | Meaning | Load Harness | podinfo | Fleet Runner |
+|---|---|---|---|---|
+| `APP_NAME` | Deployment, container, pod label and image name | `load-harness` | `podinfo` | `mario-game` |
+| `APP_SOURCE` | Build context | `applications/load-harness` | `applications/podinfo` | `applications/mario-game` |
+| `APP_PORT` | Container and canary port | `5000` | `9898` | `8080` |
+| `APP_HEALTH_PATH` | Smoke-tested before each canary | `/health` | `/healthz` | `/healthz` |
+| `APP_LOAD_PATH` | Requested through the gateway during analysis | `/apispec.json` | `/` | `/` |
+| `APP_SECRETS` | `secret:key` pairs the platform generates | API and session keys | none | none |
+| `APP_FAULT_ENV` | `NAME=value` that makes the app fail requests | `FAIL_RATE=1.0` | `PODINFO_RANDOM_ERROR=true` | `GAME_FAULT=true` |
 
 ## What the platform provides
 

@@ -20,7 +20,8 @@ The repository provides:
 
 - a common lifecycle for local kind and AWS EKS environments;
 - Flux reconciliation from a committed Git revision;
-- a swappable application contract, with Load Harness and podinfo as working examples;
+- a swappable application contract, with Load Harness, podinfo and a browser
+  platform game (Fleet Runner) as working examples;
 - Kyverno admission policies, network isolation, autoscaling, and Flagger canary
   delivery;
 - Prometheus metrics and Grafana dashboards provisioned from Git; and
