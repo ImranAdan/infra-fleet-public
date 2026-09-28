@@ -35,18 +35,29 @@ test_wait_phase() {
   fail "Canary did not reach $expected within ${timeout}s."
 }
 
-test_wait_settled() {
-  local timeout=${1:-600} deadline phase
+# The canary's applied spec and phase, read together so they describe one moment.
+test_canary_state() {
+  kctl get canary "$APP_NAME" -n applications -o jsonpath='{.status.lastAppliedSpec} {.status.phase}'
+}
+
+# Wait until Flagger has applied the original revision's spec again and the
+# canary is terminal. A terminal phase alone is not enough: restoration can
+# begin from the test revision's stale Succeeded, and Flagger observes the
+# restored Deployment asynchronously.
+test_wait_restored() {
+  local original_spec=$1 timeout=${2:-600} deadline applied phase
   deadline=$((SECONDS + timeout))
   while [ "$SECONDS" -lt "$deadline" ]; do
-    phase=$(kctl get canary "$APP_NAME" -n applications -o jsonpath='{.status.phase}')
-    case "$phase" in
-      Initialized|Succeeded) return 0 ;;
-    esac
+    read -r applied phase <<< "$(test_canary_state)"
+    if [ "$applied" = "$original_spec" ]; then
+      case "$phase" in
+        Initialized|Succeeded) return 0 ;;
+      esac
+    fi
     sleep 3
   done
   kctl describe canary "$APP_NAME" -n applications
-  fail "Canary did not settle after restoration within ${timeout}s."
+  fail "Canary did not settle on the original revision within ${timeout}s."
 }
 
 test_publish_snapshot() {
@@ -93,7 +104,7 @@ test_restore_snapshot() {
   trap - EXIT INT TERM
   git --git-dir="$FLEET_STATE/source/fleet.git" fetch --quiet --force "$fleet_root" "$FLEET_TEST_ORIGINAL:refs/heads/fleet-local" || test_result=1
   if fctl reconcile kustomization applications --with-source --timeout=5m; then
-    test_wait_settled 600 || test_result=1
+    test_wait_restored "$FLEET_TEST_SPEC" 600 || test_result=1
   else
     test_result=1
   fi
@@ -113,6 +124,13 @@ test_local() {
   FLEET_TEST_ORIGINAL=$(kctl get gitrepository fleet-local -n flux-system -o jsonpath='{.status.artifact.revision}')
   FLEET_TEST_ORIGINAL=${FLEET_TEST_ORIGINAL##*:}
   [[ "$FLEET_TEST_ORIGINAL" =~ ^[0-9a-f]{40}$ ]] || fail 'Cannot verify the original local source revision.' || return 1
+  # Restoration waits for this spec, so record it while the original is settled.
+  local phase
+  read -r FLEET_TEST_SPEC phase <<< "$(test_canary_state)"
+  case "$phase" in
+    Initialized|Succeeded) [ -n "$FLEET_TEST_SPEC" ] ;;
+    *) false ;;
+  esac || fail "Canary $APP_NAME is ${phase:-not ready}; wait for it to settle before testing." || return 1
   FLEET_TEST_SNAPSHOT=$(mktemp -d "$FLEET_STATE/test-snapshot.XXXXXX")
   trap test_restore_snapshot EXIT
   trap 'exit 130' INT

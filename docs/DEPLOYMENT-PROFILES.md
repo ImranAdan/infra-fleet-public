@@ -112,9 +112,11 @@ promotion and forced-failure rollback, for whichever app the
 discovers all shipped contracts; the current set is Load Harness and podinfo.
 Before checking monitoring and isolation, the suite waits for Flagger's
 generated primary endpoint to become healthy, so controller startup time is
-not mistaken for an application failure. It restores the original Git revision
-after its promotion and rollback probes and waits for that revision's canary to
-settle before returning control to the operator.
+not mistaken for an application failure. It starts only from a settled canary,
+records the spec Flagger applied for the original revision, restores that
+revision after its promotion and rollback probes, and returns control only once
+Flagger has applied the same spec again and the canary is settled, never on a
+stale phase left by a test revision.
 Operator smoke tests cover application
 authentication, the UI, Grafana health and Prometheus.
 
