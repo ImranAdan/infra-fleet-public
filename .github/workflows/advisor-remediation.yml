@@ -53,6 +53,7 @@ jobs:
       - name: Build a bounded remediation patch
         id: patch
         run: |
+          set -o pipefail
           echo 'changed=false' >> "$GITHUB_OUTPUT"
           if [ ! -f advisor/reports/report.json ]; then
             echo 'The Advisor has no merged report; nothing to remediate.' >> "$GITHUB_STEP_SUMMARY"
