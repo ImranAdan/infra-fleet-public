@@ -219,8 +219,19 @@ addEventListener("keyup", (e) => { keys[e.code] = false; });
 for (const b of document.querySelectorAll("[data-key]")) {
   const set = (v) => (e) => { e.preventDefault(); keys[b.dataset.key] = v; };
   b.addEventListener("touchstart", set(true)); b.addEventListener("touchend", set(false));
+  b.addEventListener("touchcancel", set(false)); // a gesture can end a touch without touchend
   b.addEventListener("mousedown", set(true)); b.addEventListener("mouseup", set(false));
 }
 
 reset(false);
-(function loop() { update(); draw(); requestAnimationFrame(loop); })();
+// Physics and the clock advance in fixed 60 Hz steps whatever the display's
+// refresh rate; the catch-up is capped so a background tab cannot lurch.
+const STEP = 1000 / 60;
+let last = performance.now(), lag = 0;
+(function loop(now) {
+  lag += Math.min(250, now - last);
+  last = now;
+  while (lag >= STEP) { update(); lag -= STEP; }
+  draw();
+  requestAnimationFrame(loop);
+})(last);
