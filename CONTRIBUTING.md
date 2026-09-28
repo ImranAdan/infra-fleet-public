@@ -66,16 +66,16 @@ implementing a suggestion you think is wrong is not.
 ## Automated merge decisions
 
 Repository agents use the local merge gate after CI and review are complete.
-The gate sends reversible choices defined in
-`.claude/skills/merge-gate/decision-policy.toml` to an independent judge;
-changes to durable authority or access remain with the repository owner.
+The policy lets deterministic exact-head evidence decide reversible categories.
+It also requires a successful configured intent check whose Actions run comes
+from that check's declared workflow; the standard and retargeted gates are
+alternatives, while a missing or same-name substitute fails closed. Changes to
+durable authority, access, migrations, declared intent and the merge system
+remain with the repository owner.
 
-Maintainers enable the judge by adding `ANTHROPIC_API_KEY` as a repository
-Actions secret. If it is absent, or the provider fails or returns an unreadable
-response, the workflow records no approval and the gate remains at `JUDGE`. An
-invalid structured response records `REJECT`, and the gate becomes `BLOCKED`
-for the affected rules. Fork pull requests are never sent to a model and continue through human
-review. The required intent gate retains its veto over a judge approval. See the
+This default path needs no model or API key. The Anthropic transport remains
+available only if a future policy category explicitly uses the `judge` decider.
+The required intent gate retains its veto over every approval path. See the
 [merge-gate guide](.claude/skills/merge-gate/SKILL.md) for verdicts and the
 exact-head merge command.
 
