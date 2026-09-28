@@ -123,6 +123,10 @@ jobs:
           REPORT_SHA: ${{ needs.plan.outputs.report_sha }}
           BRANCH: advisor/remediation
         run: |
+          if [ "$(git rev-parse HEAD)" != "$REPORT_SHA" ]; then
+            echo 'Fleet main advanced after planning; waiting for the next remediation run.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           patch="$RUNNER_TEMP/advisor-remediation/remediation.patch"
           notes="$RUNNER_TEMP/advisor-remediation/remediation.txt"
           python3 .github/scripts/validate_advisor_remediation.py "$patch"

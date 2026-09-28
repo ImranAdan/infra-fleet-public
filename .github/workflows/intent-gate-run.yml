@@ -34,7 +34,7 @@ jobs:
 
       # Pinned by SHA: upgrading the advisor is an ordinary reviewed change here.
       - name: Compare declared intent at base and merge result
-        uses: ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@669e00ff819f3cd85db6ebc389fa5b9bc35d4b5c
+        uses: ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@cf7c49853937008bcfd789ccd6b8e769055ffb29
         with:
           base-sha: ${{ steps.commits.outputs.base }}
           head-sha: ${{ steps.commits.outputs.head }}

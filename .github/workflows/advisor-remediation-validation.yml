@@ -39,10 +39,13 @@ jobs:
           head="$(jq -r '.head.sha' <<< "$metadata")"
           base="$(jq -r '.base.sha' <<< "$metadata")"
           owner="$(jq -r '.head.repo.full_name' <<< "$metadata")"
+          branch="$(jq -r '.head.ref' <<< "$metadata")"
           test "$head" = "$(git rev-parse HEAD)"
           test "$owner" = "$GITHUB_REPOSITORY"
+          test "$branch" = 'advisor/remediation'
 
-          git diff --unified=0 "$base" "$head" > "$RUNNER_TEMP/remediation.diff"
+          merge_base="$(git merge-base "$base" "$head")"
+          git diff --unified=0 "$merge_base" "$head" > "$RUNNER_TEMP/remediation.diff"
           python3 .github/scripts/validate_advisor_remediation.py "$RUNNER_TEMP/remediation.diff"
 
   gitlint:
@@ -85,11 +88,12 @@ jobs:
           metadata="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
           head="$(jq -r '.head.sha' <<< "$metadata")"
           test "$head" = "$(git rev-parse HEAD)"
+          test "$(jq -r '.head.ref' <<< "$metadata")" = 'advisor/remediation'
           echo "base=$(jq -r '.base.sha' <<< "$metadata")" >> "$GITHUB_OUTPUT"
           echo "head=$head" >> "$GITHUB_OUTPUT"
 
       - name: Compare declared intent
-        uses: ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@669e00ff819f3cd85db6ebc389fa5b9bc35d4b5c
+        uses: ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@cf7c49853937008bcfd789ccd6b8e769055ffb29
         with:
           base-sha: ${{ steps.commits.outputs.base }}
           head-sha: ${{ steps.commits.outputs.head }}

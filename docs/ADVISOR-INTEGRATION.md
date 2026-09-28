@@ -71,7 +71,9 @@ fleet declares and how it is running are read together. See
    explicitly dispatches bounded validation on that exact branch because
    `GITHUB_TOKEN` PR creation suppresses ordinary PR events. Other issues wait
    for a coding-agent runtime. Fleet CI, the intent gate and the merge gate
-   govern every proposed change.
+   govern every proposed change. Dispatched intent evidence counts only for the
+   registered `advisor/remediation` branch. The write job rechecks that Fleet
+   main still equals the report commit before it applies the bounded patch.
 7. Another advisor run checks the resulting repository state. Existing issue
    identities are reused and resolution notes leave closure to a maintainer.
 
