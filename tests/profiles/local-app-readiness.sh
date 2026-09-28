@@ -49,6 +49,24 @@ grep -Fq 'sample-primary did not become healthy within 3s' "$error_log"
 # nothing until Flagger has applied the original spec again.
 sleep() { SECONDS=$((SECONDS + 1)); }
 
+# The suite starts only once the original revision's canary is terminal, so a
+# Progressing seen later belongs to a test revision (fleet sync && fleet test).
+printf '0\n' > "$phase_count"
+kctl() {
+  printf '%s\n' "$(($(cat "$phase_count") + 1))" > "$phase_count"
+  case "$(cat "$phase_count")" in
+    1) printf 'original-spec Initializing' ;;
+    2) printf 'original-spec Progressing' ;;
+    *) printf 'original-spec Succeeded' ;;
+  esac
+}
+SECONDS=0
+test_wait_baseline 10
+[ "$(cat "$phase_count")" -eq 3 ] || {
+  echo 'The suite started before the original revision settled.' >&2
+  exit 1
+}
+
 # Waiting for a test revision records the spec Flagger analyses for it.
 printf '0\n' > "$phase_count"
 kctl() {

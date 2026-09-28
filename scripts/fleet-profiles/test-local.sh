@@ -45,6 +45,21 @@ test_canary_state() {
   kctl get canary "$APP_NAME" -n applications -o jsonpath='{.status.lastAppliedSpec} {.status.phase}'
 }
 
+# Wait for the original revision's canary to finish before testing: a Progressing
+# seen afterwards then belongs to a test revision, whose spec restoration
+# excludes. Right after `fleet sync` the original is often still being analysed.
+test_wait_baseline() {
+  local timeout=${1:-600} deadline applied phase
+  deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    read -r applied phase <<< "$(test_canary_state)"
+    case "$phase" in Initialized|Succeeded|Failed) return 0 ;; esac
+    sleep 3
+  done
+  kctl describe canary "$APP_NAME" -n applications
+  fail "Canary did not settle before testing within ${timeout}s."
+}
+
 # Wait until the canary is terminal on a spec that is not a test revision's. A
 # terminal phase alone is not enough: restoration can begin from a test
 # revision's stale Succeeded, and Flagger observes the restored Deployment
@@ -129,6 +144,7 @@ test_local() {
   FLEET_TEST_ORIGINAL=$(kctl get gitrepository fleet-local -n flux-system -o jsonpath='{.status.artifact.revision}')
   FLEET_TEST_ORIGINAL=${FLEET_TEST_ORIGINAL##*:}
   [[ "$FLEET_TEST_ORIGINAL" =~ ^[0-9a-f]{40}$ ]] || fail 'Cannot verify the original local source revision.' || return 1
+  test_wait_baseline 600 || return 1
   FLEET_TEST_SPECS=""
   FLEET_TEST_SNAPSHOT=$(mktemp -d "$FLEET_STATE/test-snapshot.XXXXXX")
   trap test_restore_snapshot EXIT
