@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - control-plane.yaml
+  - launch-policy.yaml
 # The dashboard's code ships as a ConfigMap with a stable name; the Deployment
 # rolls on each revision through its runtime-config annotation. Flux must not
 # substitute variables inside the code (JavaScript template strings use ${}).

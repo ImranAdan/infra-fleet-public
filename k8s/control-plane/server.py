@@ -79,7 +79,9 @@ def catalogue(
                 "state": app_state(name, canaries, deployments, name in launched),
                 "phase": canaries.get(name, {}).get("phase", ""),
                 "selected": name == selected,
-                "launched": name in launched,
+                # The default app belongs to the fleet's own layer: never offer
+                # Stop for it, even if it was launched before being selected.
+                "launched": name in launched and name != selected,
             }
         )
     return apps
@@ -221,15 +223,27 @@ def launch(name: str) -> None:
         try:
             kube(KUSTOMIZATIONS, "POST", body)
         except urllib.error.HTTPError as exc:
-            if exc.code != 409:  # already launched
+            if exc.code != 409:
                 raise
+            # 409 means it exists: fine if launched, but a stop still being
+            # finalised would silently swallow this launch.
+            existing = kube(f"{KUSTOMIZATIONS}/{body['metadata']['name']}")
+            if existing.get("metadata", {}).get("deletionTimestamp"):
+                raise ValueError(f"{name} is still stopping; launch it again shortly") from exc
 
 
 def stop(name: str) -> None:
+    _, selected = read_catalog()
+    if name == selected:
+        raise ValueError(f"{name} is the fleet's default app and cannot be stopped here")
     if name not in launched_apps():
         raise ValueError(f"{name} was not launched from the dashboard")
     for suffix in ("-platform", ""):
-        kube(f"{KUSTOMIZATIONS}/app-{name}{suffix}", "DELETE")
+        try:
+            kube(f"{KUSTOMIZATIONS}/app-{name}{suffix}", "DELETE")
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:  # a launch that failed half-way has one part
+                raise
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -354,6 +368,53 @@ data:
     assert app_for_host("game.localhost.evil.test", names) is None
     assert gateway_host("game", selected="game") == "localhost"
     assert gateway_host("sample", selected="game") == "sample.apps.localhost"
+
+    # The default app never offers Stop, even if it was launched earlier.
+    [row] = catalogue({"game": text}, {}, {}, "game", {"game"})
+    assert row["launched"] is False
+
+    # Launch and stop against a fake API, for the review's failure scenarios.
+    global kube, read_catalog, launched_apps
+    real = (kube, read_catalog, launched_apps)
+    calls: list[tuple[str, str]] = []
+    responses: dict[tuple[str, str], object] = {}
+
+    def fake_kube(path: str, method: str = "GET", body: dict | None = None) -> dict:
+        calls.append((method, path))
+        result = responses.get((method, path.rsplit("/", 1)[-1]), {})
+        if isinstance(result, int):
+            raise urllib.error.HTTPError(path, result, "status", None, None)  # type: ignore[arg-type]
+        return result  # type: ignore[return-value]
+
+    kube, read_catalog = fake_kube, lambda: ({"s": "  APP_NAME: sample\n"}, "game")
+    launched_apps = lambda: {"sample"}  # noqa: E731
+    try:
+        # Relaunching while the previous stop is still finalising is an error.
+        responses = {("POST", "kustomizations"): 409,
+                     ("GET", "app-sample"): {"metadata": {"deletionTimestamp": "now"}}}
+        try:
+            launch("sample")
+            raise AssertionError("a launch during a pending stop was accepted")
+        except ValueError as exc:
+            assert "still stopping" in str(exc)
+        # Already launched and live: a no-op, not an error.
+        responses = {("POST", "kustomizations"): 409, ("GET", "app-sample"): {"metadata": {}},
+                     ("GET", "app-sample-platform"): {"metadata": {}}}
+        launch("sample")
+        # Stop tolerates a half-launched app whose platform part never existed.
+        calls.clear()
+        responses = {("DELETE", "app-sample-platform"): 404}
+        stop("sample")
+        assert ("DELETE", f"{KUSTOMIZATIONS}/app-sample") in calls
+        # The default app cannot be stopped from the dashboard.
+        read_catalog = lambda: ({}, "sample")  # noqa: E731
+        try:
+            stop("sample")
+            raise AssertionError("stopping the default app was accepted")
+        except ValueError:
+            pass
+    finally:
+        kube, read_catalog, launched_apps = real
     print("self-test passed")
 
 

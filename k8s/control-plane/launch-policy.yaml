@@ -1,0 +1,55 @@
+# The API server, not the dashboard's code, confines what the dashboard may do
+# to Flux: create only an app's own two launch Kustomizations, deploying from
+# the fleet's Git source as app-deployer, and delete only launched ones. Its
+# RBAC alone would let it create a Kustomization that runs with Flux's
+# cluster-wide rights, or delete the platform's own layers.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: control-plane-launches
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [kustomize.toolkit.fluxcd.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [kustomizations]
+  matchConditions:
+    - name: from-the-dashboard
+      expression: request.userInfo.username == 'system:serviceaccount:fleet-control:control-plane'
+  variables:
+    - name: target
+      expression: "request.operation == 'DELETE' ? oldObject : object"
+    - name: app
+      expression: "variables.target.metadata.?labels['infra-fleet.io/launched-app'].orValue('')"
+  validations:
+    - expression: "variables.app.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')"
+      message: The dashboard may act only on Kustomizations labelled as a launched app.
+    - expression: >-
+        request.operation == 'DELETE' || (
+          object.spec.serviceAccountName == 'app-deployer' &&
+          object.spec.sourceRef.kind == 'GitRepository' &&
+          object.spec.sourceRef.name == 'fleet-local' &&
+          !has(object.spec.sourceRef.namespace) &&
+          !has(object.spec.kubeConfig) &&
+          !has(object.spec.targetNamespace) &&
+          object.spec.postBuild.substituteFrom == [{'kind': 'ConfigMap', 'name': 'fleet-config'}] &&
+          (
+            (object.metadata.name == 'app-' + variables.app &&
+             object.spec.path == './k8s/applications/' + variables.app) ||
+            (object.metadata.name == 'app-' + variables.app + '-platform' &&
+             object.spec.path == './k8s/applications/platform')
+          )
+        )
+      message: >-
+        A launch must deploy the app's own path, or the shared platform path,
+        from fleet-local as app-deployer, substituting only fleet-config.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: control-plane-launches
+spec:
+  policyName: control-plane-launches
+  validationActions: [Deny]

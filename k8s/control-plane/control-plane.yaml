@@ -24,8 +24,10 @@ rules:
     resources: [configmaps]
     resourceNames: [fleet-catalog, fleet-app]
     verbs: [get]
-  # Launch and stop. Creation cannot be limited by name; the Kustomizations it
-  # creates are confined by their app-deployer service account.
+  # Launch and stop. RBAC cannot limit creation by name or content, so the
+  # control-plane-launches admission policy (launch-policy.yaml) does: only an
+  # app's own launch Kustomizations, running as app-deployer, and only
+  # launched ones may be deleted.
   - apiGroups: [kustomize.toolkit.fluxcd.io]
     resources: [kustomizations]
     verbs: [list, create, delete]
