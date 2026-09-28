@@ -110,6 +110,11 @@ rejections, Calico isolation, Prometheus visibility of the app, healthy canary
 promotion and forced-failure rollback, for whichever app the
 [application contract](APPLICATION-CONTRACT.md) selects. The weekly workflow
 discovers all shipped contracts; the current set is Load Harness and podinfo.
+Before checking monitoring and isolation, the suite waits for Flagger's
+generated primary endpoint to become healthy, so controller startup time is
+not mistaken for an application failure. It restores the original Git revision
+after its promotion and rollback probes and waits for that revision's canary to
+settle before returning control to the operator.
 Operator smoke tests cover application
 authentication, the UI, Grafana health and Prometheus.
 

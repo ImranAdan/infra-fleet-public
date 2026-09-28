@@ -35,10 +35,39 @@ test_wait_phase() {
   fail "Canary did not reach $expected within ${timeout}s."
 }
 
+test_wait_settled() {
+  local timeout=${1:-600} deadline phase
+  deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    phase=$(kctl get canary "$APP_NAME" -n applications -o jsonpath='{.status.phase}')
+    case "$phase" in
+      Initialized|Succeeded) return 0 ;;
+    esac
+    sleep 3
+  done
+  kctl describe canary "$APP_NAME" -n applications
+  fail "Canary did not settle after restoration within ${timeout}s."
+}
+
 test_publish_snapshot() {
   local snapshot=$1
   git --git-dir="$FLEET_STATE/source/fleet.git" fetch --quiet --force "$snapshot" HEAD:refs/heads/fleet-local
   fctl reconcile kustomization applications --with-source --timeout=5m
+}
+
+test_wait_application() {
+  local timeout=${1:-120} deadline
+  deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if kctl exec -n flux-system deployment/flagger-loadtester -- \
+      curl --fail --silent --max-time 10 \
+      "http://$APP_NAME-primary.applications:$APP_PORT$APP_HEALTH_PATH" \
+      >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 3
+  done
+  fail "$APP_NAME-primary did not become healthy within ${timeout}s."
 }
 
 test_wait_monitoring() {
@@ -63,7 +92,11 @@ test_restore_snapshot() {
   local test_result=$?
   trap - EXIT INT TERM
   git --git-dir="$FLEET_STATE/source/fleet.git" fetch --quiet --force "$fleet_root" "$FLEET_TEST_ORIGINAL:refs/heads/fleet-local" || test_result=1
-  fctl reconcile kustomization applications --with-source --timeout=5m || test_result=1
+  if fctl reconcile kustomization applications --with-source --timeout=5m; then
+    test_wait_settled 600 || test_result=1
+  else
+    test_result=1
+  fi
   kctl delete namespace fleet-test --ignore-not-found >/dev/null || test_result=1
   rm -rf "$FLEET_TEST_SNAPSHOT"
   exit "$test_result"
@@ -103,8 +136,7 @@ test_local() {
   done
 
   echo 'Checking application monitoring and network isolation.'
-  kctl exec -n flux-system deployment/flagger-loadtester -- \
-    curl --fail --silent --max-time 10 "http://$APP_NAME-primary.applications:$APP_PORT$APP_HEALTH_PATH" >/dev/null
+  test_wait_application
   test_wait_monitoring
   kctl create namespace fleet-test --dry-run=client -o yaml | kctl apply -f - >/dev/null
   local probe_image
