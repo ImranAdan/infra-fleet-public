@@ -39,7 +39,7 @@ snapshot contract test couples that promise to exact-revision publication.
 In separate terminals, forward only the services you need:
 
 ```bash
-./fleet access --profile local --service app         # https://localhost:8443/ui/ (self-signed)
+./fleet access --profile local --service app         # http://localhost:8080/ui/
 ./fleet access --profile local --service prometheus  # http://localhost:9090
 ./fleet access --profile local --service grafana     # http://localhost:3000
 ./fleet credentials --profile local                 # explicitly display login credentials
