@@ -136,9 +136,12 @@ GitHub binds `GITHUB_SHA` to the branch head at dispatch, checks out that exact
 commit and records the job in the `local` GitHub Environment. The cluster is
 ephemeral and is removed before the job completes; the deployment record is
 evidence of the completed integration cycle, not an endpoint that remains
-online. Runs are serialized because the workflow represents one logical target.
-A weekly scheduled run applies the same proof to current `main` without delaying
-ordinary pull requests. Every run covers both applications: Load Harness, and
+online. Each run owns its kind cluster; a newer push to a pull request supersedes
+that pull request's earlier run. Pull requests that change runtime paths
+(`k8s/`, `scripts/`, `platform/`, `applications/`, `tests/profiles/`, `fleet`)
+run it, and the merge gate waits for it, so an unsupervised merge is judged on
+live behaviour. Documentation-only changes skip it, and a weekly run applies
+the same proof to current `main`. Every run covers both applications: Load Harness, and
 podinfo selected with `scripts/select-app.sh` on the runner, so the proof is of
 the platform rather than of one app.
 

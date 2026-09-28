@@ -4,16 +4,32 @@ on:
   # Select the candidate branch in the Actions UI, or pass --ref with gh.
   # GITHUB_SHA then binds the deployment record and checkout to that revision.
   workflow_dispatch:
-  # This confidence run detects integration drift without delaying each PR.
+  # The weekly run detects integration drift from upstream charts and images.
   schedule:
     - cron: '37 5 * * 1'
+  # A change to what runs on the cluster is proven live before it merges: the
+  # merge gate waits for these checks like any other, so unsupervised merges
+  # are judged on behaviour, not only on static checks.
+  pull_request:
+    branches: [main]
+    paths:
+      - 'k8s/**'
+      - 'scripts/**'
+      - 'platform/**'
+      - 'applications/**'
+      - 'tests/profiles/**'
+      - 'fleet'
+      - '.github/workflows/local-kubernetes.yml'
 
 permissions:
   contents: read
 
+# Each run owns its kind cluster on its own runner. Per-PR groups keep a
+# newer push from leaving an older PR's run cancelled, and supersede only
+# the same PR's earlier run.
 concurrency:
-  group: local-profile-deployment
-  cancel-in-progress: false
+  group: local-profile-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   discover_apps:

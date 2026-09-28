@@ -190,7 +190,7 @@ Verification is divided by cost and evidence level.
 | Layer | Trigger | Evidence |
 |---|---|---|
 | Pull request CI | every pull request | application tests, container build and scan, workflow validation, Terraform static checks, profile rendering, schema checks, policy checks, commit lint, and declared-intent evaluation |
-| Local Kubernetes deployment | on demand and weekly against `main` | real Flux reconciliation, admission, isolation, monitoring, canary promotion, rollback, and teardown for every included application |
+| Local Kubernetes deployment | pull requests that change runtime paths, on demand, and weekly against `main` | real Flux reconciliation, admission, isolation, monitoring, canary promotion, rollback, and teardown for every included application |
 | AWS staging deployment | manual in a configured private copy | account-specific provisioning, image publication, EKS bootstrap, Flux reconciliation, rollout, and teardown |
 
 Run the full local acceptance workflow against a reviewed candidate branch when a set of
