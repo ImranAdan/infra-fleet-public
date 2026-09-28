@@ -54,7 +54,7 @@ the history proves the work: the failing check, then the fix.
   cannot see in this repository.
 - `merge-gate`: `merge_ready.py <PR>` decides whether an agent may merge a
   pull request unread: `READY`, `PARK` (the owner decides), `JUDGE` (the
-  independent judge decides) or `BLOCKED`.
+  optional independent judge decides) or `BLOCKED`.
 
 When a verification lesson recurs, encode it as a check (a doctor line, a
 contract test, a validator rule) rather than another paragraph here.
@@ -74,11 +74,14 @@ the repository owner. `PARK` means stop and tell the owner. `JUDGE` means wait
 for the independent base-branch judge. `BLOCKED` means fix the reported defect
 and run the gate again.
 
-The base-branch judge calls the policy's Anthropic model and needs the
-`ANTHROPIC_API_KEY` Actions secret; without it the gate stays at `JUDGE`. It
-decides only reversible categories after required checks. A judge approval
-cannot override the required intent gate: declared intent and the advisor
-remain the first authority.
+The default path is key-free. Reversible categories marked `evidence` in the
+decision policy can reach `READY` only after every head check passes and the
+successful `Intent gate / Declared intent` check is traced to the expected
+GitHub Actions workflow on that exact head. Added authority, credentials, IAM,
+permanent infrastructure, migrations, declared intent and the merge system
+remain owner decisions. The optional Anthropic path is dormant unless a future
+policy category explicitly names `judge` as its decider. No model decision can
+override declared intent; the advisor is the first authority.
 
 ## When a decision is not yours
 
