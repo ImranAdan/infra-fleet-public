@@ -111,13 +111,16 @@ Critical or High vulnerabilities with a fix block publication. See
 Both profiles share one way in (`k8s/routing`): an Envoy Gateway whose `http`
 listener only redirects to HTTPS and whose `https` listener terminates TLS with a
 cert-manager certificate for `APP_HOSTNAME`. Locally the certificate is
-self-signed and the Gateway is reached by port-forward; on AWS it sits behind an
+self-signed and serves canary analysis and acceptance traffic; a person reaches
+the running app over plain HTTP on loopback (`./fleet access`), because no
+browser trusts a localhost certificate without a host-installed CA. On AWS it sits behind an
 NLB with a Let's Encrypt certificate. The AWS route has not yet completed a live
 apply and teardown cycle.
 
 ```mermaid
 flowchart LR
-    Local(["Local browser"]) -->|port-forward :8443| Envoy["Envoy Gateway<br/>HTTPS only"] --> App["The selected app"]
+    Local(["Local browser"]) -->|port-forward :8080, HTTP on loopback| App["The selected app"]
+    Canary(["Canary analysis and fleet test"]) --> Envoy["Envoy Gateway<br/>HTTPS only"] --> App
     Users(["Users"]) -.->|resolve name| DNS["Cloudflare DNS<br/>unproxied CNAME"]
     Users --> NLB["AWS NLB"] --> Envoy
 ```

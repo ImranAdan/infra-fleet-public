@@ -511,9 +511,15 @@ profile_main() {
       local_existing_cluster
       case "$service" in
         app)
-          # The Gateway serves the app over HTTPS only; its certificate is self-signed.
-          echo 'Open https://localhost:8443/ and accept the self-signed certificate.' >&2
-          kctl port-forward -n envoy-gateway-system "service/$(local_gateway_service)" 8443:443 --address=127.0.0.1 ;;
+          # Browsers trust no certificate for localhost without a host-installed
+          # CA, so a person reaches the running app over plain HTTP on loopback,
+          # which browsers treat as secure. The Gateway's HTTPS path is still
+          # exercised by every canary analysis and by `fleet test`.
+          local app port
+          app=$(kctl get configmap fleet-app -n flux-system -o jsonpath='{.data.APP_NAME}')
+          port=$(kctl get configmap fleet-app -n flux-system -o jsonpath='{.data.APP_PORT}')
+          echo "Open http://localhost:8080/ for $app." >&2
+          kctl port-forward -n applications "service/$app" "8080:$port" --address=127.0.0.1 ;;
         prometheus) kctl port-forward -n observability service/kube-prometheus-stack-prometheus 9090:9090 --address=127.0.0.1 ;;
         grafana) kctl port-forward -n observability service/kube-prometheus-stack-grafana 3000:80 --address=127.0.0.1 ;;
         *) fail 'Choose --service app, prometheus or grafana.' ;;

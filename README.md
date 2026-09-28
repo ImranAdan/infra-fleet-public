@@ -46,7 +46,7 @@ cd infra-fleet-public
 ./fleet access --profile local --service app
 ```
 
-Open <https://localhost:8443/ui/> and accept the self-signed certificate. The `access`
+Open <http://localhost:8080/ui/>. The `access`
 command keeps the port forward open until it is stopped. Use separate terminals for
 other services:
 
@@ -102,7 +102,7 @@ owns its provisioning, routing, registry, and environment-specific policy.
 | Kubernetes | kind on the operator workstation | EKS in the configured AWS account |
 | Git source | read-only committed snapshot served locally | configured GitHub repository |
 | Registry | loopback development registry | Amazon ECR |
-| Request path | Envoy Gateway over HTTPS on loopback (self-signed) | Envoy Gateway over HTTPS behind an AWS NLB (Let's Encrypt) |
+| Request path | Envoy Gateway over HTTPS in-cluster (self-signed); browser access over HTTP on loopback | Envoy Gateway over HTTPS behind an AWS NLB (Let's Encrypt) |
 | Observability | Prometheus and Grafana with ephemeral storage | Prometheus and Grafana in staging |
 | Intended use | development and platform acceptance | account-specific staging evaluation |
 | Lifecycle | direct local operations | reviewed GitHub Actions workflows |
