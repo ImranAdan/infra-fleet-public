@@ -46,7 +46,7 @@ jobs:
           python-version: "3.11"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
 
@@ -147,9 +147,9 @@ jobs:
             echo
             echo '## Verification'
             echo
-            echo '- `infra-fleet-advisor remediate ...` → produced this patch only from merged report evidence'
-            echo '- `git apply --check remediation.patch` → patch applies cleanly to current Fleet main'
-            echo '- `git diff --check` → clean'
+            echo "- \`infra-fleet-advisor remediate ...\` → produced this patch only from merged report evidence"
+            echo "- \`git apply --check remediation.patch\` → patch applies cleanly to current Fleet main"
+            echo "- \`git diff --check\` → clean"
             echo
             echo '## Scope'
             echo
