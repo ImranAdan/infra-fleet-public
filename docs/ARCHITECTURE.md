@@ -12,6 +12,7 @@ section below zooms into a single step of it and can be read on its own.
 | How does the AWS profile get credentials and a cluster? | [AWS onboarding](#aws-onboarding) |
 | How does a change reach a cluster? | [GitOps delivery](#gitops-delivery) |
 | How do I run a different application? | [Application contract](#application-contract) |
+| How do I run several applications locally? | [Local application control plane](#local-application-control-plane) |
 | How is a new version released safely? | [Progressive delivery](#progressive-delivery) |
 | How does traffic reach the application? | [Request paths](#request-paths) |
 | What do I see while it runs? | [Observability](#observability) |
@@ -86,6 +87,34 @@ flowchart LR
 CI selects every app in turn and renders both profiles, and fails if any
 platform file names an app. See the [application contract](APPLICATION-CONTRACT.md).
 
+## Local application control plane
+
+The local profile exposes a loopback-only dashboard that reads every app
+contract from the deployed Git revision. Launching creates two bounded Flux
+Kustomizations: the app's own manifests and the shared platform controls filled
+from that app's contract. Stopping deletes those Kustomizations and Flux prunes
+their inventory.
+
+```mermaid
+flowchart LR
+    Browser(["Browser<br/>localhost:9000"]) -->|port-forward| Dashboard["Application dashboard<br/>fleet-control"]
+    Catalog["Contracts from the<br/>deployed Git revision"] --> Dashboard
+    Dashboard -->|create or delete<br/>two launch objects| API["Kubernetes API<br/>admission policy"]
+    API --> Flux["Flux as app-deployer"]
+    Git[("Same Git revision")] --> Flux
+    Flux --> Workload["App Deployment + Service"]
+    Flux --> Shared["Canary + HPA + NetworkPolicy"]
+    Flux --> AppDash["App Grafana ConfigMaps"]
+    Dashboard -->|verified TLS| Gateway["Envoy Gateway"] --> Workload
+```
+
+The dashboard account cannot deploy workloads directly. Admission confines its
+launch objects to the local Git source, known paths and the `app-deployer`
+identity. That identity can change application resources and app-owned Grafana
+dashboard ConfigMaps; it has no cluster-wide role. A deny-ingress NetworkPolicy
+keeps other pods from driving the control API. See [application control
+plane](APPLICATION-CONTROL-PLANE.md).
+
 ## Progressive delivery
 
 A release tag builds, scans and publishes an image. Flux picks up the new tag and
@@ -119,7 +148,8 @@ apply and teardown cycle.
 
 ```mermaid
 flowchart LR
-    Local(["Local browser"]) -->|port-forward :8080, HTTP on loopback| App["The selected app"]
+    Local(["Local browser"]) -->|direct port-forward :8080| App["The selected app"]
+    Dashboard(["Application dashboard :9000"]) -->|verified Gateway proxy| Envoy
     Canary(["Canary analysis and fleet test"]) --> Envoy["Envoy Gateway<br/>HTTPS only"] --> App
     Users(["Users"]) -.->|resolve name| DNS["Cloudflare DNS<br/>unproxied CNAME"]
     Users --> NLB["AWS NLB"] --> Envoy

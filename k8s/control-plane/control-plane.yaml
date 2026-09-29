@@ -1,8 +1,8 @@
 # The fleet control plane: the application dashboard. It reads the app
 # catalogue and live app state, and launches or stops an app by creating or
 # deleting that app's Flux Kustomizations. Those run as app-deployer, which
-# may change only the applications namespace, so the dashboard can never
-# deploy anything with Flux's own cluster-wide rights.
+# may change application workloads and app-owned Grafana dashboard ConfigMaps,
+# so the dashboard can never deploy with Flux's own cluster-wide rights.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -32,7 +32,8 @@ rules:
     resources: [kustomizations]
     verbs: [list, create, delete]
 ---
-# The identity launched apps are deployed as: the applications namespace only.
+# The identity used to deploy launched apps. Its second, narrow grant below
+# lets an app carry Grafana dashboard ConfigMaps with its own manifests.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

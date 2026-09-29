@@ -119,9 +119,86 @@ test_wait_monitoring() {
   fail 'Prometheus did not report the application container within 120s.'
 }
 
+test_dashboard_action() {
+  local app=$1 action=$2
+  kctl exec -n fleet-control deployment/control-plane -- python3 -c '
+import sys, urllib.request
+request = urllib.request.Request(
+    f"http://127.0.0.1:8080/api/apps/{sys.argv[1]}/{sys.argv[2]}",
+    method="POST",
+    headers={"X-Fleet-Action": "1"},
+)
+with urllib.request.urlopen(request, timeout=15) as response:
+    assert response.status == 202
+' "$app" "$action" >/dev/null
+}
+
+test_dashboard_proxy() {
+  local app=$1 health_path=$2
+  kctl exec -n fleet-control deployment/control-plane -- python3 -c '
+import sys, urllib.request
+request = urllib.request.Request(
+    "http://127.0.0.1:8080" + sys.argv[2],
+    headers={"Host": sys.argv[1] + ".localhost:9000"},
+)
+with urllib.request.urlopen(request, timeout=15) as response:
+    assert 200 <= response.status < 300
+' "$app" "$health_path" >/dev/null
+}
+
+test_wait_dashboard_app() {
+  local app=$1 health_path=$2 timeout=${3:-180} deadline
+  deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if test_dashboard_proxy "$app" "$health_path" 2>/dev/null; then return 0; fi
+    sleep 3
+  done
+  kctl get kustomizations -n flux-system "app-$app" "app-$app-platform" -o wide >&2 || true
+  kctl get canary,deployment -n applications >&2 || true
+  fail "$app did not become reachable through the dashboard within ${timeout}s."
+}
+
+test_control_plane() {
+  local launch_app contract health_path
+  # Go-template variables are intentionally literal shell input.
+  # shellcheck disable=SC2016
+  launch_app=$(kctl get configmap fleet-catalog -n flux-system \
+    -o go-template='{{range $key, $value := .data}}{{printf "%s\n" $key}}{{end}}' | \
+    awk -v selected="$APP_NAME" '$0 != selected { print; exit }')
+  [ -n "$launch_app" ] || fail 'The dashboard acceptance needs another app contract.' || return 1
+  contract=$(kctl get configmap fleet-catalog -n flux-system -o "jsonpath={.data['$launch_app']}")
+  health_path=$(awk '$1 == "APP_HEALTH_PATH:" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }' <<< "$contract")
+  [ -n "$health_path" ] || fail "$launch_app has no APP_HEALTH_PATH." || return 1
+
+  echo "Checking the dashboard launches and removes $launch_app through Flux."
+  FLEET_TEST_LAUNCHED=$launch_app
+  test_dashboard_action "$launch_app" launch
+  kctl wait --for=condition=Ready -n flux-system \
+    "kustomization/app-$launch_app" "kustomization/app-$launch_app-platform" --timeout=3m
+  test_wait_dashboard_app "$launch_app" "$health_path" 180
+  test_dashboard_action "$launch_app" stop
+  kctl wait --for=delete -n flux-system \
+    "kustomization/app-$launch_app" "kustomization/app-$launch_app-platform" --timeout=3m
+  if kctl get canary "$launch_app" -n applications >/dev/null 2>&1; then
+    fail "$launch_app remained after the dashboard stopped it."; return 1
+  fi
+  FLEET_TEST_LAUNCHED=
+
+  echo 'Checking other pods cannot drive the dashboard control API.'
+  [ "$(kctl get --raw '/api/v1/namespaces/fleet-control/services/control-plane:80/proxy/healthz')" = ok ]
+  if kctl exec -n flux-system deployment/flagger-loadtester -- \
+    curl --fail --silent --connect-timeout 3 --max-time 5 \
+    http://control-plane.fleet-control/api/apps >/dev/null 2>&1; then
+    fail 'A pod outside fleet-control reached the dashboard.'; return 1
+  fi
+}
+
 test_restore_snapshot() {
   local test_result=$?
   trap - EXIT INT TERM
+  if [ -n "${FLEET_TEST_LAUNCHED:-}" ]; then
+    test_dashboard_action "$FLEET_TEST_LAUNCHED" stop || test_result=1
+  fi
   git --git-dir="$FLEET_STATE/source/fleet.git" fetch --quiet --force "$fleet_root" "$FLEET_TEST_ORIGINAL:refs/heads/fleet-local" || test_result=1
   if fctl reconcile kustomization applications --with-source --timeout=5m; then
     test_wait_restored 600 || test_result=1
@@ -146,6 +223,7 @@ test_local() {
   [[ "$FLEET_TEST_ORIGINAL" =~ ^[0-9a-f]{40}$ ]] || fail 'Cannot verify the original local source revision.' || return 1
   test_wait_baseline 600 || return 1
   FLEET_TEST_SPECS=""
+  FLEET_TEST_LAUNCHED=""
   FLEET_TEST_SNAPSHOT=$(mktemp -d "$FLEET_STATE/test-snapshot.XXXXXX")
   trap test_restore_snapshot EXIT
   trap 'exit 130' INT
@@ -181,6 +259,8 @@ test_local() {
     "http://$APP_NAME-primary.applications:$APP_PORT$APP_HEALTH_PATH" >/dev/null
   kctl wait pod/fleet-test-network -n fleet-test --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m
 
+  test_control_plane
+
   echo 'Checking a Git-delivered revision is promoted by Flagger.'
   git clone --quiet --branch fleet-local --single-branch "$FLEET_STATE/source/fleet.git" "$FLEET_TEST_SNAPSHOT"
   git -C "$FLEET_TEST_SNAPSHOT" config user.name 'Fleet local acceptance'
@@ -207,5 +287,5 @@ test_local() {
   test_publish_snapshot "$FLEET_TEST_SNAPSHOT"
   test_wait_phase Failed 600
   [ "$(kctl get deployment "$APP_NAME-primary" -n applications -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"${APP_FAULT_ENV%%=*}\")].value}")" != "${APP_FAULT_ENV#*=}" ]
-  echo 'Local acceptance passed: drift, admission, monitoring, network isolation, promotion and rollback.'
+  echo 'Local acceptance passed: drift, admission, monitoring, network isolation, on-demand apps, promotion and rollback.'
 }

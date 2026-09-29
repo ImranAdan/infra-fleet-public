@@ -59,7 +59,7 @@ them is replaced:
   gateway service is `kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=fleet`.
 - **The app directly:** `kubectl exec -n <ns> <pod> -- …` from inside the pod,
   to separate app latency from network latency.
-- **Humans in a browser:** `./fleet access --profile local --service app|grafana|prometheus`
+- **Humans in a browser:** `./fleet access --profile local --service app|dashboard|grafana|prometheus`
   and `./fleet credentials --profile local`.
 
 Scripted drives shipped with this skill:
@@ -69,7 +69,8 @@ Scripted drives shipped with this skill:
   through the gateway and requires Prometheus's raw Envoy counter to rise by
   exactly N. Proves the golden signals count what really happened.
 - `./fleet test --profile local`: the full acceptance cycle (drift, admission,
-  monitoring, isolation, promotion, rollback) for whichever app is selected.
+  monitoring, isolation, on-demand app lifecycle, promotion, rollback) for
+  whichever app is selected.
 
 ## Evidence
 

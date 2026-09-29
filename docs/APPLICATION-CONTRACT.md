@@ -22,6 +22,12 @@ git commit -am "chore: run podinfo"
 and points [`k8s/applications/kustomization.yaml`](../k8s/applications/kustomization.yaml)
 at the app's manifests. Nothing else changes.
 
+For a temporary local run, keep the selected app unchanged and use
+`./fleet access --profile local --service dashboard`. The dashboard launches
+another contracted app from the same deployed Git revision and removes its
+stack when stopped. This on-demand path is local only; AWS staging still runs
+the selected contract.
+
 ## What an application brings
 
 | Where | What |
@@ -51,6 +57,8 @@ The contract values:
 | `APP_LOAD_PATH` | Requested through the gateway during analysis | `/apispec.json` | `/` | `/` |
 | `APP_SECRETS` | `secret:key` pairs the platform generates | API and session keys | none | none |
 | `APP_FAULT_ENV` | `NAME=value` that makes the app fail requests | `FAIL_RATE=1.0` | `PODINFO_RANDOM_ERROR=true` | `GAME_FAULT=true` |
+| `APP_TITLE` | Optional display name in the local application dashboard | `Load Harness` | `podinfo` | `Fleet Runner` |
+| `APP_DESCRIPTION` | Optional short dashboard description | load generator summary | podinfo summary | browser game summary |
 
 ## What the platform provides
 
@@ -91,8 +99,11 @@ CI. It fails if `k8s/fleet-app` drifts from the selected app's contract, if any
 platform file names an app, or if any app cannot be selected: each is swapped
 in on a scratch worktree and both profiles must render completely.
 `./fleet test --profile local` then proves drift repair, admission, monitoring,
-isolation, promotion and rollback for whichever app is selected. The **Local
+isolation, an on-demand launch and removal, promotion and rollback for whichever app is selected. The **Local
 Kubernetes** workflow discovers every shipped `fleet-app.yaml` contract and
 runs that full cycle for each app on its own disposable cluster, weekly and
 whenever it is dispatched. Adding an app contract automatically adds it to the
 matrix, so a platform change that works for only some apps fails there.
+
+The control plane's exact launch, privilege and network boundaries are in the
+[application control-plane guide](APPLICATION-CONTROL-PLANE.md).

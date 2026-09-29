@@ -5,18 +5,18 @@
 # PURPOSE
 # =============================================================================
 # cert-manager automates TLS certificate issuance and renewal using Let's Encrypt.
-# Combined with sslip.io, this provides automatic HTTPS for ephemeral infrastructure
-# without requiring a purchased domain.
+# It issues the configured staging hostname through Let's Encrypt and the local
+# profile's in-cluster CA through the profile-specific ClusterIssuer.
 #
 # Traffic flow with TLS:
-#   Client -> NLB (TCP passthrough) -> NGINX Ingress (TLS termination) -> Pod
+#   Client -> NLB (TCP passthrough) -> Envoy Gateway (TLS termination) -> Pod
 #
 # Certificate lifecycle:
-#   1. Ingress created with cert-manager annotation
+#   1. Certificate and Gateway resources are reconciled
 #   2. cert-manager requests cert from Let's Encrypt
-#   3. Let's Encrypt performs HTTP-01 challenge via NGINX
+#   3. Let's Encrypt performs HTTP-01 challenge through Gateway API
 #   4. Certificate stored in K8s Secret
-#   5. NGINX uses cert for TLS termination
+#   5. Envoy Gateway uses the Secret for TLS termination
 #   6. cert-manager auto-renews before expiry
 #
 # =============================================================================

@@ -40,6 +40,7 @@ progressive delivery, request paths, observability and guardrails.
 | **AWS GitOps** | Manifest change → Flux detects → applies to EKS |
 | **Progressive Delivery** | New version → Flagger canary → Metrics analysis → Promote/Rollback |
 | **User Traffic** | Loopback → Envoy Gateway → local application, or users → Cloudflare → NLB → AWS preview |
+| **Local Control Plane** | Contracts → bounded Flux launch objects → on-demand application stacks |
 | **Observability** | Apps → Prometheus scrape → Grafana dashboards |
 
 ---
@@ -85,6 +86,7 @@ review current AWS pricing before deployment.
 |----------|-------------|
 | [Monitoring Setup](MONITORING-SETUP.md) | Gateway and container signals, dashboards provisioned from Git |
 | [Application Contract](APPLICATION-CONTRACT.md) | What an app brings, what the platform provides, and how to swap it |
+| [Application Control Plane](APPLICATION-CONTROL-PLANE.md) | Launch and stop contracted apps locally; trust and failure boundaries |
 | [DORA Metrics](DORA-METRICS.md) | Engineering metrics collection |
 
 ### CI/CD & Development
@@ -117,8 +119,8 @@ review current AWS pricing before deployment.
 
 ### Implemented in the template
 - [x] Local Kubernetes or EKS 1.35 with Flux GitOps
-- [x] Progressive-delivery manifests (deployment preview; ingress migration required)
-- [x] Optional TLS automation (deployment preview; ingress migration required)
+- [x] Envoy Gateway progressive delivery, live-tested locally
+- [x] Optional cert-manager TLS automation; AWS remains a deployment preview
 - [x] Dashboard UI (Flask + HTMX + Tailwind)
 - [x] HPA autoscaling (metrics-server + HPA)
 - [x] Prometheus + Grafana observability
@@ -130,7 +132,7 @@ review current AWS pricing before deployment.
 ### Known follow-up work
 - [x] Replace retired ingress-nginx in the AWS profile with a maintained Gateway API path
 - [ ] Live-cycle test the AWS Gateway route (apply, Let's Encrypt, canary, teardown)
-- [ ] IAM least-privilege permissions (Issue #296)
+- [ ] Validate the remaining IAM permissions-boundary design in a real AWS lifecycle
 
 ### Possible extensions
 - [ ] OIDC/SSO cluster access (Issue #92)

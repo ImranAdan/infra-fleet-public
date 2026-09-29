@@ -1,11 +1,10 @@
 # NetworkPolicy - Controls traffic to/from ${APP_NAME} pods
 #
 # Approach: Permissive egress, restricted ingress
-# - Ingress: Only allow known sources (NGINX, Prometheus, self)
+# - Ingress: Only allow known sources (Envoy Gateway, Prometheus, Flux, self)
 # - Egress: Allow all for now (app needs Prometheus, DNS, self)
 #
-# TODO: Tighten egress rules once traffic patterns are understood
-# See issue #294 for future Gateway API migration which may change this
+# Egress remains an explicitly accepted staging risk; see SECURITY-CONCERNS.md.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

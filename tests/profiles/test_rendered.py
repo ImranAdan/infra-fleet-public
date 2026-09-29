@@ -59,6 +59,31 @@ def test_only_aws_profile_contains_aws_runtime_resources():
     one(local, "Gateway", "fleet")
 
 
+def test_local_control_plane_is_isolated_and_least_privileged():
+    resources = load("local")
+    policy = one(resources, "NetworkPolicy", "control-plane")
+    assert policy["metadata"]["namespace"] == "fleet-control"
+    assert policy["spec"] == {
+        "podSelector": {"matchLabels": {"app": "control-plane"}},
+        "policyTypes": ["Ingress"],
+        "ingress": [],
+    }
+
+    app_role = one(resources, "Role", "app-deployer")
+    assert app_role["metadata"]["namespace"] == "applications"
+    assert {resource for rule in app_role["rules"] for resource in rule["resources"]} == {
+        "services",
+        "deployments",
+        "horizontalpodautoscalers",
+        "networkpolicies",
+        "canaries",
+        "podmonitors",
+    }
+    dashboard_role = one(resources, "Role", "app-deployer-dashboards")
+    assert dashboard_role["metadata"]["namespace"] == "observability"
+    assert dashboard_role["rules"][0]["resources"] == ["configmaps"]
+
+
 def test_both_profiles_serve_the_app_over_https_through_one_gateway():
     for profile in ("local", "aws-staging"):
         resources = load(profile)

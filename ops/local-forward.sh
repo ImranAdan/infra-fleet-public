@@ -1,68 +1,27 @@
-#!/bin/bash
-# Port-forward all services from cluster to localhost
-# Usage: ./local-forward.sh
+#!/usr/bin/env bash
+# Forward the selected app, Grafana and Prometheus from the current kube context.
+set -euo pipefail
 
-set -e
-
-# Colors for output
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
-# Kill any existing port-forwards
+pids=()
 cleanup() {
-    echo ""
-    echo -e "${YELLOW}Stopping port-forwards...${NC}"
-    pkill -f "kubectl port-forward" 2>/dev/null || true
-    exit 0
+  trap - INT TERM EXIT
+  if [ "${#pids[@]}" -gt 0 ]; then kill "${pids[@]}" 2>/dev/null || true; fi
 }
+trap cleanup INT TERM EXIT
 
-trap cleanup SIGINT SIGTERM
+app=$(kubectl get configmap fleet-app -n flux-system -o jsonpath='{.data.APP_NAME}')
+kubectl port-forward -n observability service/kube-prometheus-stack-grafana 3000:80 &
+pids+=("$!")
+kubectl port-forward -n observability service/kube-prometheus-stack-prometheus 9090:9090 &
+pids+=("$!")
+kubectl port-forward -n applications "service/$app" 8080:80 &
+pids+=("$!")
 
-echo -e "${CYAN}Stopping any existing port-forwards...${NC}"
-pkill -f "kubectl port-forward" 2>/dev/null || true
-sleep 1
+cat <<EOF
+Using the current kubectl context. Press Ctrl-C to stop these forwards.
 
-echo -e "${CYAN}Starting port-forwards...${NC}"
-echo ""
-
-# Start all port-forwards in background
-kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80 &>/dev/null &
-PID_GRAFANA=$!
-
-kubectl port-forward -n observability svc/kube-prometheus-stack-prometheus 9090:9090 &>/dev/null &
-PID_PROMETHEUS=$!
-
-kubectl port-forward -n applications svc/load-harness 8080:80 &>/dev/null &
-PID_LOADHARNESS=$!
-
-# Wait for port-forwards to establish
-sleep 3
-
-# Print service table
-echo -e "${GREEN}All services are now accessible:${NC}"
-echo ""
-echo "  +--------------+-----------------------+-------------------------+"
-echo "  | Service      | URL                   | Credentials             |"
-echo "  +--------------+-----------------------+-------------------------+"
-echo "  | Grafana      | http://localhost:3000 | admin / configured secret |"
-echo "  | Prometheus   | http://localhost:9090 | -                       |"
-echo "  | Load Harness | http://localhost:8080 | -                       |"
-echo "  +--------------+-----------------------+-------------------------+"
-echo ""
-echo -e "${CYAN}Load Harness endpoints:${NC}"
-echo "  - Dashboard:        http://localhost:8080/ui"
-echo "  - API Docs:         http://localhost:8080/apidocs"
-echo "  - System Info:      http://localhost:8080/system/info"
-echo "  - Health:           http://localhost:8080/health"
-echo "  - Metrics:          http://localhost:8080/metrics"
-echo "  - CPU Load:         http://localhost:8080/load/cpu"
-echo "  - CPU Status:       http://localhost:8080/load/cpu/status"
-echo "  - Memory Load:      http://localhost:8080/load/memory"
-echo ""
-echo -e "${YELLOW}Press Ctrl+C to stop all port-forwards${NC}"
-echo ""
-
-# Wait for all background processes
-wait $PID_GRAFANA $PID_PROMETHEUS $PID_LOADHARNESS
+  Selected app ($app): http://localhost:8080
+  Grafana:             http://localhost:3000
+  Prometheus:          http://localhost:9090
+EOF
+wait "${pids[@]}"

@@ -294,6 +294,41 @@ local_catalog() {
     --dry-run=client -o yaml | kctl apply -f - >/dev/null
 }
 
+# A source or contract update must not let on-demand Kustomizations reconcile
+# the new Git revision with the old image tag. Hold them beside the selected
+# application layer, then resume them after source and fleet-config agree.
+local_suspend_launched_apps() {
+  local name
+  while IFS= read -r name; do
+    [ -n "$name" ] && fctl suspend kustomization "$name" >/dev/null
+  done < <(kctl get kustomizations -n flux-system \
+    -l infra-fleet.io/launched-app -o go-template='{{range .items}}{{printf "%s\n" .metadata.name}}{{end}}')
+}
+
+local_resume_launched_apps() {
+  local name result=0
+  while IFS= read -r name; do
+    [ -n "$name" ] && fctl resume kustomization "$name" --timeout=15m || result=1
+  done < <(kctl get kustomizations -n flux-system \
+    -l infra-fleet.io/launched-app -o go-template='{{range .items}}{{printf "%s\n" .metadata.name}}{{end}}' | LC_ALL=C sort)
+  return "$result"
+}
+
+# If an on-demand app becomes the selected app, transfer ownership back to the
+# fleet root before it applies that app. Otherwise two Flux inventories manage
+# the same resources and the dashboard hides the only Stop action.
+local_handoff_selected_app() {
+  local selected
+  selected=$(local_contract_value k8s/fleet-app/fleet-app.yaml APP_NAME)
+  if kctl get kustomization "app-$selected" -n flux-system >/dev/null 2>&1; then
+    echo "Transferring $selected from an on-demand launch to the selected application layer."
+    kctl delete kustomization "app-$selected-platform" -n flux-system \
+      --ignore-not-found --wait=true --timeout=3m >/dev/null
+    kctl delete kustomization "app-$selected" -n flux-system \
+      --ignore-not-found --wait=true --timeout=3m >/dev/null
+  fi
+}
+
 local_secrets() {
   local secret filename namespace key credential entry app_secrets contract
   for namespace in flux-system applications observability; do
@@ -463,6 +498,11 @@ local_up() {
   fi
   local_calico
   local_secrets
+  if kctl get kustomization applications -n flux-system >/dev/null 2>&1; then
+    fctl suspend kustomization applications >/dev/null
+    local_suspend_launched_apps
+    local_handoff_selected_app
+  fi
   local_publish_snapshot
   local_start_services
   local_build_image
@@ -480,6 +520,7 @@ local_up() {
   # A sync interrupted between suspend and resume must not leave the app held.
   kctl patch kustomization applications -n flux-system --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
   fctl reconcile kustomization applications --with-source --timeout=15m
+  local_resume_launched_apps
   kctl wait --for=condition=Ready kustomization/policies -n flux-system --timeout=5m
   kctl wait --for=condition=Ready kustomization/control-plane -n flux-system --timeout=10m
   echo 'Local Kubernetes is ready. Open the dashboard with ./fleet access --profile local --service dashboard.'
@@ -489,16 +530,20 @@ local_sync() {
   local_existing_cluster
   local_revision "$1"
   local_build_image
-  local_publish_snapshot
   # The revision, its app contract and fleet-config (which holds the image
   # tag) change together. Hold the app layer until all three are consistent:
   # applying any one early pairs manifests with an image that does not exist.
   fctl suspend kustomization applications >/dev/null
+  local_suspend_launched_apps
+  local_handoff_selected_app
+  local_publish_snapshot
   if ! local_sync_platform; then
     fctl resume kustomization applications --timeout=15m || true
+    local_resume_launched_apps || true
     return 1
   fi
   fctl resume kustomization applications --timeout=15m
+  local_resume_launched_apps
 }
 
 local_sync_platform() {

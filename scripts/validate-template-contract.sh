@@ -67,6 +67,7 @@ trap 'rm -rf "$rendered_root"' EXIT
 ./tests/profiles/local-git-snapshot.sh
 ./tests/profiles/local-gateway-readiness.sh
 ./tests/profiles/local-app-readiness.sh
+./tests/profiles/local-control-plane.sh
 ./tests/profiles/cluster-ownership.sh
 ./tests/profiles/app-contract.sh
 

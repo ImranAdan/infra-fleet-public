@@ -408,13 +408,13 @@ path runs in request threads with bounded admission so probe capacity remains.
 | Profile | Route |
 |---|---|
 | Local | Envoy Gateway and Gateway API on loopback |
-| AWS staging preview | Community NGINX ingress through an internet-facing NLB |
+| AWS staging preview | Envoy Gateway and Gateway API through an internet-facing NLB |
 
 Both route `/` to the selected application.
 
-The community ingress controller is retired and receives no security fixes.
-Treat this cluster route as a private preview until the planned Gateway API
-migration is live-cycle tested; local development is unaffected.
+Both profiles now use the maintained Gateway API path. Treat AWS staging as a
+private preview until that path completes a real account apply, certificate
+issue, canary rollout, rollback and teardown cycle; local development is live-tested.
 
 ---
 

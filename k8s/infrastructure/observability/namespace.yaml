@@ -15,4 +15,4 @@ metadata:
     app.kubernetes.io/managed-by: flux
     app.kubernetes.io/part-of: observability-stack
   annotations:
-    description: "Observability stack (Prometheus, future: Grafana)"
+    description: "Observability stack (Prometheus and Grafana)"

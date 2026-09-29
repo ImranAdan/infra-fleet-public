@@ -293,14 +293,13 @@ add that action to the relevant statement rather than restoring a wildcard.
 
 **Finding:** Traffic unencrypted between client and NLB.
 
-**Current disposition:** Optional TLS is implemented with cert-manager and a
-configured hostname. The remaining blocker is the retired ingress controller;
-do not expose it as a new public deployment.
+**Current disposition:** Resolved in desired state. Both profiles redirect HTTP
+to HTTPS and terminate certificates through Envoy Gateway; the local route is
+covered by live acceptance. AWS remains a private preview until a real account
+apply, certificate issue, canary rollout, rollback and teardown cycle passes.
 
-**Options:**
-- Deploy cert-manager with Let's Encrypt
-- Use AWS ACM with ALB (loses Flagger traffic splitting)
-- Use sslip.io for ephemeral environments
+The supported AWS path uses cert-manager with Let's Encrypt and a configured
+hostname. The local path uses the fleet's in-cluster CA.
 
 ---
 

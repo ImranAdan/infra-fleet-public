@@ -9,7 +9,7 @@ Usage: port-forward.sh <service>
   grafana       Grafana dashboards   localhost:3000
   prometheus    Prometheus metrics   localhost:9090
   alertmanager  Alertmanager UI      localhost:9093
-  load-harness  Load Harness app     localhost:8080
+  app           Selected fleet app   localhost:8080
 EOF
     exit 1
 }
@@ -34,13 +34,11 @@ case "$1" in
         NAMESPACE=observability SVC=kube-prometheus-stack-alertmanager LOCAL=9093 REMOTE=9093
         LINKS="  Alertmanager UI: http://localhost:9093
   Alerts: http://localhost:9093/#/alerts" ;;
-    load-harness)
-        NAMESPACE=applications SVC=load-harness LOCAL=8080 REMOTE=80
-        LINKS="  Load Harness: http://localhost:8080
-  Health: http://localhost:8080/health
-  Metrics: http://localhost:8080/metrics
-  CPU Load: http://localhost:8080/load/cpu
-  Memory Load: http://localhost:8080/load/memory" ;;
+    app|load-harness)
+        NAMESPACE=applications
+        SVC=$(kubectl get configmap fleet-app -n flux-system -o jsonpath='{.data.APP_NAME}')
+        LOCAL=8080 REMOTE=80
+        LINKS="  Selected app ($SVC): http://localhost:8080" ;;
     *)
         echo "Unknown service '$1'" >&2
         echo >&2

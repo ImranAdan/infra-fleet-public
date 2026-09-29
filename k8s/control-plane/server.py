@@ -6,9 +6,10 @@ demand, stops a launched one, and proxies http://<app>.localhost:9000 to it.
 
 Launching never edits workloads: it asks Flux to deploy the app from Git, as
 two Kustomizations (the app's manifests and the shared platform templates,
-filled with the app's contract) that run as the app-deployer service account,
-which can change only the applications namespace. Stopping deletes them and
-Flux prunes the stack.
+filled with the app's contract) that run as the app-deployer service account.
+That identity can change application workloads and app-owned Grafana dashboard
+ConfigMaps; it has no cluster-wide grant. Stopping deletes the Kustomizations
+and Flux prunes the stack.
 """
 
 import http.client
