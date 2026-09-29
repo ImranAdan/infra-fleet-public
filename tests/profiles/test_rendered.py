@@ -83,6 +83,14 @@ def test_local_control_plane_is_isolated_and_least_privileged():
     assert dashboard_role["metadata"]["namespace"] == "observability"
     assert dashboard_role["rules"][0]["resources"] == ["configmaps"]
 
+    admission = one(resources, "ValidatingAdmissionPolicy", "control-plane-launches")
+    expressions = "\n".join(item["expression"] for item in admission["spec"]["validations"])
+    assert "object.spec.images[0].newName == '$' + '{IMAGE_REGISTRY}/' + variables.app" in expressions
+    assert "object.spec.images[0].newTag == '$' + '{IMAGE_TAG}'" in expressions
+    assert "object.spec.postBuild.substitute.all" in expressions
+    assert "object.spec.patches[0].patch ==" in expressions
+    assert "variables.target.metadata.name == 'app-' + variables.app" in expressions
+
 
 def test_both_profiles_serve_the_app_over_https_through_one_gateway():
     for profile in ("local", "aws-staging"):

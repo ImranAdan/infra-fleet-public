@@ -43,6 +43,12 @@ HEADERS = {
 HOP_BY_HOP = {"connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade", "te"}
 _LINE = re.compile(r"^  (APP_[A-Z_]+):\s*(.*)$")
 _APP_HOST = re.compile(r"^([a-z0-9]([-a-z0-9]*[a-z0-9])?)\.localhost(:\d+)?$")
+_LAUNCH_SUBSTITUTIONS = (
+    "APP_NAME",
+    "APP_PORT",
+    "APP_HEALTH_PATH",
+    "APP_LOAD_PATH",
+)
 
 
 def contract(text: str) -> dict[str, str]:
@@ -92,7 +98,7 @@ def kustomizations(values: dict[str, str]) -> list[dict]:
     """The two Flux Kustomizations that deploy one app from Git: its manifests,
     and the shared platform templates (canary, HPA, NetworkPolicy)."""
     name = values["APP_NAME"]
-    substitute = {key: value for key, value in values.items() if key.startswith("APP_")}
+    substitute = {key: values[key] for key in _LAUNCH_SUBSTITUTIONS}
     substitute["APP_HOSTNAME"] = route_host(name)
     common = {
         "interval": "1m",
@@ -220,7 +226,11 @@ def launch(name: str) -> None:
     texts = {contract(text).get("APP_NAME"): text for text in catalog.values()}
     if name not in texts or name == selected:
         raise ValueError(f"{name} is not a launchable app")
-    for body in kustomizations(contract(texts[name])):
+    values = contract(texts[name])
+    missing = [key for key in _LAUNCH_SUBSTITUTIONS if not values.get(key)]
+    if missing:
+        raise ValueError(f"{name} has an incomplete contract: {', '.join(missing)}")
+    for body in kustomizations(values):
         try:
             kube(KUSTOMIZATIONS, "POST", body)
         except urllib.error.HTTPError as exc:
@@ -298,7 +308,9 @@ class Handler(BaseHTTPRequestHandler):
         verified against the fleet's local CA for the app's own host name."""
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
-        headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
+        headers = {
+            k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP | {"host"}
+        }
         headers["Host"] = host
         connection = GatewayConnection(host)
         try:
@@ -334,8 +346,16 @@ data:
   APP_NAME: game
   APP_TITLE: "Fleet Runner"
   APP_PORT: "8080"
+  APP_HEALTH_PATH: /healthz
+  APP_LOAD_PATH: /
 '''
-    assert contract(text) == {"APP_NAME": "game", "APP_TITLE": "Fleet Runner", "APP_PORT": "8080"}
+    assert contract(text) == {
+        "APP_NAME": "game",
+        "APP_TITLE": "Fleet Runner",
+        "APP_PORT": "8080",
+        "APP_HEALTH_PATH": "/healthz",
+        "APP_LOAD_PATH": "/",
+    }
     serving = {"game-primary": {"readyReplicas": 1}}
     assert app_state("game", {"game": {"phase": "Succeeded"}}, serving) == "running"
     assert app_state("game", {"game": {"phase": "Initializing"}}, serving) == "starting"
@@ -358,6 +378,13 @@ data:
         assert spec["serviceAccountName"] == "app-deployer"
         assert spec["postBuild"]["substitute"]["APP_HOSTNAME"] == "game.apps.localhost"
         assert spec["postBuild"]["substitute"]["APP_PORT"] == "8080"
+        assert set(spec["postBuild"]["substitute"]) == {
+            "APP_NAME",
+            "APP_PORT",
+            "APP_HEALTH_PATH",
+            "APP_LOAD_PATH",
+            "APP_HOSTNAME",
+        }
         assert body["metadata"]["labels"] == {"infra-fleet.io/launched-app": "game"}
     assert app["spec"]["images"][0]["newName"] == "${IMAGE_REGISTRY}/game"
 
@@ -387,9 +414,18 @@ data:
             raise urllib.error.HTTPError(path, result, "status", None, None)  # type: ignore[arg-type]
         return result  # type: ignore[return-value]
 
+    sample_text = text.replace("APP_NAME: game", "APP_NAME: sample")
     kube, read_catalog = fake_kube, lambda: ({"s": "  APP_NAME: sample\n"}, "game")
     launched_apps = lambda: {"sample"}  # noqa: E731
     try:
+        # A catalog entry without every value used by the shared platform is
+        # visible but cannot create a partial launch object.
+        try:
+            launch("sample")
+            raise AssertionError("an incomplete contract was launched")
+        except ValueError as exc:
+            assert "incomplete contract" in str(exc)
+        read_catalog = lambda: ({"s": sample_text}, "game")  # noqa: E731
         # Relaunching while the previous stop is still finalising is an error.
         responses = {("POST", "kustomizations"): 409,
                      ("GET", "app-sample"): {"metadata": {"deletionTimestamp": "now"}}}

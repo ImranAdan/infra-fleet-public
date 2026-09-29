@@ -11,7 +11,8 @@ Flux Kustomizations, while other pods cannot call its control API.
 - `stop` Flux prunes the launched stack.
 - `handoff` selecting a launched app removes its launch objects before the
   fleet root takes ownership.
-- `confinement` admission fixes the source, paths and deployer identity.
+- `confinement` admission fixes the source, paths, deployer identity,
+  substitutions, image transform, dependency and HPA patch.
 - `isolation` pods outside `fleet-control` cannot reach the dashboard Service.
 
 ## How to get to it (user POV)
@@ -37,6 +38,9 @@ Preconditions:
   `http://control-plane.fleet-control/api/apps` times out. The Kubernetes API
   service proxy still returns `ok` from `/healthz`, proving the pod itself is
   healthy.
+- **Confinement.** A server-side dry-run as the dashboard service account with
+  an arbitrary image is denied by `control-plane-launches`; the normal launch
+  immediately afterwards succeeds.
 - **Proof.** Save the launch objects, route response, deletion and failed
   cross-namespace request.
 

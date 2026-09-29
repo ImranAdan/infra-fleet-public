@@ -40,8 +40,10 @@ The web process can list live application state and create or delete Flux
 launch objects. It cannot edit workloads directly.
 
 - A Kubernetes `ValidatingAdmissionPolicy` accepts only the two labelled launch
-  object shapes, from `fleet-local`, using `app-deployer`, known Git paths and
-  `fleet-config`. It rejects remote kubeconfigs and target namespaces.
+  object shapes. It fixes their names, source, paths, deployer identity,
+  lifecycle settings, application substitutions, image transform, dependency
+  and HPA patch. Remote kubeconfigs, target namespaces and other Flux
+  transformations are rejected.
 - `app-deployer` can reconcile the application workload types in
   `applications` and ConfigMaps in `observability` for app-owned Grafana
   dashboards. It has no cluster-wide role and cannot change Flux, policy,
@@ -68,8 +70,8 @@ phase, including a previous rollback.
 A repeated Launch is idempotent. If a previous Stop is still finalising, the
 API returns a conflict and asks the operator to retry. If only one of the two
 launch objects was created, Stop removes the partial stack. `./fleet test
---profile local` exercises launch, Gateway access, removal, API isolation and
-the selected app's normal delivery tests.
+--profile local` exercises the admission boundary, launch, Gateway access,
+removal, API isolation and the selected app's normal delivery tests.
 
 For diagnosis:
 

@@ -86,6 +86,8 @@ test_publish_snapshot() {
   fctl reconcile kustomization applications --with-source --timeout=5m
 }
 
+# The small readiness contract test overrides the timeout; production uses the default.
+# shellcheck disable=SC2120
 test_wait_application() {
   local timeout=${1:-120} deadline
   deadline=$((SECONDS + timeout))
@@ -159,7 +161,7 @@ test_wait_dashboard_app() {
 }
 
 test_control_plane() {
-  local launch_app contract health_path
+  local launch_app contract app_port health_path load_path
   # Go-template variables are intentionally literal shell input.
   # shellcheck disable=SC2016
   launch_app=$(kctl get configmap fleet-catalog -n flux-system \
@@ -167,8 +169,55 @@ test_control_plane() {
     awk -v selected="$APP_NAME" '$0 != selected { print; exit }')
   [ -n "$launch_app" ] || fail 'The dashboard acceptance needs another app contract.' || return 1
   contract=$(kctl get configmap fleet-catalog -n flux-system -o "jsonpath={.data['$launch_app']}")
+  app_port=$(awk '$1 == "APP_PORT:" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }' <<< "$contract")
   health_path=$(awk '$1 == "APP_HEALTH_PATH:" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }' <<< "$contract")
-  [ -n "$health_path" ] || fail "$launch_app has no APP_HEALTH_PATH." || return 1
+  load_path=$(awk '$1 == "APP_LOAD_PATH:" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }' <<< "$contract")
+  [ -n "$app_port" ] && [ -n "$health_path" ] && [ -n "$load_path" ] ||
+    fail "$launch_app has an incomplete runtime contract." || return 1
+
+  echo 'Checking admission rejects a dashboard launch with an arbitrary image.'
+  if kctl create --dry-run=server \
+    --as=system:serviceaccount:fleet-control:control-plane -f - \
+    > "$FLEET_STATE/admission.log" 2>&1 <<EOF
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: app-$launch_app
+  namespace: flux-system
+  labels:
+    infra-fleet.io/launched-app: $launch_app
+spec:
+  interval: 1m
+  path: ./k8s/applications/$launch_app
+  prune: true
+  wait: false
+  timeout: 10m
+  serviceAccountName: app-deployer
+  sourceRef:
+    kind: GitRepository
+    name: fleet-local
+  images:
+    - name: app
+      newName: docker.io/library/busybox
+      newTag: latest
+  postBuild:
+    substitute:
+      APP_NAME: $launch_app
+      APP_PORT: "$app_port"
+      APP_HEALTH_PATH: "$health_path"
+      APP_LOAD_PATH: "$load_path"
+      APP_HOSTNAME: $launch_app.apps.localhost
+    substituteFrom:
+      - kind: ConfigMap
+        name: fleet-config
+EOF
+  then
+    fail 'The dashboard identity could override a launched app image.'; return 1
+  fi
+  grep -q control-plane-launches "$FLEET_STATE/admission.log" || {
+    cat "$FLEET_STATE/admission.log" >&2
+    fail 'The unsafe dashboard launch failed outside its admission boundary.'; return 1
+  }
 
   echo "Checking the dashboard launches and removes $launch_app through Flux."
   FLEET_TEST_LAUNCHED=$launch_app
@@ -247,6 +296,7 @@ test_local() {
   done
 
   echo 'Checking application monitoring and network isolation.'
+  # shellcheck disable=SC2119
   test_wait_application
   test_wait_monitoring
   kctl create namespace fleet-test --dry-run=client -o yaml | kctl apply -f - >/dev/null
