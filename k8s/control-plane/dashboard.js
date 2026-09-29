@@ -17,7 +17,16 @@ async function act(name, action) {
     method: "POST",
     headers: { "X-Fleet-Action": "1" },
   });
-  if (!response.ok) alert((await response.json()).error || response.statusText);
+  if (!response.ok) {
+    const text = await response.text();
+    let message = text || response.statusText;
+    try {
+      message = JSON.parse(text).error || message;
+    } catch {
+      // The API deliberately uses plain text for request-boundary errors.
+    }
+    alert(message);
+  }
   refresh();
 }
 

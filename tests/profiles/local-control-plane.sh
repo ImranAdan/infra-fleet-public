@@ -14,7 +14,7 @@ kctl() {
   case "$*" in
     'get kustomization app-sample -n flux-system') return 0 ;;
     *'get kustomizations -n flux-system -l infra-fleet.io/launched-app'*)
-      printf 'app-z-platform\napp-z\n' ;;
+      printf '\napp-z-platform\n\napp-z\n\n' ;;
     *) printf 'kctl %s\n' "$*" >> "$calls" ;;
   esac
 }

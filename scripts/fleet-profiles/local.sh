@@ -300,7 +300,8 @@ local_catalog() {
 local_suspend_launched_apps() {
   local name
   while IFS= read -r name; do
-    [ -n "$name" ] && fctl suspend kustomization "$name" >/dev/null
+    [ -n "$name" ] || continue
+    fctl suspend kustomization "$name" >/dev/null
   done < <(kctl get kustomizations -n flux-system \
     -l infra-fleet.io/launched-app -o go-template='{{range .items}}{{printf "%s\n" .metadata.name}}{{end}}')
 }
@@ -308,7 +309,8 @@ local_suspend_launched_apps() {
 local_resume_launched_apps() {
   local name result=0
   while IFS= read -r name; do
-    [ -n "$name" ] && fctl resume kustomization "$name" --timeout=15m || result=1
+    [ -n "$name" ] || continue
+    fctl resume kustomization "$name" --timeout=15m || result=1
   done < <(kctl get kustomizations -n flux-system \
     -l infra-fleet.io/launched-app -o go-template='{{range .items}}{{printf "%s\n" .metadata.name}}{{end}}' | LC_ALL=C sort)
   return "$result"
