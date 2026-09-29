@@ -127,8 +127,9 @@ Accepted, deliberately:
 - **Provisioning failures are not caught here.** A change that passes CI can
   still fail on `apply` in a consuming repository. That is the cost of not
   holding credentials, and it is the right trade.
-- **DORA metrics, cluster verification and nightly destroy do not run here.**
-  They are deployment concerns, not template concerns.
+- **DORA metrics and live cluster verification require a deployed environment.**
+  AWS teardown is present as a manual workflow and runs only after an adopter
+  configures credentials and explicitly dispatches it.
 - **The private repository becomes the only place infrastructure is applied.**
 
 Gained:

@@ -102,7 +102,7 @@ review current AWS pricing before deployment.
 |----------|-------------|
 | [Advisor Integration](ADVISOR-INTEGRATION.md) | Run static reviews and understand the delivery contract |
 | [Template Readiness](TEMPLATE-READINESS.md) | PR review evidence and gates before deployment |
-| [Cost Optimization Guide](COST-OPTIMIZATION-GUIDE.md) | Cost analysis and strategies |
+| [AWS Cost Controls](COST-OPTIMIZATION-GUIDE.md) | Billable resources, worker schedule, teardown and audit controls |
 | [Security Concerns](SECURITY-CONCERNS.md) | Security considerations |
 
 ### Design Decisions
@@ -145,7 +145,6 @@ review current AWS pricing before deployment.
 ### For Developers
 - [Load Harness App](../applications/load-harness/README.md)
 - [Local Development](../applications/load-harness/local-dev/)
-- [Dashboard Design](../applications/load-harness/docs/dashboard-design.md)
 
 ### For Platform Engineers
 - [Infrastructure Code](../infrastructure/)

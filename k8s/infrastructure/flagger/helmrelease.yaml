@@ -38,7 +38,8 @@ spec:
     # Prometheus for metrics analysis
     metricsServer: http://kube-prometheus-stack-prometheus.observability:9090
 
-    # The profile selects Gateway API or NGINX weighted routing.
+    # Both profiles select Gateway API weighted routing. The variable remains
+    # explicit so rendered profile configuration stays inspectable.
     meshProvider: ${TRAFFIC_PROVIDER}
 
     # Resource limits for t3.large node

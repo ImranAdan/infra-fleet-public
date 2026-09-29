@@ -22,7 +22,7 @@
 | EKS Public Endpoint | `endpoint_public_access_cidrs = ["0.0.0.0/0"]` (open to all) |
 | Authentication | IAM-based (`authentication_mode = "API_AND_CONFIG_MAP"`) |
 | Flux Bootstrap | GitHub Actions workflow (not Terraform) |
-| Stack Lifecycle | Ephemeral (~8-10 hours/day, nightly destroy at 8 PM UTC) |
+| Stack Lifecycle | Manual teardown; workers are released outside the weekday usage window |
 
 **Security controls:**
 - No anonymous access (IAM authentication required)
@@ -174,7 +174,8 @@ For this ephemeral dev/staging stack, we implemented a hybrid approach:
 Required for Terraform Cloud workers to run `terraform plan/apply` on AWS resources:
 1. EKS public endpoint open to 0.0.0.0/0
 2. IAM authentication required (no anonymous access)
-3. Stack runs ~8-10 hours/day (nightly destroy at 8 PM UTC)
+3. Workers follow the declared weekday usage window; the stack persists until
+   an operator runs `./fleet down --profile aws-staging`
 
 ### Option C — Flux Bootstrap via GitHub Actions ✅ IMPLEMENTED
 Flux is now bootstrapped outside Terraform via `.github/workflows/rebuild-stack.yml`:

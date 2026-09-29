@@ -41,7 +41,7 @@ module "eks" {
       capacity_type  = "SPOT"       # Lower cost with interruption risk; suitable for this learning stack
       desired_size   = 1
       # Always-on baseline inside the usage window: this single group also runs Flux, CoreDNS,
-      # the ALB controller and cluster-autoscaler itself. Outside the window it is released to
+      # the AWS Load Balancer Controller and cluster-autoscaler itself. Outside the window it is released to
       # zero (cluster-autoscaler.tf); cluster-autoscaler adds workers up to max_size on demand.
       min_size = 1
       max_size = 3
@@ -63,7 +63,7 @@ module "eks" {
   # Creates EKS Access Entries to grant IAM roles administrative privileges to the cluster
   access_entries = merge({
     # Session Manager jumpbox access - DISABLED (see session-manager.tf.disabled)
-    # Uncomment when needed (will incur ~$10-15/month EC2 cost)
+    # Uncomment only when the additional access path and EC2 cost are justified.
     # session_manager = {
     #   principal_arn = aws_iam_role.session_manager_role.arn
     #

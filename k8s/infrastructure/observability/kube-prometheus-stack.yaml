@@ -22,7 +22,7 @@
 # Access:
 #   - Prometheus: kubectl port-forward -n observability prometheus-kube-prometheus-stack-prometheus-0 9090:9090
 #   - Grafana: kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
-#   - No Ingress = No ALB = No finalizer issues on destroy
+#   - Grafana is not exposed by an HTTPRoute; operators use port-forwarding
 #
 # Resource Constraints:
 #   - Configured for t3.medium node (2 vCPU, 4GB RAM)

@@ -9,7 +9,7 @@ A **synthetic workload generator** for Kubernetes platforms with a web-based das
 - **Web Dashboard** - Interactive UI for triggering and monitoring load tests
 - **Three Load Types** - CPU (single-pod), Cluster (distributed), Memory
 - **Real-time Metrics** - Live CPU, memory, pod count, and request rate
-- **Kubernetes-native** - HPA integration, Prometheus metrics, Envoy Gateway locally, and the AWS NGINX preview
+- **Kubernetes-native** - HPA integration, Prometheus metrics, and Envoy Gateway routing in both deployment profiles
 - **Local & Cluster Modes** - Automatic behavior adaptation based on environment
 
 ---

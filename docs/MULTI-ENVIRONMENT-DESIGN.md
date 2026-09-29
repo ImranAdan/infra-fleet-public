@@ -9,7 +9,7 @@
 
 ## Overview
 
-This document outlines the design for a staging → production promotion strategy for infra-fleet. Implementation is deferred due to cost considerations (~$120/month minimum for production EKS).
+This document outlines the design for a staging → production promotion strategy for infra-fleet. Implementation is deferred because a continuously available production environment would add material AWS cost and operational responsibility.
 
 **Design Choices:**
 - **Infrastructure**: Terragrunt for DRY multi-environment management
@@ -338,17 +338,13 @@ jobs:
 
 ---
 
-## Cost Summary
+## Cost boundary
 
-| Resource | Staging | Production | Total |
-|----------|---------|------------|-------|
-| EKS Control Plane | $72/mo | $72/mo | $144/mo |
-| NAT Gateway | $32/mo | $32/mo | $64/mo |
-| ALB | $16/mo | $16/mo | $32/mo |
-| EC2 Nodes (min) | ~$50/mo | ~$75/mo | ~$125/mo |
-| **Total** | ~$170/mo | ~$195/mo | **~$365/mo** |
-
-> **Note**: Staging uses nightly destroy, so actual staging cost is ~$0 most of the time. Production would run 24/7.
+Production would add a second continuously available control plane, network and
+worker fleet. Estimate it with current regional prices before adopting this
+design. The existing staging stack persists until explicit teardown; its worker
+schedule alone does not remove control-plane or networking charges. See
+[AWS Cost Controls](COST-OPTIMIZATION-GUIDE.md).
 
 ---
 

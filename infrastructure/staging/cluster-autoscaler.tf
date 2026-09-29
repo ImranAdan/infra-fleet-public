@@ -2,7 +2,8 @@
 # Worker capacity: demand-driven scaling (C-002) and a nightly release (C-001)
 #
 # Terraform manages the AWS side (IAM role, scheduled actions). The controller itself is a Flux
-# HelmRelease in k8s/infrastructure/cluster-autoscaler/, like the ALB controller.
+# HelmRelease in k8s/infrastructure/cluster-autoscaler/, like the AWS Load
+# Balancer Controller.
 # EKS managed node groups tag their Auto Scaling group for cluster-autoscaler auto-discovery.
 # --------------------------------------------------------------------------------------------------
 

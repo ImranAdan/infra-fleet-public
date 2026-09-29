@@ -1,152 +1,114 @@
-#!/bin/bash
-# Script to audit what's contributing to "EC2-Other" costs
-# Run this after stack is built to see what resources exist
+#!/usr/bin/env bash
+# Inventory AWS resources that commonly contribute to an infra-fleet bill.
+# This script reports resources; it never deletes them or estimates prices.
 
-set -e
+set -euo pipefail
 
-AWS_REGION="${1:-eu-west-2}"
-CLUSTER_NAME="${2:-staging}"
+AWS_REGION=${1:-eu-west-2}
+CLUSTER_NAME=${2:-staging}
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "EC2-Other Cost Audit"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "Region: $AWS_REGION"
-echo "Cluster: $CLUSTER_NAME"
-echo ""
+command -v aws >/dev/null 2>&1 || {
+  echo 'aws CLI is required.' >&2
+  exit 1
+}
 
-# 1. EBS Volumes
-echo "━━━ 1. EBS VOLUMES ━━━"
-echo ""
-echo "Active EBS Volumes:"
+account_id=$(aws sts get-caller-identity --query Account --output text)
+
+cat <<EOF
+Infra Fleet AWS resource inventory
+Account: $account_id
+Region:  $AWS_REGION
+Cluster: $CLUSTER_NAME
+
+EKS clusters
+EOF
+aws eks list-clusters \
+  --region "$AWS_REGION" \
+  --query 'clusters' \
+  --output table
+
+cat <<'EOF'
+
+Running EC2 instances
+EOF
+# The backticks below are JMESPath literals, not shell interpolation.
+# shellcheck disable=SC2016
+aws ec2 describe-instances \
+  --region "$AWS_REGION" \
+  --filters 'Name=instance-state-name,Values=pending,running,stopping,stopped' \
+  --query 'Reservations[].Instances[].[InstanceId,InstanceType,State.Name,PrivateIpAddress,Tags[?Key==`Name`].Value|[0]]' \
+  --output table
+
+cat <<'EOF'
+
+EBS volumes
+EOF
+# shellcheck disable=SC2016
 aws ec2 describe-volumes \
   --region "$AWS_REGION" \
-  --query 'Volumes[*].[VolumeId,Size,State,VolumeType,Iops,CreateTime,Tags[?Key==`Name`].Value|[0]]' \
+  --query 'Volumes[].[VolumeId,Size,State,VolumeType,Attachments[0].InstanceId,Tags[?Key==`Name`].Value|[0]]' \
   --output table
 
-echo ""
-echo "Cost estimate (active volumes):"
-VOLUMES=$(aws ec2 describe-volumes --region "$AWS_REGION" --query 'Volumes[?State==`in-use`]' --output json)
-TOTAL_SIZE=$(echo "$VOLUMES" | jq '[.[].Size] | add // 0')
-echo "  Total size: ${TOTAL_SIZE} GB"
-echo "  GP3 cost: \$$(echo "$TOTAL_SIZE * 0.08" | bc) per month"
-echo ""
+cat <<'EOF'
 
-echo "Available (unattached) volumes that may be orphaned:"
-aws ec2 describe-volumes \
-  --region "$AWS_REGION" \
-  --filters "Name=status,Values=available" \
-  --query 'Volumes[*].[VolumeId,Size,CreateTime]' \
-  --output table
-
-# 2. EBS Snapshots
-echo ""
-echo "━━━ 2. EBS SNAPSHOTS ━━━"
-echo ""
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-echo "EBS Snapshots owned by account ${ACCOUNT_ID}:"
-aws ec2 describe-snapshots \
-  --region "$AWS_REGION" \
-  --owner-ids "$ACCOUNT_ID" \
-  --query 'Snapshots[*].[SnapshotId,VolumeSize,StartTime,Description]' \
-  --output table
-
-SNAP_COUNT=$(aws ec2 describe-snapshots --region "$AWS_REGION" --owner-ids "$ACCOUNT_ID" --query 'length(Snapshots)' --output text)
-SNAP_SIZE=$(aws ec2 describe-snapshots --region "$AWS_REGION" --owner-ids "$ACCOUNT_ID" --query 'sum(Snapshots[*].VolumeSize)' --output text)
-echo ""
-echo "Snapshot summary:"
-echo "  Count: $SNAP_COUNT"
-echo "  Total size: ${SNAP_SIZE} GB"
-echo "  Cost estimate: \$$(echo "$SNAP_SIZE * 0.05" | bc) per month"
-echo ""
-
-# 3. Elastic IPs
-echo "━━━ 3. ELASTIC IPs ━━━"
-echo ""
-echo "Elastic IPs (cost \$0.005/hour = \$3.60/month each if unattached):"
+Elastic IP addresses
+EOF
+# shellcheck disable=SC2016
 aws ec2 describe-addresses \
   --region "$AWS_REGION" \
-  --query 'Addresses[*].[PublicIp,AllocationId,AssociationId,Tags[?Key==`Name`].Value|[0]]' \
+  --query 'Addresses[].[AllocationId,PublicIp,AssociationId,NetworkInterfaceId,Tags[?Key==`Name`].Value|[0]]' \
   --output table
 
-UNATTACHED_EIPS=$(aws ec2 describe-addresses --region "$AWS_REGION" --query 'Addresses[?AssociationId==null]' --output json | jq length)
-echo ""
-echo "Unattached EIPs: $UNATTACHED_EIPS (costing \$$(echo "$UNATTACHED_EIPS * 3.60" | bc)/month)"
-echo ""
+cat <<'EOF'
 
-# 4. NAT Gateway
-echo "━━━ 4. NAT GATEWAYS ━━━"
-echo ""
-echo "NAT Gateways (\$0.045/hour = \$32.40/month each):"
+NAT gateways
+EOF
 aws ec2 describe-nat-gateways \
   --region "$AWS_REGION" \
-  --filter "Name=state,Values=available" \
-  --query 'NatGateways[*].[NatGatewayId,State,VpcId,SubnetId,Tags[?Key==`Name`].Value|[0]]' \
+  --filter 'Name=state,Values=pending,available,deleting,failed' \
+  --query 'NatGateways[].[NatGatewayId,State,VpcId,SubnetId,NatGatewayAddresses[0].PublicIp]' \
   --output table
 
-NAT_COUNT=$(aws ec2 describe-nat-gateways --region "$AWS_REGION" --filter "Name=state,Values=available" --query 'length(NatGateways)' --output text)
-echo ""
-echo "Active NAT Gateways: $NAT_COUNT (costing \$$(echo "$NAT_COUNT * 32.40" | bc)/month base)"
-echo ""
+cat <<'EOF'
 
-# 5. VPC Endpoints
-echo "━━━ 5. VPC ENDPOINTS ━━━"
-echo ""
-echo "VPC Endpoints (Interface endpoints cost \$0.01/hour = \$7.20/month each):"
+VPC endpoints
+EOF
 aws ec2 describe-vpc-endpoints \
   --region "$AWS_REGION" \
-  --query 'VpcEndpoints[*].[VpcEndpointId,VpcEndpointType,ServiceName,State]' \
+  --query 'VpcEndpoints[].[VpcEndpointId,VpcEndpointType,ServiceName,State,VpcId]' \
   --output table
 
-INTERFACE_ENDPOINTS=$(aws ec2 describe-vpc-endpoints --region "$AWS_REGION" --query 'VpcEndpoints[?VpcEndpointType==`Interface`]' --output json | jq length)
-echo ""
-echo "Interface endpoints: $INTERFACE_ENDPOINTS (costing \$$(echo "$INTERFACE_ENDPOINTS * 7.20" | bc)/month)"
-echo "Gateway endpoints: Free"
-echo ""
+cat <<'EOF'
 
-# 6. Data Transfer (estimates only - need CloudWatch for actual)
-echo "━━━ 6. DATA TRANSFER ━━━"
-echo ""
-echo "⚠️  Data transfer costs require CloudWatch metrics analysis"
-echo "Common sources of data transfer charges:"
-echo "  - NAT Gateway data processing: \$0.045/GB"
-echo "  - VPC Endpoint data processing: \$0.01/GB"
-echo "  - Inter-AZ data transfer: \$0.01/GB"
-echo "  - Internet egress: \$0.09/GB (first 10TB)"
-echo ""
-
-# 7. Load Balancers
-echo "━━━ 7. LOAD BALANCERS ━━━"
-echo ""
-echo "Application Load Balancers (\$0.0225/hour = \$16.20/month each):"
+ELBv2 load balancers (application, network and gateway)
+EOF
 aws elbv2 describe-load-balancers \
   --region "$AWS_REGION" \
-  --query 'LoadBalancers[*].[LoadBalancerName,Type,State.Code,CreatedTime,VpcId]' \
-  --output table 2>/dev/null || echo "No ALBs found"
+  --query 'LoadBalancers[].[LoadBalancerName,Type,Scheme,State.Code,VpcId,CreatedTime]' \
+  --output table
 
-ALB_COUNT=$(aws elbv2 describe-load-balancers --region "$AWS_REGION" --query 'length(LoadBalancers)' --output text 2>/dev/null || echo "0")
-echo ""
-echo "Active ALBs: $ALB_COUNT (costing \$$(echo "$ALB_COUNT * 16.20" | bc)/month base + LCU charges)"
-echo ""
+cat <<'EOF'
 
-# Summary
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "ESTIMATED MONTHLY COSTS (when stack is running 24/7)"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "EBS Volumes:           \$$(echo "$TOTAL_SIZE * 0.08" | bc)"
-echo "EBS Snapshots:         \$$(echo "$SNAP_SIZE * 0.05" | bc)"
-echo "Unattached EIPs:       \$$(echo "$UNATTACHED_EIPS * 3.60" | bc)"
-echo "NAT Gateways:          \$$(echo "$NAT_COUNT * 32.40" | bc)"
-echo "Interface Endpoints:   \$$(echo "$INTERFACE_ENDPOINTS * 7.20" | bc)"
-echo "ALBs:                  \$$(echo "$ALB_COUNT * 16.20" | bc) + LCU charges"
-echo "Data Transfer:         (requires CloudWatch analysis)"
-echo ""
-echo "NOTE: These are estimates when stack runs 24/7."
-echo "With nightly destroy, actual costs are much lower!"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "Usage: $0 [region] [cluster-name]"
-echo "Example: $0 eu-west-2 staging"
-echo ""
+Network interfaces owned by the selected Kubernetes cluster tag
+EOF
+aws ec2 describe-network-interfaces \
+  --region "$AWS_REGION" \
+  --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned,shared" \
+  --query 'NetworkInterfaces[].[NetworkInterfaceId,Status,InterfaceType,VpcId,SubnetId,Description]' \
+  --output table
+
+cat <<'EOF'
+
+ECR repositories
+EOF
+aws ecr describe-repositories \
+  --region "$AWS_REGION" \
+  --query 'repositories[].[repositoryName,imageTagMutability,createdAt]' \
+  --output table
+
+cat <<EOF
+
+Inventory complete. Use Cost Explorer for current charges and verify tags and
+ownership before removing any resource. The permanent ECR repository is
+expected to remain after the $CLUSTER_NAME staging stack is destroyed.
+EOF

@@ -2,7 +2,7 @@
 # cleanup-k8s-resources-v2.sh
 # HYBRID CLEANUP: Kubernetes-native + AWS tag-based fallback
 # Cleans up Kubernetes-managed AWS resources before Terraform destroy
-# This prevents orphaned ALBs, security groups, EBS volumes, and ENIs
+# This prevents orphaned load balancers, security groups, EBS volumes, and ENIs
 #
 # Strategy:
 #   1. If cluster is healthy: Use Kubernetes API (GitOps-native cleanup)
@@ -89,26 +89,45 @@ if [ "$CLEANUP_METHOD" == "kubernetes" ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    # Step 0: Suspend Flux to prevent recreation
+    # Step 0: Suspend every Flux Kustomization, including the root, so a
+    # controller-owned Gateway Service cannot be recreated during teardown.
     echo "   ⏸️  Step 0: Suspending Flux reconciliation..."
-    if command -v flux &>/dev/null; then
-        if [ "$DRY_RUN" == "dry-run" ]; then
-            echo "      [DRY RUN] Would suspend: flux suspend kustomization applications"
-        else
-            if flux suspend kustomization applications &>/dev/null; then
-                echo "      ✅ Suspended applications kustomization"
-                sleep 5
-            else
-                echo "      ⚠️  Could not suspend Flux (may not be installed)"
-            fi
-        fi
+    if [ "$DRY_RUN" == "dry-run" ]; then
+        echo "      [DRY RUN] Would suspend all Flux Kustomizations:"
+        kubectl get kustomizations.kustomize.toolkit.fluxcd.io -A \
+            -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name' \
+            2>/dev/null | sed 's/^/         /'
     else
-        echo "      ⚠️  Flux CLI not available"
+        kubectl patch kustomizations.kustomize.toolkit.fluxcd.io --all -A \
+            --type=merge -p '{"spec":{"suspend":true}}'
+        echo "      ✅ Suspended all Flux Kustomizations"
+        sleep 5
     fi
 
-    # Step 1: Delete Ingress resources
+    # Step 1: Delete Gateway API entry points. Envoy Gateway owns the generated
+    # LoadBalancer Service, so remove its parent before falling back to direct
+    # Service or ELBv2 deletion.
     echo ""
-    echo "   🗑️  Step 1: Deleting Ingress resources..."
+    echo "   🗑️  Step 1: Deleting Gateway API entry points..."
+    GATEWAY_COUNT=$(kubectl get gateways.gateway.networking.k8s.io -A --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$GATEWAY_COUNT" -gt 0 ]; then
+        echo "      Found: $GATEWAY_COUNT Gateway resource(s)"
+        if [ "$DRY_RUN" == "dry-run" ]; then
+            echo "      [DRY RUN] Would delete:"
+            kubectl get gateways.gateway.networking.k8s.io -A 2>/dev/null | sed 's/^/         /'
+        else
+            kubectl delete gateways.gateway.networking.k8s.io --all -A --timeout=5m || echo "      ⚠️  Some Gateway deletions failed"
+            echo "      ⏳ Waiting 30 seconds for Envoy Gateway cleanup..."
+            sleep 30
+            echo "      ✅ Gateway deletion complete"
+        fi
+    else
+        echo "      Found: 0 Gateway resources"
+    fi
+
+    # Step 2: Delete legacy Ingress resources if an older deployment left any.
+    echo ""
+    echo "   🗑️  Step 2: Deleting legacy Ingress resources..."
     INGRESS_COUNT=$(kubectl get ingress -A --no-headers 2>/dev/null | wc -l | tr -d ' ')
     if [ "$INGRESS_COUNT" -gt 0 ]; then
         echo "      Found: $INGRESS_COUNT Ingress resource(s)"
@@ -117,7 +136,7 @@ if [ "$CLEANUP_METHOD" == "kubernetes" ]; then
             kubectl get ingress -A 2>/dev/null | sed 's/^/         /'
         else
             kubectl delete ingress --all -A --timeout=5m || echo "      ⚠️  Some Ingress deletions failed"
-            echo "      ⏳ Waiting 90 seconds for ALB controller to delete ALBs..."
+            echo "      ⏳ Waiting 90 seconds for AWS Load Balancer Controller cleanup..."
             sleep 90
             echo "      ✅ Ingress deletion complete"
         fi
@@ -125,16 +144,16 @@ if [ "$CLEANUP_METHOD" == "kubernetes" ]; then
         echo "      Found: 0 Ingress resources"
     fi
 
-    # Step 2: Delete LoadBalancer Services
+    # Step 3: Delete LoadBalancer Services
     echo ""
-    echo "   🗑️  Step 2: Deleting LoadBalancer Services..."
+    echo "   🗑️  Step 3: Deleting LoadBalancer Services..."
     LB_SERVICES=$(kubectl get svc -A -o json 2>/dev/null | jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace)/\(.metadata.name)"' || echo "")
     if [ -n "$LB_SERVICES" ]; then
         LB_COUNT=$(echo "$LB_SERVICES" | wc -l | tr -d ' ')
         echo "      Found: $LB_COUNT LoadBalancer Service(s)"
         if [ "$DRY_RUN" == "dry-run" ]; then
             echo "      [DRY RUN] Would delete:"
-            echo "$LB_SERVICES" | sed 's/^/         /'
+            printf '         %s\n' "${LB_SERVICES//$'\n'/$'\n         '}"
         else
             echo "$LB_SERVICES" | while IFS='/' read -r namespace name; do
                 if [ -n "$namespace" ] && [ -n "$name" ]; then
@@ -150,9 +169,9 @@ if [ "$CLEANUP_METHOD" == "kubernetes" ]; then
         echo "      Found: 0 LoadBalancer Services"
     fi
 
-    # Step 3: Delete PersistentVolumeClaims
+    # Step 4: Delete PersistentVolumeClaims
     echo ""
-    echo "   🗑️  Step 3: Deleting PersistentVolumeClaims..."
+    echo "   🗑️  Step 4: Deleting PersistentVolumeClaims..."
     PVC_COUNT=$(kubectl get pvc -A --no-headers 2>/dev/null | wc -l | tr -d ' ')
     if [ "$PVC_COUNT" -gt 0 ]; then
         echo "      Found: $PVC_COUNT PVC(s)"
@@ -186,37 +205,38 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "   This handles orphaned resources even if cluster is gone"
 echo ""
 
-# Step 1: Delete ALBs created by AWS Load Balancer Controller
-echo "   🗑️  Step 1: Cleaning up Application Load Balancers..."
-ALB_ARNS=$(aws elbv2 describe-load-balancers --region "$AWS_REGION" --query 'LoadBalancers[*].LoadBalancerArn' --output text 2>/dev/null || echo "")
+# Step 1: Delete ALBs or NLBs created by AWS Load Balancer Controller
+echo "   🗑️  Step 1: Cleaning up ELBv2 load balancers..."
+AWS_LB_ARNS=$(aws elbv2 describe-load-balancers --region "$AWS_REGION" --query 'LoadBalancers[*].LoadBalancerArn' --output text 2>/dev/null || echo "")
 
-ALB_COUNT=0
-if [ -n "$ALB_ARNS" ]; then
-    for alb_arn in $ALB_ARNS; do
-        # Check for ALB controller tags
-        CLUSTER_TAG=$(aws elbv2 describe-tags --resource-arns "$alb_arn" --region "$AWS_REGION" --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster' && Value=='$CLUSTER_NAME'].Value" --output text 2>/dev/null || echo "")
+AWS_LB_COUNT=0
+if [ -n "$AWS_LB_ARNS" ]; then
+    for aws_lb_arn in $AWS_LB_ARNS; do
+        # Check for the AWS Load Balancer Controller cluster tag.
+        CLUSTER_TAG=$(aws elbv2 describe-tags --resource-arns "$aws_lb_arn" --region "$AWS_REGION" --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster' && Value=='$CLUSTER_NAME'].Value" --output text 2>/dev/null || echo "")
 
         if [ -n "$CLUSTER_TAG" ]; then
-            ALB_COUNT=$((ALB_COUNT + 1))
-            ALB_NAME=$(aws elbv2 describe-load-balancers --load-balancer-arns "$alb_arn" --region "$AWS_REGION" --query 'LoadBalancers[0].LoadBalancerName' --output text 2>/dev/null)
-            echo "      Found: $ALB_NAME"
+            AWS_LB_COUNT=$((AWS_LB_COUNT + 1))
+            AWS_LB_NAME=$(aws elbv2 describe-load-balancers --load-balancer-arns "$aws_lb_arn" --region "$AWS_REGION" --query 'LoadBalancers[0].LoadBalancerName' --output text 2>/dev/null)
+            AWS_LB_TYPE=$(aws elbv2 describe-load-balancers --load-balancer-arns "$aws_lb_arn" --region "$AWS_REGION" --query 'LoadBalancers[0].Type' --output text 2>/dev/null)
+            echo "      Found: $AWS_LB_NAME [$AWS_LB_TYPE]"
 
             if [ "$DRY_RUN" == "dry-run" ]; then
-                echo "         [DRY RUN] Would delete ALB: $alb_arn"
+                echo "         [DRY RUN] Would delete load balancer: $aws_lb_arn"
             else
-                echo "         Deleting ALB: $alb_arn"
-                aws elbv2 delete-load-balancer --load-balancer-arn "$alb_arn" --region "$AWS_REGION" || echo "         ⚠️  Failed to delete ALB"
+                echo "         Deleting load balancer: $aws_lb_arn"
+                aws elbv2 delete-load-balancer --load-balancer-arn "$aws_lb_arn" --region "$AWS_REGION" || echo "         ⚠️  Failed to delete load balancer"
             fi
         fi
     done
 fi
 
-if [ "$ALB_COUNT" -eq 0 ]; then
-    echo "      ✅ No orphaned ALBs found"
+if [ "$AWS_LB_COUNT" -eq 0 ]; then
+    echo "      ✅ No orphaned load balancers found"
 else
-    echo "      Found: $ALB_COUNT ALB(s)"
+    echo "      Found: $AWS_LB_COUNT load balancer(s)"
     if [ "$DRY_RUN" != "dry-run" ]; then
-        echo "      ⏳ Waiting 60 seconds for ALB deletion to propagate..."
+        echo "      ⏳ Waiting 60 seconds for load balancer deletion to propagate..."
         sleep 60
     fi
 fi
@@ -349,14 +369,14 @@ else
 
     REMAINING_ISSUES=0
 
-    # Check for remaining ALBs
-    REMAINING_ALBS=0
-    ALB_ARNS=$(aws elbv2 describe-load-balancers --region "$AWS_REGION" --query 'LoadBalancers[*].LoadBalancerArn' --output text 2>/dev/null || echo "")
-    if [ -n "$ALB_ARNS" ]; then
-        for alb_arn in $ALB_ARNS; do
-            CLUSTER_TAG=$(aws elbv2 describe-tags --resource-arns "$alb_arn" --region "$AWS_REGION" --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster' && Value=='$CLUSTER_NAME'].Value" --output text 2>/dev/null || echo "")
+    # Check for remaining ELBv2 load balancers
+    REMAINING_LBS=0
+    AWS_LB_ARNS=$(aws elbv2 describe-load-balancers --region "$AWS_REGION" --query 'LoadBalancers[*].LoadBalancerArn' --output text 2>/dev/null || echo "")
+    if [ -n "$AWS_LB_ARNS" ]; then
+        for aws_lb_arn in $AWS_LB_ARNS; do
+            CLUSTER_TAG=$(aws elbv2 describe-tags --resource-arns "$aws_lb_arn" --region "$AWS_REGION" --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster' && Value=='$CLUSTER_NAME'].Value" --output text 2>/dev/null || echo "")
             if [ -n "$CLUSTER_TAG" ]; then
-                REMAINING_ALBS=$((REMAINING_ALBS + 1))
+                REMAINING_LBS=$((REMAINING_LBS + 1))
             fi
         done
     fi
@@ -383,21 +403,21 @@ else
         --output text 2>/dev/null | wc -w | tr -d ' ')
 
     echo "   Remaining resources:"
-    echo "      - ALBs: $REMAINING_ALBS"
+    echo "      - Load balancers: $REMAINING_LBS"
     echo "      - ENIs: $REMAINING_ENIS"
     echo "      - Security Groups: $REMAINING_SGS"
     echo "      - EBS Volumes: $REMAINING_VOLS"
     echo ""
 
-    # Only fail if orphaned ALBs or ENIs remain (these block VPC deletion)
+    # Only fail if orphaned load balancers or ENIs remain (these block VPC deletion)
     # Security Groups are managed by Terraform and will be deleted during destroy
-    if [ "$REMAINING_ALBS" -gt 0 ] || [ "$REMAINING_ENIS" -gt 0 ]; then
-        echo "   ⚠️  WARNING: Orphaned ALBs or ENIs detected!"
+    if [ "$REMAINING_LBS" -gt 0 ] || [ "$REMAINING_ENIS" -gt 0 ]; then
+        echo "   ⚠️  WARNING: Orphaned load balancers or ENIs detected!"
         echo "   This WILL cause Terraform destroy to fail"
         echo "   Check the logs above for details"
         REMAINING_ISSUES=1
     else
-        echo "   ✅ All critical resources cleaned (ALBs, ENIs)"
+        echo "   ✅ All critical resources cleaned (load balancers, ENIs)"
         if [ "$REMAINING_SGS" -gt 0 ]; then
             echo "   ℹ️  Security Groups remain (will be deleted by Terraform)"
         fi

@@ -5,11 +5,13 @@ others). `CLAUDE.md` imports this file.
 
 ## What this repository is
 
-A platform that runs one application, selected by the app contract in
-`k8s/fleet-app/`, on a local kind cluster or AWS staging. The platform names no
-application; `docs/APPLICATION-CONTRACT.md` explains the split. Infra Fleet
-Advisor reviews this repository against declared intent, and its intent gate
-runs on every pull request.
+A platform that runs the application selected by the contract in
+`k8s/fleet-app/` on a local kind cluster or AWS staging. The local profile also
+offers an isolated control plane that can launch other contracted applications
+on demand. The platform names no application; `docs/APPLICATION-CONTRACT.md`
+and `docs/APPLICATION-CONTROL-PLANE.md` explain the split. Infra Fleet Advisor
+reviews this repository against declared intent, and its intent gate runs on
+every pull request.
 
 ## Verification
 
