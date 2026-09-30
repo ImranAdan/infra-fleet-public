@@ -61,7 +61,7 @@ def test_only_aws_profile_contains_aws_runtime_resources():
 
 def test_local_control_plane_is_isolated_and_least_privileged():
     resources = load("local")
-    default_deny = one(resources, "NetworkPolicy", "default-deny-applications")
+    default_deny = one(resources, "NetworkPolicy", f"default-deny-{app_name()}")
     assert default_deny["metadata"]["namespace"] == "applications"
     assert default_deny["spec"] == {"podSelector": {}, "policyTypes": ["Ingress"]}
     policy = one(resources, "NetworkPolicy", "control-plane")
