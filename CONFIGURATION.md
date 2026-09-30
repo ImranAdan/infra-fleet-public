@@ -23,8 +23,8 @@ You need:
   supports Environments and deployment branches; and
 - optionally, a hostname managed in Cloudflare for public TLS ingress.
 
-The stack is not free. Read the illustrative estimate in
-[README.md](README.md#cost-optimization) before applying it.
+The stack is not free. Read the resource and teardown model in [Cost
+optimization](docs/COST-OPTIMIZATION-GUIDE.md) before applying it.
 
 ## 1. Create a private repository
 

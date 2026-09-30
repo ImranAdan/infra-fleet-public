@@ -5,8 +5,7 @@ share application resources and delivery controls; their provisioning,
 networking and registry restrictions are explicit.
 
 This is the documentation for **Infra Fleet**, a template for local Kubernetes
-or an AWS EKS platform and the sample application — the Harness — that runs on
-it.
+or an AWS EKS platform and the contract-defined applications that run on it.
 
 The application is a plug-in: see the [application contract](APPLICATION-CONTRACT.md)
 to swap Load Harness for another app.
@@ -17,10 +16,9 @@ recommendation delivery, see [Advisor Integration](ADVISOR-INTEGRATION.md).
 
 **Main README**: [../README.md](../README.md)
 
-> **On issue numbers.** Several documents cite issues and pull requests by
-> number (`Issue #30`, `PR #31`). Those refer to the original project's tracker,
-> not to this repository. They are kept as provenance for the reasoning; do not
-> expect them to resolve here.
+> Design records and the security audit retain dated findings for provenance.
+> Their status blocks identify superseded behavior; the operating guides and
+> current manifests are authoritative.
 
 ---
 
@@ -101,7 +99,7 @@ review current AWS pricing before deployment.
 | Document | Description |
 |----------|-------------|
 | [Advisor Integration](ADVISOR-INTEGRATION.md) | Run static reviews and understand the delivery contract |
-| [Template Readiness](TEMPLATE-READINESS.md) | PR review evidence and gates before deployment |
+| [Template Readiness](TEMPLATE-READINESS.md) | Current evidence, limits and the remaining AWS acceptance cycle |
 | [AWS Cost Controls](COST-OPTIMIZATION-GUIDE.md) | Billable resources, worker schedule, teardown and audit controls |
 | [Security Concerns](SECURITY-CONCERNS.md) | Security considerations |
 
@@ -111,7 +109,7 @@ review current AWS pricing before deployment.
 | [Deployment Profiles DDR](DEPLOYMENT-PROFILES-DDR.md) | Local/AWS strategy boundary, shared contracts and deployment gates |
 | [Template Deployment Boundaries DDR](PUBLIC-TEMPLATE-BOUNDARY-DDR.md) | Template adoption and deployment architecture |
 | [Terraform Cloud EKS DDR](TERRAFORM-CLOUD-EKS-DDR.md) | Cluster access design |
-| [Multi-Environment Design](MULTI-ENVIRONMENT-DESIGN.md) | Future multi-env architecture |
+| [Multi-Environment Design](MULTI-ENVIRONMENT-DESIGN.md) | Deferred production-promotion constraints and open decisions |
 
 ---
 
@@ -158,6 +156,5 @@ review current AWS pricing before deployment.
 
 ---
 
-Operational guides above preserve some history from the source project. Treat
-`CONFIGURATION.md` and the current workflows as authoritative when a historical
-status or example conflicts with the template.
+Treat `CONFIGURATION.md`, the profile guides and current workflows as
+authoritative when a dated design or audit record describes superseded behavior.
