@@ -37,6 +37,8 @@ order: `Sub-features`, `How to get to it (user POV)`,
 
 - [App contract and swap](app-contract.md): select an app, prove the platform
   runs it and names none.
+- [Application control plane](application-control-plane.md): launch and stop a
+  second app through bounded Flux objects and prove pod isolation.
 - [Progressive delivery](progressive-delivery.md): canary promotion and
   automatic rollback from Git.
 - [Observability](observability.md): gateway golden signals match ground truth;

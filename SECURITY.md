@@ -46,10 +46,12 @@ Out of scope:
 
 Two properties are worth preserving if you fork this:
 
-**Do not add `pull_request_target`.** It runs with repository secrets in the
-context of the base branch. Combined with checking out pull request code it is
-the standard route to credential theft in a public repository. This template
-does not use it anywhere.
+**Keep privileged triggers confined to trusted code.** The merge judge uses
+`pull_request_target` because it must record a decision on a pull request. It
+runs only for same-repository branches, checks out the base commit with
+credentials disabled, and treats pull-request content as data; it never checks
+out or executes the proposed revision. Do not weaken those boundaries or add
+another privileged trigger that runs pull-request code.
 
 **Do not use a wildcard in the OIDC trust subject.** A condition of
 `repo:OWNER/REPO:*` matches every ref context, including pull requests. Pin it

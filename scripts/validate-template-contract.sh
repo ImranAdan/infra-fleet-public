@@ -64,9 +64,12 @@ trap 'rm -rf "$rendered_root"' EXIT
 ./scripts/render-k8s-for-validation.sh "$rendered_root/k8s"
 ./tests/profiles/facade.sh
 ./tests/profiles/aws-onboarding.sh
+./tests/profiles/aws-cleanup.sh
 ./tests/profiles/local-git-snapshot.sh
 ./tests/profiles/local-gateway-readiness.sh
 ./tests/profiles/local-app-readiness.sh
+./tests/profiles/local-canary-readiness.sh
+./tests/profiles/local-control-plane.sh
 ./tests/profiles/cluster-ownership.sh
 ./tests/profiles/app-contract.sh
 

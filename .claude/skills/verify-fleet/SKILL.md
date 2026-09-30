@@ -22,7 +22,9 @@ method in [pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT).
 ```
 
 `up` and `sync` deploy **committed** revisions only; commit first. Ready means
-`up` or `sync` exits 0 and the doctor passes. Use only the fleet's own
+`up` or `sync` exits 0, every running app has promoted that revision, and the
+doctor passes. App canaries are promoted serially on the local node; a rollback
+keeps the previous primary live and makes the command fail. Use only the fleet's own
 kubeconfig, `$(git rev-parse --git-common-dir)/fleet/local/kubeconfig`, never
 the default context: it may point at a deleted cluster. One cluster exists per
 checkout; there is no second instance to run side by side, so never drive it
@@ -59,7 +61,7 @@ them is replaced:
   gateway service is `kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=fleet`.
 - **The app directly:** `kubectl exec -n <ns> <pod> -- …` from inside the pod,
   to separate app latency from network latency.
-- **Humans in a browser:** `./fleet access --profile local --service app|grafana|prometheus`
+- **Humans in a browser:** `./fleet access --profile local --service app|dashboard|grafana|prometheus`
   and `./fleet credentials --profile local`.
 
 Scripted drives shipped with this skill:
@@ -69,7 +71,8 @@ Scripted drives shipped with this skill:
   through the gateway and requires Prometheus's raw Envoy counter to rise by
   exactly N. Proves the golden signals count what really happened.
 - `./fleet test --profile local`: the full acceptance cycle (drift, admission,
-  monitoring, isolation, promotion, rollback) for whichever app is selected.
+  monitoring, isolation, on-demand app lifecycle, promotion, rollback) for
+  whichever app is selected.
 
 ## Evidence
 

@@ -36,9 +36,10 @@ or cluster verification.
 ## Destroy
 
 Dispatch **Destroy Staging Stack (Manual)** from `main` and type
-`destroy staging` exactly. Cleanup first asks the Kubernetes controllers to
-remove Ingresses, load balancers, and volumes, then checks cluster-tagged AWS
-resources before Terraform destroy. The cleanup and Terraform jobs both use
+`destroy staging` exactly. Cleanup first suspends every Flux Kustomization,
+removes Gateway or legacy Ingress entry points, load balancers and volumes,
+then checks cluster-tagged AWS resources before Terraform destroy. The cleanup
+and Terraform jobs both use
 the protected `staging` environment.
 
 The `force` option may proceed when cleanup verification fails. It does not

@@ -40,6 +40,7 @@ In separate terminals, forward only the services you need:
 
 ```bash
 ./fleet access --profile local --service app         # http://localhost:8080/ui/
+./fleet access --profile local --service dashboard   # http://localhost:9000
 ./fleet access --profile local --service prometheus  # http://localhost:9090
 ./fleet access --profile local --service grafana     # http://localhost:3000
 ./fleet credentials --profile local                 # explicitly display login credentials
@@ -65,11 +66,15 @@ After committing a change:
 configuration. Flux then reconciles it. It never pushes to GitHub. Runtime state
 under `.git/fleet/local` is shared across linked worktrees; teardown retains
 the pinned CLI cache, registry data and local credentials. Compose volumes are
-separate.
+separate. When more than one application is running, sync promotes them in
+sequence so their Flagger load tests do not compete for the local node. It
+returns only after every target revision reaches its primary, and returns a
+failure if any canary rolls back while that app's prior primary remains live.
 
 `test` temporarily commits promotion and fault-injection snapshots into the
 local-only Git source, verifies outcomes, and restores the deployed source. It
-does not commit to the working branch or change the AWS image version.
+also launches and removes a second contracted app through the local control
+plane. It does not commit to the working branch or change the AWS image version.
 
 ## AWS staging
 
@@ -106,10 +111,11 @@ readiness.
 
 The local profile has been exercised end to end with a real kind cluster. Its
 acceptance suite verifies Flux reconciliation and drift repair, Kyverno
-rejections, Calico isolation, Prometheus visibility of the app, healthy canary
-promotion and forced-failure rollback, for whichever app the
+rejections, Calico isolation, Prometheus visibility of the app, on-demand app
+launch and removal, healthy canary promotion and forced-failure rollback, for whichever app the
 [application contract](APPLICATION-CONTRACT.md) selects. The weekly workflow
-discovers all shipped contracts; the current set is Load Harness and podinfo.
+discovers all shipped contracts; the current set is Load Harness, podinfo and
+Fleet Runner.
 Before checking monitoring and isolation, the suite waits for Flagger's
 generated primary endpoint to become healthy, so controller startup time is
 not mistaken for an application failure. It starts only from a settled canary,
@@ -141,9 +147,9 @@ that pull request's earlier run. Pull requests that change runtime paths
 (`k8s/`, `scripts/`, `platform/`, `applications/`, `tests/profiles/`, `fleet`)
 run it, and the merge gate waits for it, so an unsupervised merge is judged on
 live behaviour. Documentation-only changes skip it, and a weekly run applies
-the same proof to current `main`. Every run covers both applications: Load Harness, and
-podinfo selected with `scripts/select-app.sh` on the runner, so the proof is of
-the platform rather than of one app.
+the same proof to current `main`. Every run discovers and covers all application
+contracts, selecting each one with `scripts/select-app.sh` on its own runner,
+so the proof is of the platform rather than of one app.
 
 The AWS profile maps to the existing `staging` GitHub Environment because that
 name is part of its OIDC trust boundary. AWS remains limited to static PR

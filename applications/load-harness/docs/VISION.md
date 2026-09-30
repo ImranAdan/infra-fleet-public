@@ -20,7 +20,7 @@ Enable measurement of platform performance characteristics, scaling behavior, re
 ## Key Use Cases
 
 - **Platform Learning**: Understand Kubernetes resource management, auto-scaling, and monitoring
-- **Infrastructure Validation**: Test ALB distribution, EKS stability, and spot instance handling under load
+- **Infrastructure Validation**: Test Gateway/NLB routing, EKS stability, and spot instance handling under load
 - **Cost Optimization**: Measure cost per request and evaluate different scaling strategies
 - **Production Readiness**: Demonstrate monitoring, alerting, and incident response capabilities
 
@@ -41,6 +41,6 @@ Enable measurement of platform performance characteristics, scaling behavior, re
 - OpenAPI documentation at `/apidocs`
 - A dashboard for triggering load and watching the cluster respond
 
-See [APPLICATION-ROADMAP.md](./APPLICATION-ROADMAP.md) for the endpoint
+See the [application README](../README.md) for the endpoint
 reference, metrics, deployment notes, and how to replace the Harness with your
 own application.

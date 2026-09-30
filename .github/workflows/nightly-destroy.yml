@@ -121,19 +121,25 @@ jobs:
 
       - name: Check if cluster exists
         id: check
+        env:
+          CLUSTER_NAME_VALUE: ${{ env.CLUSTER_NAME }}
+          AWS_REGION_VALUE: ${{ env.AWS_REGION }}
         run: |
-          if aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }} &>/dev/null; then
-            echo "cluster_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Cluster found: ${{ env.CLUSTER_NAME }}"
+          if aws eks describe-cluster --name "$CLUSTER_NAME_VALUE" --region "$AWS_REGION_VALUE" &>/dev/null; then
+            echo "cluster_exists=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Cluster found: $CLUSTER_NAME_VALUE"
           else
-            echo "cluster_exists=false" >> $GITHUB_OUTPUT
+            echo "cluster_exists=false" >> "$GITHUB_OUTPUT"
             echo "ℹ️  Cluster not found - may already be destroyed"
           fi
 
       - name: Run verification script
+        env:
+          CLUSTER_NAME_VALUE: ${{ env.CLUSTER_NAME }}
+          AWS_REGION_VALUE: ${{ env.AWS_REGION }}
         run: |
           chmod +x scripts/verify-cleanup-resources.sh
-          ./scripts/verify-cleanup-resources.sh ${{ env.CLUSTER_NAME }} ${{ env.AWS_REGION }} || true
+          ./scripts/verify-cleanup-resources.sh "$CLUSTER_NAME_VALUE" "$AWS_REGION_VALUE" || true
 
   # ===========================================================================
   # Job 2: Kubernetes Resource Cleanup
@@ -195,43 +201,46 @@ jobs:
 
       - name: Verify cleanup results
         id: verify
+        env:
+          CLUSTER_NAME_VALUE: ${{ env.CLUSTER_NAME }}
+          AWS_REGION_VALUE: ${{ env.AWS_REGION }}
         run: |
           echo "Checking for orphaned resources..."
 
-          # Check for orphaned ALBs
-          ALB_COUNT=0
-          ALB_ARNS=$(aws elbv2 describe-load-balancers --region ${{ env.AWS_REGION }} \
+          # Check for orphaned ELBv2 load balancers (ALB or NLB)
+          LB_COUNT=0
+          LB_ARNS=$(aws elbv2 describe-load-balancers --region "$AWS_REGION_VALUE" \
             --query 'LoadBalancers[*].LoadBalancerArn' --output text 2>/dev/null || echo "")
 
-          if [ -n "$ALB_ARNS" ]; then
-            for alb_arn in $ALB_ARNS; do
-              CLUSTER_TAG=$(aws elbv2 describe-tags --resource-arns "$alb_arn" \
-                --region ${{ env.AWS_REGION }} \
-                --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster' && Value=='${{ env.CLUSTER_NAME }}'].Value" \
+          if [ -n "$LB_ARNS" ]; then
+            for lb_arn in $LB_ARNS; do
+              CLUSTER_TAG=$(aws elbv2 describe-tags --resource-arns "$lb_arn" \
+                --region "$AWS_REGION_VALUE" \
+                --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster' && Value=='$CLUSTER_NAME_VALUE'].Value" \
                 --output text 2>/dev/null || echo "")
               if [ -n "$CLUSTER_TAG" ]; then
-                ALB_COUNT=$((ALB_COUNT + 1))
+                LB_COUNT=$((LB_COUNT + 1))
               fi
             done
           fi
 
           # Check for orphaned ENIs
           ENI_COUNT=$(aws ec2 describe-network-interfaces \
-            --region ${{ env.AWS_REGION }} \
-            --filters "Name=tag:kubernetes.io/cluster/${{ env.CLUSTER_NAME }},Values=owned" \
+            --region "$AWS_REGION_VALUE" \
+            --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME_VALUE,Values=owned" \
             --query 'NetworkInterfaces[*].NetworkInterfaceId' \
             --output text 2>/dev/null | wc -w | tr -d ' ')
 
           echo "Remaining orphaned resources:"
-          echo "  - ALBs: $ALB_COUNT"
+          echo "  - Load balancers: $LB_COUNT"
           echo "  - ENIs: $ENI_COUNT"
 
-          if [ "$ALB_COUNT" -gt 0 ] || [ "$ENI_COUNT" -gt 0 ]; then
-            echo "success=false" >> $GITHUB_OUTPUT
+          if [ "$LB_COUNT" -gt 0 ] || [ "$ENI_COUNT" -gt 0 ]; then
+            echo "success=false" >> "$GITHUB_OUTPUT"
             echo "❌ Orphaned resources detected - Terraform destroy may fail!"
             exit 1
           else
-            echo "success=true" >> $GITHUB_OUTPUT
+            echo "success=true" >> "$GITHUB_OUTPUT"
             echo "✅ All critical resources cleaned - safe to proceed with Terraform destroy"
           fi
 

@@ -228,20 +228,30 @@ local_publish_snapshot() {
   [ "$published_sha" = "$FLEET_SHA" ] || fail 'Local Git source did not publish the selected revision.'
 }
 
-# One value of the app contract (k8s/fleet-app/fleet-app.yaml) at the revision
-# being deployed, so a build never mixes one commit's app with another's.
-local_app() {
-  local value
-  value=$(git show "$FLEET_SHA:k8s/fleet-app/fleet-app.yaml" |
-    awk -v key="$1" '$1 == key":" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }')
-  [ -n "$value" ] || [ "${2:-}" = optional ] || fail "k8s/fleet-app/fleet-app.yaml does not set $1." || return 1
-  printf '%s' "$value"
+# Every app contract at the deployed revision.
+local_contracts() {
+  git ls-tree -r --name-only "$FLEET_SHA" k8s/applications | grep '/fleet-app\.yaml$'
 }
 
+# One value of a contract at the deployed revision.
+local_contract_value() {
+  git show "$FLEET_SHA:$1" |
+    awk -v key="$2" '$1 == key":" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }'
+}
+
+# Build every app, not only the selected one: the control plane launches any
+# of them on demand, so their images must already be in the local registry.
 local_build_image() {
+  local contract
+  while IFS= read -r contract; do
+    local_build_app "$contract" || return 1
+  done < <(local_contracts)
+}
+
+local_build_app() {
   local build_directory app_name app_source
-  app_name=$(local_app APP_NAME) || return 1
-  app_source=$(local_app APP_SOURCE) || return 1
+  app_name=$(local_contract_value "$1" APP_NAME)
+  app_source=$(local_contract_value "$1" APP_SOURCE)
   [[ "$app_name" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || fail "Invalid APP_NAME: $app_name" || return 1
   [[ "$app_source" =~ ^applications/[a-z0-9][-a-z0-9]*$ ]] || fail "Invalid APP_SOURCE: $app_source" || return 1
   build_directory=$(mktemp -d "$FLEET_STATE/build.XXXXXX")
@@ -269,15 +279,135 @@ local_configuration() {
     --from-literal=RUNTIME_CONFIG_REVISION="$FLEET_SHA" \
     --dry-run=client -o yaml | kctl apply -f -
   kctl label configmap fleet-config -n flux-system reconcile.fluxcd.io/watch=Enabled --overwrite >/dev/null
+  local_catalog
+}
+
+# Every app contract at the deployed revision, for the application dashboard.
+local_catalog() {
+  local contract app args=()
+  while IFS= read -r contract; do
+    app=${contract#k8s/applications/}
+    app=${app%/fleet-app.yaml}
+    args+=("--from-literal=$app=$(git show "$FLEET_SHA:$contract")")
+  done < <(local_contracts)
+  kctl create configmap fleet-catalog -n flux-system "${args[@]}" \
+    --dry-run=client -o yaml | kctl apply -f - >/dev/null
+}
+
+# A source or contract update must not let on-demand Kustomizations reconcile
+# the new Git revision with the old image tag. Hold them beside the selected
+# application layer, then resume them after source and fleet-config agree.
+local_suspend_launched_apps() {
+  local name
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    fctl suspend kustomization "$name" >/dev/null
+  done < <(kctl get kustomizations -n flux-system \
+    -l infra-fleet.io/launched-app -o go-template='{{range .items}}{{printf "%s\n" .metadata.name}}{{end}}')
+}
+
+# A Flux Kustomization is Ready once it has applied a Deployment; Flagger may
+# still be analysing that Deployment. A successful sync means the requested
+# revision reached the generated primary, not merely that Flux submitted it.
+# Checking the primary revision prevents a stale success from being accepted;
+# comparing Flagger's applied-spec hash with its pre-resume value does the same
+# for a stale failure before Flagger observes the new target.
+local_wait_canary() {
+  local app=$1 timeout=${2:-900} baseline_spec=${3:-}
+  local deadline state phase applied_spec target_revision primary_revision
+  deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    target_revision=$(kctl get deployment "$app" -n applications \
+      -o 'jsonpath={.spec.template.metadata.annotations.infra-fleet\.io/runtime-config-revision}' \
+      2>/dev/null || true)
+    primary_revision=$(kctl get deployment "$app-primary" -n applications \
+      -o 'jsonpath={.spec.template.metadata.annotations.infra-fleet\.io/runtime-config-revision}' \
+      2>/dev/null || true)
+    # One read, so the phase and the spec it belongs to come from one snapshot.
+    state=$(kctl get canary "$app" -n applications \
+      -o 'jsonpath={.status.phase}|{.status.lastAppliedSpec}' 2>/dev/null || true)
+    IFS='|' read -r phase applied_spec <<< "$state"
+
+    if [ "$target_revision" = "$FLEET_SHA" ]; then
+      if [ "$phase" = Failed ] && [ -n "$applied_spec" ] && \
+        [ "$applied_spec" != "$baseline_spec" ]; then
+        kctl describe canary "$app" -n applications >&2 || true
+        fail "$app rolled back revision $FLEET_SHA." || return 1
+      fi
+      case "$phase" in
+        Initialized|Succeeded)
+          if [ "$primary_revision" = "$FLEET_SHA" ]; then
+            echo "$app promoted revision $FLEET_SHA."
+            return 0
+          fi
+          ;;
+      esac
+    fi
+    sleep 5
+  done
+  kctl describe canary "$app" -n applications >&2 || true
+  fail "$app did not promote revision $FLEET_SHA within ${timeout}s." || return 1
+}
+
+local_canary_applied_spec() {
+  kctl get canary "$1" -n applications -o jsonpath='{.status.lastAppliedSpec}' \
+    2>/dev/null || true
+}
+
+# Resume one complete app at a time. Parallel Flagger load tests compete for
+# the same local node and can make a healthy revision breach its latency gate.
+# Continue after a rollback so no app is accidentally left suspended, while
+# preserving a failing exit status for the operator and CI.
+local_resume_launched_apps() {
+  local app layer baseline_spec result=0 app_ready
+  while IFS= read -r app; do
+    [ -n "$app" ] || continue
+    app_ready=true
+    baseline_spec=$(local_canary_applied_spec "$app")
+    for layer in "app-$app" "app-$app-platform"; do
+      if kctl get kustomization "$layer" -n flux-system >/dev/null 2>&1; then
+        fctl resume kustomization "$layer" --timeout=15m || {
+          result=1
+          app_ready=false
+        }
+      fi
+    done
+    if [ "$app_ready" = true ] && kctl get canary "$app" -n applications >/dev/null 2>&1; then
+      local_wait_canary "$app" 900 "$baseline_spec" || result=1
+    fi
+  done < <(kctl get kustomizations -n flux-system \
+    -l infra-fleet.io/launched-app \
+    -o go-template='{{range .items}}{{index .metadata.labels "infra-fleet.io/launched-app"}}{{"\n"}}{{end}}' |
+    LC_ALL=C sort -u)
+  return "$result"
+}
+
+# If an on-demand app becomes the selected app, transfer ownership back to the
+# fleet root before it applies that app. Otherwise two Flux inventories manage
+# the same resources and the dashboard hides the only Stop action.
+local_handoff_selected_app() {
+  local selected
+  selected=$(local_contract_value k8s/fleet-app/fleet-app.yaml APP_NAME)
+  if kctl get kustomization "app-$selected" -n flux-system >/dev/null 2>&1; then
+    echo "Transferring $selected from an on-demand launch to the selected application layer."
+    kctl delete kustomization "app-$selected-platform" -n flux-system \
+      --ignore-not-found --wait=true --timeout=3m >/dev/null
+    kctl delete kustomization "app-$selected" -n flux-system \
+      --ignore-not-found --wait=true --timeout=3m >/dev/null
+  fi
 }
 
 local_secrets() {
-  local secret filename namespace key credential entry app_secrets
+  local secret filename namespace key credential entry app_secrets contract
   for namespace in flux-system applications observability; do
     kctl create namespace "$namespace" --dry-run=client -o yaml | \
       kctl apply --server-side --field-manager=fleet-local-facade -f - >/dev/null
   done
-  app_secrets=$(local_app APP_SECRETS optional) || return 1
+  # Every app's secrets, not only the selected app's: the control plane can
+  # launch any of them.
+  app_secrets=$(while IFS= read -r contract; do
+    local_contract_value "$contract" APP_SECRETS
+  done < <(local_contracts) | tr '\n' ' ')
   # Each app secret holds one random key, cached so repeated starts keep it.
   for entry in $app_secrets grafana-admin-credentials:admin-password; do
     secret=${entry%%:*} key=${entry#*:}
@@ -390,6 +520,16 @@ endpoints:
 EOF
 }
 
+# kubectl port-forward pins one pod and exits when that pod is replaced, as
+# every sync does; reconnect until the operator stops it with Ctrl-C.
+local_forward() {
+  while :; do
+    kctl port-forward "$@" --address=127.0.0.1 || true
+    echo 'Port-forward lost (the pod was replaced); reconnecting...' >&2
+    sleep 2
+  done
+}
+
 local_gateway_service() {
   kctl get service -n envoy-gateway-system \
     -l gateway.envoyproxy.io/owning-gateway-name=fleet \
@@ -416,6 +556,7 @@ local_wait_gateway() {
 }
 
 local_up() {
+  local app_result=0 selected selected_baseline
   local_revision "$1"
   if local_cluster_exists; then
     local_existing_cluster
@@ -426,6 +567,11 @@ local_up() {
   fi
   local_calico
   local_secrets
+  if kctl get kustomization applications -n flux-system >/dev/null 2>&1; then
+    fctl suspend kustomization applications >/dev/null
+    local_suspend_launched_apps
+    local_handoff_selected_app
+  fi
   local_publish_snapshot
   local_start_services
   local_build_image
@@ -441,26 +587,47 @@ local_up() {
   local_wait_gateway
   local_configuration "$(local_gateway_service).envoy-gateway-system"
   # A sync interrupted between suspend and resume must not leave the app held.
+  selected=$(local_contract_value k8s/fleet-app/fleet-app.yaml APP_NAME)
+  selected_baseline=$(local_canary_applied_spec "$selected")
   kctl patch kustomization applications -n flux-system --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
-  fctl reconcile kustomization applications --with-source --timeout=15m
+  if fctl reconcile kustomization applications --with-source --timeout=15m; then
+    local_wait_canary "$selected" 900 "$selected_baseline" || app_result=1
+  else
+    app_result=1
+  fi
+  local_resume_launched_apps || app_result=1
   kctl wait --for=condition=Ready kustomization/policies -n flux-system --timeout=5m
-  echo 'Local Kubernetes is ready. Use ./fleet access --profile local and ./fleet credentials --profile local.'
+  kctl wait --for=condition=Ready kustomization/control-plane -n flux-system --timeout=10m
+  [ "$app_result" -eq 0 ] || return 1
+  echo 'Local Kubernetes is ready. Open the dashboard with ./fleet access --profile local --service dashboard.'
 }
 
 local_sync() {
+  local app_result=0 selected selected_baseline
   local_existing_cluster
   local_revision "$1"
   local_build_image
-  local_publish_snapshot
   # The revision, its app contract and fleet-config (which holds the image
   # tag) change together. Hold the app layer until all three are consistent:
   # applying any one early pairs manifests with an image that does not exist.
   fctl suspend kustomization applications >/dev/null
+  local_suspend_launched_apps
+  local_handoff_selected_app
+  local_publish_snapshot
   if ! local_sync_platform; then
     fctl resume kustomization applications --timeout=15m || true
+    local_resume_launched_apps || true
     return 1
   fi
-  fctl resume kustomization applications --timeout=15m
+  selected=$(local_contract_value k8s/fleet-app/fleet-app.yaml APP_NAME)
+  selected_baseline=$(local_canary_applied_spec "$selected")
+  if fctl resume kustomization applications --timeout=15m; then
+    local_wait_canary "$selected" 900 "$selected_baseline" || app_result=1
+  else
+    app_result=1
+  fi
+  local_resume_launched_apps || app_result=1
+  return "$app_result"
 }
 
 local_sync_platform() {
@@ -471,6 +638,7 @@ local_sync_platform() {
     fctl reconcile kustomization infrastructure --timeout=15m &&
     local_wait_gateway &&
     fctl reconcile kustomization routing --timeout=15m &&
+    fctl reconcile kustomization control-plane --timeout=10m &&
     fctl reconcile kustomization policies --timeout=15m
 }
 
@@ -519,10 +687,13 @@ profile_main() {
           app=$(kctl get configmap fleet-app -n flux-system -o jsonpath='{.data.APP_NAME}')
           port=$(kctl get configmap fleet-app -n flux-system -o jsonpath='{.data.APP_PORT}')
           echo "Open http://localhost:8080/ for $app." >&2
-          kctl port-forward -n applications "service/$app" "8080:$port" --address=127.0.0.1 ;;
-        prometheus) kctl port-forward -n observability service/kube-prometheus-stack-prometheus 9090:9090 --address=127.0.0.1 ;;
-        grafana) kctl port-forward -n observability service/kube-prometheus-stack-grafana 3000:80 --address=127.0.0.1 ;;
-        *) fail 'Choose --service app, prometheus or grafana.' ;;
+          local_forward -n applications "service/$app" "8080:$port" ;;
+        prometheus) local_forward -n observability service/kube-prometheus-stack-prometheus 9090:9090 ;;
+        grafana) local_forward -n observability service/kube-prometheus-stack-grafana 3000:80 ;;
+        dashboard)
+          echo 'Open http://localhost:9000/ for the application dashboard.' >&2
+          local_forward -n fleet-control service/control-plane 9000:80 ;;
+        *) fail 'Choose --service app, dashboard, prometheus or grafana.' ;;
       esac ;;
     credentials)
       local_existing_cluster

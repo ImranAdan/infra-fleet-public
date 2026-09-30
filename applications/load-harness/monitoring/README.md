@@ -261,7 +261,8 @@ All metrics flow through a collection pipeline:
 
 ## Accessing the Dashboards
 
-Since we don't expose Ingress (to avoid ALB costs and finalizer issues), access is via port-forwarding:
+Grafana is not exposed by an HTTPRoute. Access it through the supported
+port-forward command:
 
 ```bash
 ./fleet access --profile local --service grafana     # http://localhost:3000

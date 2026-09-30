@@ -82,9 +82,20 @@ if [ "$CLUSTER_HEALTHY" == true ]; then
         if [ -n "$LB_SERVICES" ]; then
             LB_COUNT=$(echo "$LB_SERVICES" | wc -l | tr -d ' ')
             echo "   Found: $LB_COUNT LoadBalancer Service(s)"
-            echo "$LB_SERVICES" | sed 's/^/      /'
+            printf '      %s\n' "${LB_SERVICES//$'\n'/$'\n      '}"
         else
             echo "   Found: 0 LoadBalancer Services"
+        fi
+
+        # Check the Gateway API parents that own generated Envoy Services.
+        echo ""
+        echo "   🔍 Gateway resources:"
+        GATEWAY_COUNT=$(kubectl get gateways.gateway.networking.k8s.io -A --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$GATEWAY_COUNT" -gt 0 ]; then
+            echo "   Found: $GATEWAY_COUNT Gateway resource(s)"
+            kubectl get gateways.gateway.networking.k8s.io -A 2>/dev/null | sed 's/^/      /'
+        else
+            echo "   Found: 0 Gateway resources"
         fi
 
         # Check PVCs
@@ -137,28 +148,30 @@ else
     echo "   Found: 0 VPCs tagged with cluster name"
 fi
 
-# Check for ALBs
+# Check for ELBv2 load balancers (ALB or NLB)
 echo ""
-echo "   🔍 Application Load Balancers:"
-ALB_ARNS=$(aws elbv2 describe-load-balancers \
+echo "   🔍 ELBv2 load balancers:"
+AWS_LB_ARNS=$(aws elbv2 describe-load-balancers \
     --region "$AWS_REGION" \
     --query 'LoadBalancers[*].LoadBalancerArn' \
     --output text 2>/dev/null || echo "")
 
-ALB_COUNT=0
-if [ -n "$ALB_ARNS" ]; then
-    for alb_arn in $ALB_ARNS; do
-        # Check if ALB has kubernetes cluster tag
-        TAGS=$(aws elbv2 describe-tags --resource-arns "$alb_arn" --region "$AWS_REGION" --query "TagDescriptions[0].Tags[?Key=='kubernetes.io/cluster/$CLUSTER_NAME'].Value" --output text 2>/dev/null || echo "")
+AWS_LB_COUNT=0
+if [ -n "$AWS_LB_ARNS" ]; then
+    for aws_lb_arn in $AWS_LB_ARNS; do
+        # AWS Load Balancer Controller applies this cluster ownership tag to
+        # both Application and Network Load Balancers.
+        TAGS=$(aws elbv2 describe-tags --resource-arns "$aws_lb_arn" --region "$AWS_REGION" --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster' && Value=='$CLUSTER_NAME'].Value" --output text 2>/dev/null || echo "")
         if [ -n "$TAGS" ]; then
-            ALB_COUNT=$((ALB_COUNT + 1))
-            ALB_NAME=$(aws elbv2 describe-load-balancers --load-balancer-arns "$alb_arn" --region "$AWS_REGION" --query 'LoadBalancers[0].LoadBalancerName' --output text 2>/dev/null)
-            ALB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arns "$alb_arn" --region "$AWS_REGION" --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null)
-            echo "      - $ALB_NAME ($ALB_DNS)"
+            AWS_LB_COUNT=$((AWS_LB_COUNT + 1))
+            AWS_LB_NAME=$(aws elbv2 describe-load-balancers --load-balancer-arns "$aws_lb_arn" --region "$AWS_REGION" --query 'LoadBalancers[0].LoadBalancerName' --output text 2>/dev/null)
+            AWS_LB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arns "$aws_lb_arn" --region "$AWS_REGION" --query 'LoadBalancers[0].DNSName' --output text 2>/dev/null)
+            AWS_LB_TYPE=$(aws elbv2 describe-load-balancers --load-balancer-arns "$aws_lb_arn" --region "$AWS_REGION" --query 'LoadBalancers[0].Type' --output text 2>/dev/null)
+            echo "      - $AWS_LB_NAME [$AWS_LB_TYPE] ($AWS_LB_DNS)"
         fi
     done
 fi
-echo "   Found: $ALB_COUNT ALB(s) managed by kubernetes"
+echo "   Found: $AWS_LB_COUNT load balancer(s) managed by Kubernetes"
 
 # Check for ENIs
 echo ""
@@ -239,7 +252,7 @@ if [ "$CLUSTER_HEALTHY" == true ]; then
     echo "   ✅ Use GitOps-native cleanup (Option D)"
     echo "      - Cluster is healthy"
     echo "      - Can use Flux/Kubernetes deletion"
-    echo "      - ALB controller will clean up AWS resources"
+    echo "      - AWS Load Balancer Controller will clean up AWS resources"
 else
     echo "   ⚠️  Use AWS tag-based cleanup (Option A)"
     echo "      - Cluster is not available/healthy"
@@ -248,13 +261,14 @@ fi
 
 echo ""
 echo "   Resources that will be cleaned:"
-echo "      - ALBs: $ALB_COUNT"
+echo "      - Load balancers: $AWS_LB_COUNT"
 echo "      - ENIs: $ENI_COUNT"
 echo "      - Security Groups: $SG_COUNT"
 echo "      - EBS Volumes: $VOL_COUNT"
 
 if [ "$CLUSTER_HEALTHY" == true ]; then
     echo "      - Ingress resources: $INGRESS_COUNT"
+    echo "      - Gateway resources: ${GATEWAY_COUNT:-0}"
     echo "      - LoadBalancer Services: ${LB_COUNT:-0}"
     echo "      - PVCs: $PVC_COUNT"
 fi

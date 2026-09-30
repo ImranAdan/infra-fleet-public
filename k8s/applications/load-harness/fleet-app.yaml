@@ -10,6 +10,9 @@ metadata:
 data:
   # Names the Deployment, its container, its pod `app` label and its image.
   APP_NAME: load-harness
+  # Shown on the application dashboard.
+  APP_TITLE: "Load Harness"
+  APP_DESCRIPTION: "Generates controlled CPU and memory load, with a dashboard, to exercise autoscaling and canaries."
   # Build context, containing the Dockerfile.
   APP_SOURCE: applications/load-harness
   APP_PORT: "5000"

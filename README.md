@@ -1,8 +1,9 @@
 # Infra Fleet
 
-Infra Fleet is a Kubernetes platform template for running one application through a
-consistent local or AWS staging lifecycle. It combines Flux GitOps, policy enforcement,
-progressive delivery, and observable workloads behind the `./fleet` command.
+Infra Fleet is a Kubernetes platform template for running contract-defined applications
+through a consistent local or AWS staging lifecycle. It combines Flux GitOps, policy
+enforcement, progressive delivery, and observable workloads behind the `./fleet`
+command.
 
 [Use this template](https://github.com/ImranAdan/infra-fleet-public/generate) ·
 [Documentation](docs/README.md) · [Configuration](CONFIGURATION.md) ·
@@ -44,14 +45,16 @@ cd infra-fleet-public
 
 ./fleet setup --profile local
 ./fleet up --profile local
-./fleet access --profile local --service app
+./fleet access --profile local --service dashboard
 ```
 
-Open <http://localhost:8080/ui/>. The `access`
-command keeps the port forward open until it is stopped. Use separate terminals for
-other services:
+Open <http://localhost:9000/> to see the selected app and launch either of the
+other included apps. Every running app opens at
+`http://<app-name>.localhost:9000/`. The `access` command keeps the port forward
+open until it is stopped. Use separate terminals for direct access and other services:
 
 ```bash
+./fleet access --profile local --service app         # selected app at http://localhost:8080
 ./fleet access --profile local --service prometheus  # http://localhost:9090
 ./fleet access --profile local --service grafana     # http://localhost:3000
 ./fleet credentials --profile local                  # application and Grafana credentials
@@ -66,9 +69,13 @@ the change and reconcile that revision:
 ./fleet test --profile local
 ```
 
-`test` exercises Flux drift repair, Kyverno admission, network isolation, monitoring,
-healthy canary promotion, and forced-failure rollback. Remove the local cluster when
-finished:
+`sync` promotes running applications one at a time and returns only after each
+requested revision reaches its primary. A failed canary keeps the previous
+primary serving and makes the command fail.
+
+`test` exercises Flux drift repair, Kyverno admission, network isolation, an
+on-demand app launch and removal, monitoring, healthy canary promotion, and
+forced-failure rollback. Remove the local cluster when finished:
 
 ```bash
 ./fleet down --profile local
@@ -136,6 +143,8 @@ flowchart TB
     FluxAWS --> AWS
 
     Contract["Application contract<br/>name · image · port · paths"] --> Repo
+    Contract --> Control["Local application dashboard<br/>catalog · launch · stop"]
+    Control -->|bounded Flux objects| FluxLocal
     Local --> Platform["Shared platform controls<br/>Kyverno · Flagger · HPA · network policy"]
     AWS --> Platform
     Platform --> App[Selected application]
@@ -183,6 +192,8 @@ Each application supplies its source, contract, Deployment, Service, and any
 application-specific metrics or dashboards. The platform supplies routing, canary
 analysis, autoscaling, network policy, admission policy, and common workload signals.
 See [Application contract](docs/APPLICATION-CONTRACT.md) before adding an application.
+The local [application control plane](docs/APPLICATION-CONTROL-PLANE.md) can run
+other contracted apps beside the selected one without changing Git.
 
 ## Delivery and verification
 
@@ -191,7 +202,7 @@ Verification is divided by cost and evidence level.
 | Layer | Trigger | Evidence |
 |---|---|---|
 | Pull request CI | every pull request | application tests, container build and scan, workflow validation, Terraform static checks, profile rendering, schema checks, policy checks, commit lint, and declared-intent evaluation |
-| Local Kubernetes deployment | pull requests that change runtime paths, on demand, and weekly against `main` | real Flux reconciliation, admission, isolation, monitoring, canary promotion, rollback, and teardown for every included application |
+| Local Kubernetes deployment | pull requests that change runtime paths, on demand, and weekly against `main` | real Flux reconciliation, admission, isolation, on-demand app lifecycle, monitoring, canary promotion, rollback, and teardown for every included application |
 | AWS staging deployment | manual in a configured private copy | account-specific provisioning, image publication, EKS bootstrap, Flux reconciliation, rollout, and teardown |
 
 Run the full local acceptance workflow against a reviewed candidate branch when a set of
@@ -258,6 +269,7 @@ optimization](docs/COST-OPTIMIZATION-GUIDE.md) for the resource model and contro
 | Run and compare deployment targets | [Deployment profiles](docs/DEPLOYMENT-PROFILES.md) |
 | Understand system boundaries and flows | [Architecture](docs/ARCHITECTURE.md) |
 | Add or select an application | [Application contract](docs/APPLICATION-CONTRACT.md) |
+| Launch several local applications | [Application control plane](docs/APPLICATION-CONTROL-PLANE.md) |
 | Operate Flux reconciliation | [GitOps setup](docs/GITOPS-SETUP.md) |
 | Inspect metrics and dashboards | [Monitoring](docs/MONITORING-SETUP.md) |
 | Review delivery and rollback behavior | [Progressive delivery](docs/PROGRESSIVE-DELIVERY.md) |

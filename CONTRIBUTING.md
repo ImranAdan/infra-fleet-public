@@ -36,6 +36,8 @@ Pull requests receive these static and application checks:
 | `terraform fmt`, `validate` | Terraform |
 | `trivy config` | Terraform misconfiguration |
 | Unit tests, container build, image scan | The sample application |
+| Declared intent | Advisor positions affected by the proposed Fleet change |
+| Local Kubernetes | Full kind acceptance for pull requests that change runtime paths |
 
 `terraform plan` and `apply` do **not** run here, so Terraform changes are
 validated for syntax and static correctness only. Say so in the pull request

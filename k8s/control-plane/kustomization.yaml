@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - control-plane.yaml
+  - launch-policy.yaml
+  - networkpolicy.yaml
+# The dashboard's code ships as a ConfigMap with a stable name; the Deployment
+# rolls on each revision through its runtime-config annotation. Flux must not
+# substitute variables inside the code (JavaScript template strings use ${}).
+configMapGenerator:
+  - name: control-plane-code
+    namespace: fleet-control
+    files:
+      - server.py
+      - index.html
+      - dashboard.js
+generatorOptions:
+  disableNameSuffixHash: true
+  annotations:
+    kustomize.toolkit.fluxcd.io/substitute: disabled

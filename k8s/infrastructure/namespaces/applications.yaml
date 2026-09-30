@@ -25,3 +25,16 @@ spec:
     limits.memory: 16Gi
     # Pod count: reasonable limit for staging
     pods: "20"
+---
+# Keep application pods isolated while a two-layer on-demand launch is being
+# created or removed. Per-app policies add only the paths each contract needs;
+# deleting one can never expose its workload while Flux finishes pruning.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-applications
+  namespace: applications
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

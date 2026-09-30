@@ -135,4 +135,6 @@ docker-compose down -v
 
 ## Production Deployment
 
-For EKS deployment, see `APPLICATION-ROADMAP.md`.
+For Kubernetes deployment, use the platform
+[application contract](../../../docs/APPLICATION-CONTRACT.md) and
+[deployment profiles](../../../docs/DEPLOYMENT-PROFILES.md).

@@ -82,13 +82,16 @@ Every failure found in the audit was in this set. None of them required AWS.
 
 ## Decision
 
-**Option B.** `infra-fleet-public` is credentials-free.
+**Option B.** `infra-fleet-public` is credentials-free by default.
 
-- No AWS credentials, no `TF_API_TOKEN`, no cloud provider tokens.
+- No AWS credentials, `TF_API_TOKEN` or cloud provider tokens are required or
+  configured by the template. The manual teardown workflow is an explicit
+  opt-in after an adopter configures its credentials.
 - `infra-fleet-public` is not named in any OIDC trust policy. Adopters name
   **their own** repository in **their own** policy - see "What an adopter does".
 - CI validates code, manifests, containers and workflows only.
-- `plan`, `apply` and destroy do not run here, and are not expected to.
+- `plan` and `apply` do not run here. Destroy does not run by default; the
+  manually dispatched teardown workflow is the opt-in exception.
 
 HCP Terraform remains a hard requirement of this project. It is a declared
 prerequisite, not something to abstract behind a backend selector. Adopters
@@ -127,8 +130,9 @@ Accepted, deliberately:
 - **Provisioning failures are not caught here.** A change that passes CI can
   still fail on `apply` in a consuming repository. That is the cost of not
   holding credentials, and it is the right trade.
-- **DORA metrics, cluster verification and nightly destroy do not run here.**
-  They are deployment concerns, not template concerns.
+- **DORA metrics and live cluster verification require a deployed environment.**
+  AWS teardown is present as a manual workflow and runs only after an adopter
+  configures credentials and explicitly dispatches it.
 - **The private repository becomes the only place infrastructure is applied.**
 
 Gained:

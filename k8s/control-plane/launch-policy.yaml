@@ -1,0 +1,118 @@
+# The API server, not the dashboard's code, confines what the dashboard may do
+# to Flux: create only an app's own two launch Kustomizations, deploying from
+# the fleet's Git source as app-deployer, and delete only launched ones. Its
+# RBAC alone would let it create a Kustomization that runs with Flux's
+# cluster-wide rights, or delete the platform's own layers.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: control-plane-launches
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [kustomize.toolkit.fluxcd.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [kustomizations]
+  matchConditions:
+    - name: from-the-dashboard
+      expression: request.userInfo.username == 'system:serviceaccount:fleet-control:control-plane'
+  variables:
+    - name: target
+      expression: "request.operation == 'DELETE' ? oldObject : object"
+    - name: app
+      expression: "variables.target.metadata.?labels['infra-fleet.io/launched-app'].orValue('')"
+  validations:
+    - expression: "variables.app.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')"
+      message: The dashboard may act only on Kustomizations labelled as a launched app.
+    - expression: >-
+        variables.target.metadata.namespace == 'flux-system' &&
+        (variables.target.metadata.name == 'app-' + variables.app ||
+         variables.target.metadata.name == 'app-' + variables.app + '-platform')
+      message: A launch object's name and namespace must match its launched-app label.
+    - expression: >-
+        request.operation == 'DELETE' || (
+          object.spec.serviceAccountName == 'app-deployer' &&
+          object.spec.sourceRef.kind == 'GitRepository' &&
+          object.spec.sourceRef.name == 'fleet-local' &&
+          !has(object.spec.sourceRef.namespace) &&
+          !has(object.spec.kubeConfig) &&
+          !has(object.spec.targetNamespace) &&
+          !has(object.spec.commonMetadata) &&
+          !has(object.spec.components) &&
+          !has(object.spec.decryption) &&
+          !has(object.spec.deletionPolicy) &&
+          !has(object.spec.healthCheckExprs) &&
+          !has(object.spec.healthChecks) &&
+          !has(object.spec.ignoreMissingComponents) &&
+          !has(object.spec.namePrefix) &&
+          !has(object.spec.nameSuffix) &&
+          !has(object.spec.retryInterval) &&
+          !has(object.spec.suspend) &&
+          object.spec.force == false &&
+          object.spec.interval == '1m' &&
+          object.spec.prune == true &&
+          object.spec.timeout == '10m' &&
+          object.spec.wait == false &&
+          has(object.spec.postBuild) &&
+          size(object.spec.postBuild.substituteFrom) == 1 &&
+          object.spec.postBuild.substituteFrom[0].kind == 'ConfigMap' &&
+          object.spec.postBuild.substituteFrom[0].name == 'fleet-config' &&
+          object.spec.postBuild.substituteFrom[0].optional == false &&
+          size(object.spec.postBuild.substitute) == 5 &&
+          object.spec.postBuild.substitute.all(key, key in [
+            'APP_NAME', 'APP_PORT', 'APP_HEALTH_PATH', 'APP_LOAD_PATH', 'APP_HOSTNAME'
+          ]) &&
+          object.spec.postBuild.substitute['APP_NAME'] == variables.app &&
+          object.spec.postBuild.substitute['APP_HOSTNAME'] == variables.app + '.apps.localhost' &&
+          object.spec.postBuild.substitute['APP_PORT'].matches('^[1-9][0-9]{0,4}$') &&
+          int(object.spec.postBuild.substitute['APP_PORT']) <= 65535 &&
+          object.spec.postBuild.substitute['APP_HEALTH_PATH'].matches('^/[A-Za-z0-9._~/%?=+-]*$') &&
+          object.spec.postBuild.substitute['APP_LOAD_PATH'].matches('^/[A-Za-z0-9._~/%?=+-]*$')
+        )
+      message: >-
+        A launch must use the fixed source, identity, lifecycle and bounded
+        application substitutions.
+    - expression: >-
+        request.operation == 'DELETE' || (
+          (
+            (object.metadata.name == 'app-' + variables.app &&
+             object.spec.path == './k8s/applications/' + variables.app &&
+             !has(object.spec.dependsOn) &&
+             !has(object.spec.patches) &&
+             size(object.spec.images) == 1 &&
+             object.spec.images[0].name == 'app' &&
+             object.spec.images[0].newName == '$' + '{IMAGE_REGISTRY}/' + variables.app &&
+             object.spec.images[0].newTag == '$' + '{IMAGE_TAG}' &&
+             !has(object.spec.images[0].digest)) ||
+            (object.metadata.name == 'app-' + variables.app + '-platform' &&
+             object.spec.path == './k8s/applications/platform' &&
+             !has(object.spec.images) &&
+             size(object.spec.dependsOn) == 1 &&
+             object.spec.dependsOn[0].name == 'app-' + variables.app &&
+             !has(object.spec.dependsOn[0].namespace) &&
+             !has(object.spec.dependsOn[0].readyExpr) &&
+             size(object.spec.patches) == 1 &&
+             object.spec.patches[0].target.kind == 'HorizontalPodAutoscaler' &&
+             !has(object.spec.patches[0].target.annotationSelector) &&
+             !has(object.spec.patches[0].target.group) &&
+             !has(object.spec.patches[0].target.labelSelector) &&
+             !has(object.spec.patches[0].target.name) &&
+             !has(object.spec.patches[0].target.namespace) &&
+             !has(object.spec.patches[0].target.version) &&
+             object.spec.patches[0].patch ==
+               '[{"op": "replace", "path": "/spec/maxReplicas", "value": 3}]')
+          )
+        )
+      message: >-
+        A launch must use the exact app image transform or the exact shared
+        platform dependency and HPA patch.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: control-plane-launches
+spec:
+  policyName: control-plane-launches
+  validationActions: [Deny]

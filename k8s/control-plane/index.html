@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fleet Applications</title>
+  <style>
+    :root { --bg: #0f1420; --card: #182033; --line: #27314a; --text: #e8ecf5; --dim: #8b95ad;
+            --run: #2ecc71; --start: #f5b041; --sleep: #5d6d8a; --accent: #4f8cff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+    header { padding: 28px 24px 8px; max-width: 1080px; margin: 0 auto; }
+    h1 { margin: 0; font-size: 26px; letter-spacing: .3px; }
+    header p { margin: 4px 0 0; color: var(--dim); }
+    main { max-width: 1080px; margin: 0 auto; padding: 16px 24px 40px;
+           display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
+            display: flex; flex-direction: column; gap: 12px; }
+    .top { display: flex; align-items: center; gap: 12px; }
+    .icon { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+            font-weight: 700; font-size: 20px; color: #fff; }
+    .card h2 { margin: 0; font-size: 18px; }
+    .name { color: var(--dim); font: 12px monospace; }
+    .desc { color: var(--dim); margin: 0; flex: 1; }
+    .status { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; }
+    .running .dot { background: var(--run); box-shadow: 0 0 8px var(--run); }
+    .starting .dot { background: var(--start); animation: pulse 1s infinite alternate; }
+    .sleeping .dot { background: var(--sleep); }
+    @keyframes pulse { to { opacity: .3; } }
+    .btn { border: 0; border-radius: 10px; padding: 11px; font-weight: 600; font-size: 14px;
+           text-align: center; text-decoration: none; color: #fff; background: var(--accent); cursor: pointer; }
+    .btn[aria-disabled="true"] { background: #2a3550; color: var(--dim); cursor: progress; }
+    .btn.secondary { background: transparent; border: 1px solid var(--line); color: var(--dim); }
+    .actions { display: flex; gap: 10px; }
+    .actions .btn { flex: 1; }
+    .error { grid-column: 1 / -1; color: #ff8a80; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Fleet Applications</h1>
+    <p>Every application the fleet can run, read from its contract in Git. Launch deploys its whole stack on demand.</p>
+  </header>
+  <main id="apps" aria-live="polite"></main>
+  <script src="/dashboard.js"></script>
+</body>
+</html>

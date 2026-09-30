@@ -56,7 +56,11 @@ spec:
 
 **Finding:** No network isolation - all pods could communicate freely.
 
-**Fix:** Created NetworkPolicy restricting ingress to NGINX and Prometheus only.
+**Current disposition:** The historical NGINX-specific policy below has been
+replaced by a permanent namespace default deny plus a contract-filled per-app
+policy. The latter permits Envoy Gateway, Flagger's load tester, Prometheus and
+same-app traffic only. The default deny preserves isolation during partial
+on-demand launches and asynchronous removal.
 
 ```yaml
 # Historical excerpt; the policy now lives in k8s/applications/platform/networkpolicy.yaml
@@ -293,14 +297,13 @@ add that action to the relevant statement rather than restoring a wildcard.
 
 **Finding:** Traffic unencrypted between client and NLB.
 
-**Current disposition:** Optional TLS is implemented with cert-manager and a
-configured hostname. The remaining blocker is the retired ingress controller;
-do not expose it as a new public deployment.
+**Current disposition:** Resolved in desired state. Both profiles redirect HTTP
+to HTTPS and terminate certificates through Envoy Gateway; the local route is
+covered by live acceptance. AWS remains a private preview until a real account
+apply, certificate issue, canary rollout, rollback and teardown cycle passes.
 
-**Options:**
-- Deploy cert-manager with Let's Encrypt
-- Use AWS ACM with ALB (loses Flagger traffic splitting)
-- Use sslip.io for ephemeral environments
+The supported AWS path uses cert-manager with Let's Encrypt and a configured
+hostname. The local path uses the fleet's in-cluster CA.
 
 ---
 
@@ -362,8 +365,7 @@ alternative would have been serious.
 | Check | Result |
 |-------|--------|
 | Secrets in git history | The recorded `gitleaks` scan reports 6 fixture matches across 40 commits in `conftest.py` and `test_app.py` |
-| `pull_request_target` | **Absent.** The standard route to credential theft in a public repository is not present anywhere |
-| `issue_comment` triggers | None |
+| Privileged triggers | Historical result: none. Current disposition: `pull_request_target` is confined to the same-repository merge judge, which checks out trusted base code with credentials disabled; `issue_comment` is confined to owner-authored decision records. Neither executes proposed code |
 | Script injection | Untrusted values (`workflow_run.*`, `head_commit.message`) are passed through `env:`, not interpolated into `run:`. The one direct interpolation is `pull_request.number`, an integer GitHub controls |
 | `workflow_run` handling | `dora-metrics.yml` runs with secrets, but checks out the **default branch**, not pull request head. No "pwn request" |
 | Container image | 0 HIGH/CRITICAL with `--ignore-unfixed`, matching what CI enforces |

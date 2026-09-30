@@ -9,18 +9,17 @@ module "vpc" {
   azs = ["eu-west-2a", "eu-west-2b"]
   # Two private subnets for EKS worker nodes and Session Manager (EKS requirement)
   private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
-  # Two public subnets for ALB - ALBs require at least 2 subnets in different AZs
+  # Two public subnets for the internet-facing NLB and NAT gateway. The load
+  # balancer controller discovers them from the public ELB role tag below.
   public_subnets = ["10.0.101.0/24", "10.0.102.0/24"]
 
   # NAT Gateway enabled for EKS worker nodes to access internet (external registries, APIs, etc.)
-  # Session Manager uses public subnet to avoid NAT Gateway costs for jumpbox traffic
   enable_nat_gateway = true
   single_nat_gateway = true
   # Enables DNS hostname resolution for instances in the VPC, which is required by EKS.
   enable_dns_hostnames = true
 
-  # Subnet tags for AWS Load Balancer Controller
-  # These tags enable the ALB controller to auto-discover subnets for load balancer provisioning
+  # Subnet tags for AWS Load Balancer Controller discovery.
   public_subnet_tags = {
     "kubernetes.io/role/elb"                      = "1"
     "kubernetes.io/cluster/${local.cluster_name}" = "shared"

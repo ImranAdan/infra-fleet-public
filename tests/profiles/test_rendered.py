@@ -59,6 +59,47 @@ def test_only_aws_profile_contains_aws_runtime_resources():
     one(local, "Gateway", "fleet")
 
 
+def test_local_control_plane_is_isolated_and_least_privileged():
+    resources = load("local")
+    default_deny = one(resources, "NetworkPolicy", "default-deny-applications")
+    assert default_deny["metadata"]["namespace"] == "applications"
+    assert default_deny["spec"] == {"podSelector": {}, "policyTypes": ["Ingress"]}
+    policy = one(resources, "NetworkPolicy", "control-plane")
+    assert policy["metadata"]["namespace"] == "fleet-control"
+    assert policy["spec"] == {
+        "podSelector": {"matchLabels": {"app": "control-plane"}},
+        "policyTypes": ["Ingress"],
+        "ingress": [],
+    }
+
+    app_role = one(resources, "Role", "app-deployer")
+    assert app_role["metadata"]["namespace"] == "applications"
+    assert {resource for rule in app_role["rules"] for resource in rule["resources"]} == {
+        "services",
+        "deployments",
+        "horizontalpodautoscalers",
+        "networkpolicies",
+        "canaries",
+        "podmonitors",
+    }
+    dashboard_role = one(resources, "Role", "app-deployer-dashboards")
+    assert dashboard_role["metadata"]["namespace"] == "observability"
+    assert dashboard_role["rules"][0]["resources"] == ["configmaps"]
+    control_role = one(resources, "Role", "control-plane-catalog")
+    launch_rule = next(
+        rule for rule in control_role["rules"] if rule["resources"] == ["kustomizations"]
+    )
+    assert launch_rule["verbs"] == ["get", "list", "create", "delete"]
+
+    admission = one(resources, "ValidatingAdmissionPolicy", "control-plane-launches")
+    expressions = "\n".join(item["expression"] for item in admission["spec"]["validations"])
+    assert "object.spec.images[0].newName == '$' + '{IMAGE_REGISTRY}/' + variables.app" in expressions
+    assert "object.spec.images[0].newTag == '$' + '{IMAGE_TAG}'" in expressions
+    assert "object.spec.postBuild.substitute.all" in expressions
+    assert "object.spec.patches[0].patch ==" in expressions
+    assert "variables.target.metadata.name == 'app-' + variables.app" in expressions
+
+
 def test_both_profiles_serve_the_app_over_https_through_one_gateway():
     for profile in ("local", "aws-staging"):
         resources = load(profile)
@@ -70,7 +111,12 @@ def test_both_profiles_serve_the_app_over_https_through_one_gateway():
         secret = https["tls"]["certificateRefs"][0]["name"]
         certificate = one(resources, "Certificate", "fleet-tls")["spec"]
         assert certificate["secretName"] == secret
-        assert certificate["dnsNames"] == [https["hostname"]]
+        # AWS serves one public host; locally every launched app has its own
+        # <app>.localhost host, so the listener takes any host the cert covers.
+        host = https.get("hostname", "localhost")
+        expected = [host] if profile == "aws-staging" else [host, "*.apps.localhost"]
+        assert certificate["dnsNames"] == expected, profile
+        assert ("hostname" in https) == (profile == "aws-staging"), profile
         one(resources, "ClusterIssuer", certificate["issuerRef"]["name"])
         # Plain HTTP only redirects; application routes may not attach to it.
         assert listeners["http"]["allowedRoutes"]["namespaces"]["from"] == "Same"
@@ -81,4 +127,4 @@ def test_both_profiles_serve_the_app_over_https_through_one_gateway():
         ]
         service = one(resources, "Canary", app_name())["spec"]["service"]
         assert service["gatewayRefs"] == [{"name": "fleet", "namespace": "envoy-gateway-system", "sectionName": "https"}]
-        assert service["hosts"] == [https["hostname"]]
+        assert service["hosts"] == [host]

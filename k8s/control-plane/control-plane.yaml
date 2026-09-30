@@ -1,0 +1,241 @@
+# The fleet control plane: the application dashboard. It reads the app
+# catalogue and live app state, and launches or stops an app by creating or
+# deleting that app's Flux Kustomizations. Those run as app-deployer, which
+# may change application workloads and app-owned Grafana dashboard ConfigMaps,
+# so the dashboard can never deploy with Flux's own cluster-wide rights.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fleet-control
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-plane
+  namespace: fleet-control
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control-plane-catalog
+  namespace: flux-system
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [fleet-catalog, fleet-app]
+    verbs: [get]
+  # Launch and stop. RBAC cannot limit creation by name or content, so the
+  # control-plane-launches admission policy (launch-policy.yaml) does: only an
+  # app's own launch Kustomizations, running as app-deployer, and only
+  # launched ones may be deleted.
+  - apiGroups: [kustomize.toolkit.fluxcd.io]
+    resources: [kustomizations]
+    verbs: [get, list, create, delete]
+---
+# The identity used to deploy launched apps. Its second, narrow grant below
+# lets an app carry Grafana dashboard ConfigMaps with its own manifests.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-deployer
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-deployer
+  namespace: applications
+rules:
+  - apiGroups: ["", apps, autoscaling, networking.k8s.io, flagger.app, monitoring.coreos.com]
+    resources:
+      [services, deployments, horizontalpodautoscalers, networkpolicies, canaries, podmonitors]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+# Apps may bring their own Grafana dashboards, which Grafana's sidecar loads
+# from ConfigMaps in the observability namespace. RBAC cannot scope creation
+# by name or label, so this grant covers the namespace's ConfigMaps only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-deployer-dashboards
+  namespace: observability
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-deployer-dashboards
+  namespace: observability
+subjects:
+  - kind: ServiceAccount
+    name: app-deployer
+    namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: app-deployer-dashboards
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-deployer
+  namespace: applications
+subjects:
+  - kind: ServiceAccount
+    name: app-deployer
+    namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: app-deployer
+---
+# Issued by the fleet's local CA; the dashboard uses its ca.crt to verify the
+# Gateway when it forwards to an app.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: control-plane-trust
+  namespace: fleet-control
+spec:
+  secretName: control-plane-trust
+  dnsNames:
+    - control-plane.fleet-control.svc
+  issuerRef:
+    kind: ClusterIssuer
+    name: fleet-issuer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control-plane-catalog
+  namespace: flux-system
+subjects:
+  - kind: ServiceAccount
+    name: control-plane
+    namespace: fleet-control
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: control-plane-catalog
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control-plane-apps
+  namespace: applications
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [list]
+  - apiGroups: [flagger.app]
+    resources: [canaries]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control-plane-apps
+  namespace: applications
+subjects:
+  - kind: ServiceAccount
+    name: control-plane
+    namespace: fleet-control
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: control-plane-apps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane
+  namespace: fleet-control
+  labels:
+    app: control-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane
+  template:
+    metadata:
+      labels:
+        app: control-plane
+      annotations:
+        infra-fleet.io/runtime-config-revision: "${RUNTIME_CONFIG_REVISION}"
+    spec:
+      serviceAccountName: control-plane
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: control-plane
+          # The same pinned base the apps use; the code is mounted from Git.
+          image: python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b
+          command: [python3, /opt/control-plane/server.py]
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: code
+              mountPath: /opt/control-plane
+              readOnly: true
+            - name: trust
+              mountPath: /etc/fleet-trust
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: control-plane-code
+        # Only the CA certificate: the proxy verifies the Gateway with it.
+        - name: trust
+          secret:
+            secretName: control-plane-trust
+            items:
+              - key: ca.crt
+                path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: fleet-control
+spec:
+  selector:
+    app: control-plane
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http

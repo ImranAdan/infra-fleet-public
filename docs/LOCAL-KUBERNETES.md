@@ -7,6 +7,16 @@ This profile runs the application, Flux, Kyverno, Flagger, Envoy Gateway,
 Prometheus/Grafana, metrics-server and Calico on kind. The Compose stack remains
 available for faster application-only development.
 
+After startup, open the [application control plane](APPLICATION-CONTROL-PLANE.md):
+
+```bash
+./fleet access --profile local --service dashboard
+```
+
+The dashboard at <http://localhost:9000/> shows every included app and can run
+several together from the same deployed revision. The selected app remains the
+default and cannot be stopped there.
+
 For repository-wide integration evidence, dispatch the **Local Kubernetes**
 workflow against the candidate branch. It records the exact revision in the
 `local` GitHub Environment, executes the complete profile acceptance suite and

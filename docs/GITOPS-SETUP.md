@@ -46,13 +46,16 @@ files. Profile and cluster resources live outside that generated directory.
 The local dependency graph is:
 
 ```text
-infrastructure -> routing -> policies -> applications
+fleet-root -> infrastructure -> routing -------> control-plane
+                         \-----> policies --\
+infrastructure + routing + policies -----------> applications
 ```
 
 The AWS graph adapts the existing workflow output before consumers start:
 
 ```text
-configuration -> infrastructure -> policies/certificate issuer -> applications
+flux-system -> configuration -> infrastructure -> routing --\
+                                      \---------> policies ----+-> applications
 ```
 
 ## Runtime configuration

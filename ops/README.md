@@ -1,6 +1,9 @@
 # Ops Scripts
 
-Operational scripts for accessing cluster services via port-forwarding.
+These scripts operate the cluster in the **current kubectl context**. They are
+useful after configuring AWS access. For the local profile, prefer `./fleet
+access --profile local --service app|dashboard|grafana|prometheus`; the facade
+uses its checkout-owned kubeconfig and never changes the default context.
 
 ## Prerequisites
 
@@ -18,7 +21,8 @@ Run all port-forwards at once:
 ./ops/local-forward.sh
 ```
 
-This starts Grafana, Prometheus, and Load Harness, then displays:
+This starts Grafana, Prometheus, and the selected application. It tracks only
+the processes it starts and leaves unrelated port-forwards alone.
 
 ```
   +--------------+-----------------------+-------------------------+
@@ -26,7 +30,7 @@ This starts Grafana, Prometheus, and Load Harness, then displays:
   +--------------+-----------------------+-------------------------+
   | Grafana      | http://localhost:3000 | admin / <password>      |
   | Prometheus   | http://localhost:9090 | -                       |
-  | Load Harness | http://localhost:8080 | -                       |
+  | Selected app | http://localhost:8080 | app-specific            |
   +--------------+-----------------------+-------------------------+
 ```
 
@@ -76,24 +80,17 @@ Access Alertmanager for alert management:
 - **URL**: http://localhost:9093
 - **Alerts**: http://localhost:9093/#/alerts
 
-### Load Harness Application
+### Selected application
 
-Access the load-harness application:
+Access the application named by the deployed `fleet-app` contract:
 
 ```bash
-./ops/port-forward.sh load-harness
+./ops/port-forward.sh app
 ```
 
-- **Dashboard**: http://localhost:8080/ui (Web Dashboard)
-- **API Docs**: http://localhost:8080/apidocs (Swagger UI)
 - **App**: http://localhost:8080
-- **Health**: http://localhost:8080/health
-- **Metrics**: http://localhost:8080/metrics
-- **CPU Load**: http://localhost:8080/load/cpu (POST - background job)
-- **CPU Work**: http://localhost:8080/load/cpu/work (POST - synchronous)
-- **CPU Status**: http://localhost:8080/load/cpu/status (GET)
-- **Memory Load**: http://localhost:8080/load/memory (POST - background job)
-- **Memory Status**: http://localhost:8080/load/memory/status (GET)
+- App-specific UI, health and API paths are documented in that application's
+  README under `applications/<name>/`.
 
 ## Usage Tips
 
@@ -107,7 +104,8 @@ Access the load-harness application:
 
 ```bash
 # Find process using port 3000 (example)
-lsof -ti:3000 | xargs kill -9
+lsof -nP -iTCP:3000 -sTCP:LISTEN
+# Review the process, then stop it normally with: kill PID
 ```
 
 ### kubectl connection issues

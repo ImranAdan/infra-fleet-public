@@ -115,19 +115,19 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ Phase 3: Post-Cleanup Verification"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Check for orphaned ALBs
-ALB_COUNT=0
-ALB_ARNS=$(aws elbv2 describe-load-balancers --region "$AWS_REGION" \
+# Check for orphaned ELBv2 load balancers (the current route uses an NLB).
+LB_COUNT=0
+LB_ARNS=$(aws elbv2 describe-load-balancers --region "$AWS_REGION" \
     --query 'LoadBalancers[*].LoadBalancerArn' --output text 2>/dev/null || echo "")
 
-if [ -n "$ALB_ARNS" ]; then
-    for alb_arn in $ALB_ARNS; do
-        CLUSTER_TAG=$(aws elbv2 describe-tags --resource-arns "$alb_arn" \
+if [ -n "$LB_ARNS" ]; then
+    for lb_arn in $LB_ARNS; do
+        CLUSTER_TAG=$(aws elbv2 describe-tags --resource-arns "$lb_arn" \
             --region "$AWS_REGION" \
             --query "TagDescriptions[0].Tags[?Key=='elbv2.k8s.aws/cluster' && Value=='$CLUSTER_NAME'].Value" \
             --output text 2>/dev/null || echo "")
         if [ -n "$CLUSTER_TAG" ]; then
-            ALB_COUNT=$((ALB_COUNT + 1))
+            LB_COUNT=$((LB_COUNT + 1))
         fi
     done
 fi
@@ -140,10 +140,10 @@ ENI_COUNT=$(aws ec2 describe-network-interfaces \
     --output text 2>/dev/null | wc -w | tr -d ' ')
 
 echo "Remaining orphaned resources:"
-echo "  - ALBs: $ALB_COUNT"
+echo "  - Load balancers: $LB_COUNT"
 echo "  - ENIs: $ENI_COUNT"
 
-if [ "$ALB_COUNT" -gt 0 ] || [ "$ENI_COUNT" -gt 0 ]; then
+if [ "$LB_COUNT" -gt 0 ] || [ "$ENI_COUNT" -gt 0 ]; then
     echo ""
     echo "❌ Orphaned resources detected!"
     if [ "$FORCE" != "--force" ]; then

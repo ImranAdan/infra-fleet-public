@@ -10,6 +10,9 @@ metadata:
 data:
   # Names the Deployment, its container, its pod `app` label and its image.
   APP_NAME: mario-game
+  # Shown on the application dashboard.
+  APP_TITLE: "Fleet Runner"
+  APP_DESCRIPTION: "A side-scrolling browser platform game: run, jump, stomp and reach the flag."
   # Build context, containing the Dockerfile.
   APP_SOURCE: applications/mario-game
   APP_PORT: "8080"

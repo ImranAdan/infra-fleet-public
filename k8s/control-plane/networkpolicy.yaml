@@ -1,0 +1,16 @@
+# The dashboard can change Flux launch objects. The custom action header stops
+# browser CSRF; this policy separately stops arbitrary pods from calling the
+# internal Service. Kubernetes node traffic remains available to probes and
+# kubectl port-forward, which is the dashboard's only supported entry point.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: control-plane
+  namespace: fleet-control
+spec:
+  podSelector:
+    matchLabels:
+      app: control-plane
+  policyTypes:
+    - Ingress
+  ingress: []
