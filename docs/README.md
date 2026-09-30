@@ -32,14 +32,15 @@ progressive delivery, request paths, observability and guardrails.
 
 | Flow | Path |
 |------|------|
-| **Fast CI** | Pull request → render/test/scan → reviewed merge |
+| **Fast CI** | Pull request → render/test/scan → intent gate → exact-head merge gate |
+| **Local acceptance** | Runtime-path pull request → kind cluster per app → promote/rollback → teardown |
 | **Local GitOps** | Committed snapshot → read-only local Git source → Flux → kind |
 | **AWS CI/CD** | Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux |
 | **AWS GitOps** | Manifest change → Flux detects → applies to EKS |
 | **Progressive Delivery** | New version → Flagger canary → Metrics analysis → Promote/Rollback |
 | **User Traffic** | Loopback → Envoy Gateway → local application, or users → Cloudflare → NLB → AWS preview |
 | **Local Control Plane** | Contracts → bounded Flux launch objects → on-demand application stacks |
-| **Observability** | Apps → Prometheus scrape → Grafana dashboards |
+| **Observability** | Gateway, kubelet and apps → Prometheus → Grafana dashboards |
 
 ---
 
@@ -48,16 +49,16 @@ progressive delivery, request paths, observability and guardrails.
 | Component | Version/Type | Purpose |
 |-----------|-------------|---------|
 | EKS | 1.35 (`STANDARD` support) | Kubernetes control plane |
-| Nodes | t3.large spot | Cost-optimized compute |
+| Nodes | t3.large spot, 1–3 via cluster-autoscaler | Released outside the weekday usage window |
 | Flux | v2.7.5 local / v2.7.3 AWS | GitOps operator |
 | Flagger | 1.45.0 | Progressive delivery |
 | Envoy Gateway | 1.9.1 | Gateway API routing (HTTPS only) + canary traffic, both profiles |
-| cert-manager | v1.21.1 | TLS certificates |
+| cert-manager | v1.21.1 | TLS certificates (local CA locally, Let's Encrypt on AWS) |
 | Prometheus | kube-prometheus-stack | Metrics collection |
 | Grafana | kube-prometheus-stack | Dashboards |
 
-**Cost**: usage-based. Staging is destroyed manually, not nightly by default;
-review current AWS pricing before deployment.
+**Cost**: usage-based. Workers are released outside the weekday usage window;
+the stack itself is destroyed only manually. Review current AWS pricing first.
 
 ---
 
@@ -77,7 +78,9 @@ review current AWS pricing before deployment.
 | [Progressive Delivery](PROGRESSIVE-DELIVERY.md) | Flagger canary deployments |
 | [Canary Deployments](CANARY-DEPLOYMENTS.md) | Canary configuration and rollout |
 | [Stack Automation](STACK-AUTOMATION.md) | Destroy and rebuild the ephemeral stack |
-| [TLS/SSL Setup](TLS-SSL-SETUP.md) | Certificate management |
+| [Local Kubernetes](LOCAL-KUBERNETES.md) | The kind profile and its acceptance workflow |
+| [Deployment Profiles](DEPLOYMENT-PROFILES.md) | Local and AWS lifecycle, access and verification boundary |
+| [TLS and DNS](TLS-SSL-SETUP.md) | Gateway certificates and the optional public hostname |
 
 ### Observability
 | Document | Description |
@@ -90,8 +93,6 @@ review current AWS pricing before deployment.
 ### CI/CD & Development
 | Document | Description |
 |----------|-------------|
-| [Versioning Strategy](VERSIONING-STRATEGY.md) | SemVer and release-please |
-| [Commit Messages](COMMIT-MESSAGES.md) | Conventional commits |
 | [Dependabot](DEPENDABOT.md) | Dependency automation |
 | [Local Testing with act](ACT-LOCAL-TESTING.md) | Test workflows locally |
 
@@ -99,6 +100,7 @@ review current AWS pricing before deployment.
 | Document | Description |
 |----------|-------------|
 | [Advisor Integration](ADVISOR-INTEGRATION.md) | Run static reviews and understand the delivery contract |
+| [Rollout Capacity](ROLLOUT-CAPACITY.md) | Zero-unavailable rollout contract and the Flux controller exception |
 | [Template Readiness](TEMPLATE-READINESS.md) | Current evidence, limits and the remaining AWS acceptance cycle |
 | [AWS Cost Controls](COST-OPTIMIZATION-GUIDE.md) | Billable resources, worker schedule, teardown and audit controls |
 | [Security Concerns](SECURITY-CONCERNS.md) | Security considerations |
@@ -118,14 +120,16 @@ review current AWS pricing before deployment.
 ### Implemented in the template
 - [x] Local Kubernetes or EKS 1.35 with Flux GitOps
 - [x] Envoy Gateway progressive delivery, live-tested locally
-- [x] Optional cert-manager TLS automation; AWS remains a deployment preview
+- [x] cert-manager TLS: local CA for `*.apps.localhost`, Let's Encrypt on AWS (preview)
+- [x] Local application dashboard: launch and stop any contracted app on demand
 - [x] Dashboard UI (Flask + HTMX + Tailwind)
-- [x] HPA autoscaling (metrics-server + HPA)
+- [x] HPA autoscaling, plus AWS cluster-autoscaler and a weekday worker window
 - [x] Prometheus + Grafana observability
 - [x] Ephemeral DORA proxy signals and dashboard JSON
 - [x] release-please versioning
 - [x] Dependabot dependency automation
-- [x] Kyverno policy validation in CI
+- [x] Kyverno policies in CI and at admission
+- [x] Intent gate, exact-head merge gate and opt-in autonomous merge
 
 ### Known follow-up work
 - [x] Replace retired ingress-nginx in the AWS profile with a maintained Gateway API path
@@ -141,7 +145,7 @@ review current AWS pricing before deployment.
 ## Quick Links
 
 ### For Developers
-- [Load Harness App](../applications/load-harness/README.md)
+- [Load Harness](../applications/load-harness/README.md), [podinfo](../applications/podinfo/README.md), [Fleet Runner](../applications/mario-game/README.md)
 - [Local Development](../applications/load-harness/local-dev/)
 
 ### For Platform Engineers

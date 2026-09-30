@@ -88,8 +88,8 @@ dormant unless a future policy category explicitly names `judge` as its
 decider. No model decision can override declared intent; the advisor is the
 first authority.
 
-The autonomous worker runs when the intent-gate workflow completes and once an
-hour as a retry. It considers only non-draft PRs whose head branch belongs to
+The autonomous worker runs whenever a pull-request check workflow completes
+and once an hour as a retry. It considers only non-draft PRs whose head branch belongs to
 this repository and whose body contains the opt-in marker. `READY` merges;
 `PARK`, `JUDGE`, failed evidence and unresolved review stay open. Advisor
 mechanical remediation uses a read-only planning job and opens an opted-in Fleet

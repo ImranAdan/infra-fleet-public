@@ -13,38 +13,27 @@ revision and is subject to that environment's protection rules.
 
 The AWS onboarding coordinator creates `staging` before its first deployment
 and restricts it to `main` and release tags matching `v*`. Repository
-administrators own required reviewers and wait timers. Local workflow dispatch
-creates `local` on first use unless the repository owner configures it earlier.
+administrators own required reviewers and wait timers. The first job to reference `local`, whether from a pull request, the schedule
+or a dispatch, creates it with no protection rules; configure `local` before
+then if required reviewers must apply to that first run.
 
-## Local final gate
+## Local acceptance
 
-Ordinary pull requests use fast static and application checks. When a candidate
-branch contains the group of changes ready for final review, dispatch **Local
-Kubernetes** from that branch:
+**Local Kubernetes** runs on pull requests to `main` that change runtime paths
+(`k8s/`, `scripts/`, `platform/`, `applications/`, `tests/profiles/`, `fleet`),
+every Monday at 05:37 UTC against `main`, and on dispatch:
 
 ```bash
-gh workflow run local-kubernetes.yml --ref YOUR_CANDIDATE_BRANCH
+gh workflow run local-kubernetes.yml --ref YOUR_BRANCH
 ```
 
-For `workflow_dispatch`, GitHub binds `GITHUB_SHA` to the selected branch head.
-The workflow checks out that exact commit, records it in the `local`
-Environment, creates the profile, runs the complete acceptance suite and always
-requests teardown. The environment URL points to the workflow evidence because
-the cluster and application endpoint do not persist after the hosted runner
-finishes.
-
-The manual dispatch is the deliberate approval to spend the integration time.
-The same workflow runs every Monday at 05:37 UTC against `main` to detect
-controller integration drift. Adding a required reviewer to `local` also gates
-those scheduled runs, so configure one only if someone will review the weekly
-job. Runs are serialized and never overlap.
-
-The full cycle has caught Git transport and monitoring-readiness defects that
-rendering and schema checks could not detect. It is kept outside normal PR and
-post-merge triggers because a reviewed revision previously spent about fifteen
-minutes before merge and repeated almost the same work after merge. Revisit the
-schedule and manual gate using observed unique failures and duration rather than
-making this workflow a universal required check.
+The workflow checks out the exact commit, records it in the `local`
+Environment, creates the profile once per app contract, runs the complete
+acceptance suite and always requests teardown. The environment URL points to
+the workflow evidence because the cluster does not outlive the hosted runner.
+The merge gate waits for these checks like any other. A newer push to a pull
+request cancels that pull request's earlier run. Adding a required reviewer to
+`local` gates every run, including pull requests and the weekly schedule.
 
 ## AWS staging protection
 

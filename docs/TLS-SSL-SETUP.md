@@ -4,7 +4,10 @@ Both profiles serve the app through one Envoy Gateway (`k8s/routing`): its
 `http` listener only redirects to HTTPS, and its `https` listener terminates TLS
 with the cert-manager certificate `envoy-gateway-system/fleet-tls` for
 `APP_HOSTNAME`. Each profile supplies the `fleet-issuer` ClusterIssuer:
-self-signed locally, Let's Encrypt on AWS. Deployment-specific values are
+Let's Encrypt on AWS; locally, a CA whose self-signed root lives only in the
+cluster (`k8s/profiles/local/routing/issuer.yaml`). Locally the certificate also
+covers `*.apps.localhost` and the listener accepts any host, so every app
+launched from the dashboard gets its own route host. Deployment-specific values are
 injected by Flux from the `terraform-outputs` ConfigMap; no real hostname or
 email address is committed.
 

@@ -123,7 +123,7 @@ These panels show the underlying Kubernetes node health:
 |-------|---------------|----------------|
 | **Node CPU** | Overall node CPU utilization | Shows total compute pressure on the machine. |
 | **Node Memory** | Overall node memory utilization | Shows total memory pressure. High = risk of OOM. |
-| **Node Count** | Number of nodes in cluster | Our setup uses 1 node (t3.medium). |
+| **Node Count** | Number of nodes in cluster | Local uses one kind node; AWS staging runs 1-3 t3.large workers. |
 | **App Pods** | Pods in applications namespace | Count of application workloads. |
 | **Namespaces** | Total namespaces in cluster | Cluster organization overview. |
 | **Node CPU Over Time** | CPU trend graph | Historical view of node compute usage. |

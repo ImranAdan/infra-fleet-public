@@ -39,5 +39,4 @@ If `kubectl` reports `Unauthorized`, compare the ARN from
 `aws sts get-caller-identity` with `EKS_ADMIN_PRINCIPAL_ARNS_JSON`, apply the
 staging workspace through the supported workflow, and retry.
 
-The disabled Session Manager jumpbox files are historical reference only; the
-template does not deploy a jumpbox.
+The template does not deploy a jumpbox.

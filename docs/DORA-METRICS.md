@@ -133,7 +133,7 @@ In the clusters it is provisioned from Git with the other dashboards; see
 http://localhost:3000 (admin/admin)
 ```
 
-## Production Testing
+## AWS staging
 
 Trigger a run:
 
@@ -151,8 +151,8 @@ curl -s "http://localhost:9090/api/v1/query?query=dora_workflow_deploy_event"
 ## Troubleshooting
 
 - Flagger rollback spikes or missing canary metrics usually mean load-test
-  traffic did not reach the app's route. The load test must target the ingress
-  service with `hey -host`; hey ignores `-H 'Host: …'` (see
+  traffic did not reach the app's route. The load test must target the
+  `fleet-gateway` Service with `hey -host`; hey ignores `-H 'Host: …'` (see
   `k8s/applications/platform/canary.yaml`).
 
 ## Known Limitations
@@ -160,9 +160,3 @@ curl -s "http://localhost:9090/api/v1/query?query=dora_workflow_deploy_event"
 - Metrics are **ephemeral** with the stack; no long-term retention yet.
 - Workflow metrics only appear after a workflow completes.
 - Flux lead time depends on commit availability in GitHub.
-
-## Future Enhancements
-
-- Add retention via remote Prometheus storage.
-- Parameterize cluster name for multi-env metrics.
-- Add explicit MTTR panels in Grafana.

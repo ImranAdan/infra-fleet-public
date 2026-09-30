@@ -20,10 +20,10 @@ state does not establish that a live deployment stays healthy under faults,
 node loss or an invalid application readiness check.
 
 The [Kyverno policy](../policies/require-rollout-capacity.yaml) checks these
-application declarations in PR and main CI. Its regression cases exercise
-single and scaled Deployments, default or nonzero unavailability, zero surge,
-missing container readiness and the controller boundary. The policy is a CI
-check; adding it here does not install an admission controller in a cluster.
+application declarations in CI and, through each profile's policies layer, at
+admission. Its regression cases exercise single and scaled Deployments, default
+or nonzero unavailability, zero surge, missing container readiness and the
+controller boundary.
 
 ## Generated controller boundary
 

@@ -48,7 +48,10 @@ Terraform installs two Auto Scaling scheduled actions:
 The defaults live in `infrastructure/staging/variables.tf` as
 `usage_window_start`, `usage_window_stop` and `usage_window_time_zone`. A worker
 release leaves the EKS control plane and networking in place. Workloads return
-when the next worker starts and Flux reconciles them.
+when the next worker starts and Flux reconciles them. Inside the window,
+cluster-autoscaler (`k8s/infrastructure/cluster-autoscaler/`, IAM in
+`infrastructure/staging/cluster-autoscaler.tf`) adds workers up to three when
+pods are pending and removes idle ones.
 
 To work outside the window, change the Auto Scaling group temporarily. The next
 scheduled action still applies:

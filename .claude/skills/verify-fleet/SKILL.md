@@ -56,7 +56,7 @@ Prefer in-cluster paths over port-forwards, which drop whenever a pod behind
 them is replaced:
 
 - **Prometheus:** `kubectl get --raw "/api/v1/namespaces/observability/services/kube-prometheus-stack-prometheus:9090/proxy/api/v1/query?query=<urlencoded>"`.
-- **The app through the gateway:** `kubectl exec -n flux-system deploy/flagger-loadtester -- hey -host localhost http://<gateway-service>.envoy-gateway-system/<path>`.
+- **The app through the gateway:** `kubectl exec -n flux-system deploy/flagger-loadtester -- hey -host localhost https://<gateway-service>.envoy-gateway-system/<path>`.
   `hey` ignores `-H 'Host: …'`; only `-host` reaches the app's route. The
   gateway service is `kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=fleet`.
 - **The app directly:** `kubectl exec -n <ns> <pod> -- …` from inside the pod,

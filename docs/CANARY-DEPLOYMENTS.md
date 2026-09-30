@@ -28,7 +28,7 @@ Both profiles use Envoy Gateway (`gatewayapi:v1`), the same gate queries
 (`envoy_cluster_upstream_rq*`) and the same load-test target, the
 `fleet-gateway` Service. Load tests call it over HTTPS with the app's hostname
 (`hey -host ${APP_HOSTNAME} https://…`): `hey` sends that name as TLS SNI and
-skips certificate verification, so the self-signed local certificate works, and
+skips certificate verification, so the local CA's certificate works, and
 the gates measure the app rather than the HTTP-to-HTTPS redirect. Requests that
 bypass the Gateway, or carry another hostname, never appear in the gate metrics.
 

@@ -141,10 +141,12 @@ Critical or High vulnerabilities with a fix block publication. See
 
 Both profiles share one way in (`k8s/routing`): an Envoy Gateway whose `http`
 listener only redirects to HTTPS and whose `https` listener terminates TLS with a
-cert-manager certificate for `APP_HOSTNAME`. Locally the certificate is
-self-signed and serves canary analysis and acceptance traffic; a person reaches
-the running app over plain HTTP on loopback (`./fleet access`), because no
-browser trusts a localhost certificate without a host-installed CA. On AWS it sits behind an
+cert-manager certificate for `APP_HOSTNAME`. Locally an in-cluster CA issues
+it, covering `*.apps.localhost` so each launched app has its own route host; it
+serves canary analysis, acceptance traffic and the dashboard proxy, which
+verifies it against that CA. A person reaches apps over plain HTTP on loopback
+(`./fleet access`), because no browser trusts the CA without installing it on
+the host. On AWS it sits behind an
 NLB with a Let's Encrypt certificate. The AWS route has not yet completed a live
 apply and teardown cycle.
 
@@ -194,8 +196,3 @@ After merge, [Infra Fleet Advisor](ADVISOR-INTEGRATION.md) reviews the new
 revision nightly, merges a changed report only after its Quality and ratchet
 gates pass, and turns eligible findings into issues here. Registered mechanical
 findings can continue through an opted-in Fleet PR and the same gates above.
-
----
-
-The PNG in this directory is retained as project history; it shows an obsolete
-ALB path.

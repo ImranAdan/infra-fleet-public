@@ -30,7 +30,7 @@ Pull requests receive these static and application checks:
 
 | Check | Scope |
 |-------|-------|
-| `gitlint` | Commit message format - see [docs/COMMIT-MESSAGES.md](docs/COMMIT-MESSAGES.md) |
+| `gitlint` | Commit message format, configured in [`.gitlint`](.gitlint) |
 | `actionlint` | Workflow syntax |
 | `yamllint`, `kubeconform`, Kyverno | Kubernetes manifests and policies |
 | `terraform fmt`, `validate` | Terraform |
@@ -54,7 +54,9 @@ ci(flux): pin the flux cli by commit and version
 ```
 
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`,
-`perf`, `revert`, `deps`. Title limit is 80 characters.
+`perf`, `revert`, `deps`. Title limit is 80 characters. `pip install -r
+requirements-dev.txt && ./scripts/install-git-hooks.sh` runs the same check
+locally. Release Please versions Load Harness from `feat` and `fix` commits.
 
 ## Pull requests
 
@@ -77,7 +79,8 @@ remain with the repository owner.
 
 The pull request template opts same-repository branches into the autonomous
 worker. Keep the marker to merge when the gate reaches `READY`; remove it to
-hold the PR. The worker retries after the intent gate and hourly.
+hold the PR. The worker reruns whenever a pull-request check workflow
+completes, and hourly.
 
 This default path needs no model or API key. The Anthropic transport remains
 available only if a future policy category explicitly uses the `judge` decider.

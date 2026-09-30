@@ -155,7 +155,7 @@ Distribute work across all pods via Kubernetes Service to trigger HPA scaling.
 
 > ⚠️ **Note:** Max parameters (50 concurrent / 2M iterations) can overwhelm
 > pods to the point where health probes time out, causing Kubernetes to restart
-> pods and the ingress endpoint to return 503. Use for resilience testing only.
+> pods and the Gateway to return 503. Use for resilience testing only.
 
 ---
 
@@ -355,7 +355,7 @@ The application automatically detects its environment and adapts behavior.
 
 | Feature | Local (docker-compose) | Cluster (Kubernetes) |
 |---------|------------------------|----------------------|
-| Environment variable | `ENVIRONMENT=local` | `ENVIRONMENT=staging` |
+| Environment variable | `ENVIRONMENT=local` | `ENVIRONMENT=kind` or `staging` |
 | Metrics source | psutil (process) | Prometheus (container) |
 | CPU/Memory display | Single percentage | avg % \| max % |
 | Memory slider max | ~2GB (system limit) | 800MB (pod safety) |
@@ -447,10 +447,10 @@ applications/load-harness/
 │   ├── load_harness_service.py   # API route handlers
 │   ├── services/                 # Service layer
 │   │   ├── job_manager.py        # Thread-safe job lifecycle management
+│   │   ├── memory_budget.py      # Pod-wide memory reservations
 │   │   ├── prometheus.py         # Prometheus client abstraction
 │   │   └── metrics_provider.py   # Local/Kubernetes metrics providers
 │   ├── workers/                  # Background worker implementations
-│   │   ├── base.py               # BaseWorker ABC, JobConfig, JobStatus
 │   │   ├── cpu_worker.py         # CPU load generation
 │   │   └── memory_worker.py      # Memory load generation
 │   ├── middleware/               # Request middleware
@@ -472,6 +472,8 @@ applications/load-harness/
 ├── tests/
 │   ├── conftest.py               # Shared pytest fixtures
 │   ├── test_app.py               # API endpoint tests
+│   ├── test_deployment_config.py # Profile-independent config tests
+│   ├── test_regressions.py       # Regression tests
 │   ├── test_security_headers.py  # Security header tests
 │   └── test_services.py          # Service layer tests
 ├── local-dev/
@@ -517,14 +519,3 @@ docker run -p 8080:8080 -e ENVIRONMENT=production load-harness:local
 - Jobs are tracked client-side in browser
 - Refresh page to reset job state
 
----
-
-## Related Documentation
-
-- [Swagger API Docs](/apidocs) - Interactive API explorer
-- [Prometheus Metrics](/metrics) - Raw metrics endpoint
-- [Health Check](/health) - Kubernetes probe endpoint
-
----
-
-Maintained as part of the platform engineering toolkit for distributed system reliability testing.

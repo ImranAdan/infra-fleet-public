@@ -110,7 +110,7 @@ owns its provisioning, routing, registry, and environment-specific policy.
 | Kubernetes | kind on the operator workstation | EKS in the configured AWS account |
 | Git source | read-only committed snapshot served locally | configured GitHub repository |
 | Registry | loopback development registry | Amazon ECR |
-| Request path | Envoy Gateway over HTTPS in-cluster (self-signed); browser access over HTTP on loopback | Envoy Gateway over HTTPS behind an AWS NLB (Let's Encrypt) |
+| Request path | Envoy Gateway over HTTPS in-cluster (local cert-manager CA); browser access over HTTP on loopback | Envoy Gateway over HTTPS behind an AWS NLB (Let's Encrypt) |
 | Observability | Prometheus and Grafana with ephemeral storage | Prometheus and Grafana in staging |
 | Intended use | development and platform acceptance | account-specific staging evaluation |
 | Lifecycle | direct local operations | reviewed GitHub Actions workflows |
@@ -205,18 +205,16 @@ Verification is divided by cost and evidence level.
 | Local Kubernetes deployment | pull requests that change runtime paths, on demand, and weekly against `main` | real Flux reconciliation, admission, isolation, on-demand app lifecycle, monitoring, canary promotion, rollback, and teardown for every included application |
 | AWS staging deployment | manual in a configured private copy | account-specific provisioning, image publication, EKS bootstrap, Flux reconciliation, rollout, and teardown |
 
-Run the full local acceptance workflow against a reviewed candidate branch when a set of
-changes is ready for integration:
+The Local Kubernetes workflow runs on pull requests that change runtime paths, and the
+merge gate waits for it. It records the exact tested revision in the `local` GitHub
+Environment, creates an ephemeral cluster per application, runs the acceptance cycle,
+and tears the cluster down. To run it on any branch:
 
 ```bash
-gh workflow run local-kubernetes.yml --ref YOUR_CANDIDATE_BRANCH
+gh workflow run local-kubernetes.yml --ref YOUR_BRANCH
 ```
 
-The workflow records the exact tested revision in the `local` GitHub Environment,
-creates an ephemeral cluster, runs the acceptance cycle, and tears the cluster down. It
-remains separate from ordinary pull request CI because the cluster cycle is
-comparatively long. See [GitHub Environments](docs/GITHUB-ENVIRONMENTS.md) for the
-deployment evidence model.
+See [GitHub Environments](docs/GITHUB-ENVIRONMENTS.md) for the deployment evidence model.
 
 Flagger evaluates canary traffic at the gateway. A healthy revision is promoted; a
 revision that breaches the configured success-rate or latency thresholds is rolled back.
@@ -236,6 +234,9 @@ k8s/
   applications/               Application manifests and shared platform controls
   infrastructure/             Controllers, observability, and namespaces
   profiles/                   Local and AWS staging composition
+  routing/                    Shared Envoy Gateway, HTTPS redirect and certificate
+  control-plane/              Local application dashboard and its launch policy
+platform/local/               kind cluster and read-only Git server for the local profile
 policies/                     Shared and profile-specific Kyverno policies
 scripts/                      Rendering, validation, selection, and onboarding tools
 ops/                          Operational verification scripts
@@ -257,8 +258,9 @@ The staging stack is ephemeral and teardown is manual by design:
 ```
 
 Teardown removes staging resources after an explicit target confirmation. It retains the
-permanent OIDC and ECR foundation. Spot worker nodes and a compact controller set reduce
-cost, but do not make the AWS profile free. See [Cost
+permanent OIDC and ECR foundation. Spot workers, cluster-autoscaler and a weekday usage
+window that releases every worker overnight reduce cost, but do not make the AWS profile
+free. See [Cost
 optimization](docs/COST-OPTIMIZATION-GUIDE.md) for the resource model and controls.
 
 ## Documentation

@@ -33,7 +33,7 @@ Preconditions:
   Promotion shows `Advance … canary weight 10` up to `50` and
   `Promotion completed!`; rollback shows `Halt … < 99` (or `> 500`) then
   `Rolling back … failed checks threshold reached 3`.
-- **Load reaches the app.** Run `kubectl exec -n flux-system deploy/flagger-loadtester -- hey -n 20 -host localhost http://<gateway-service>.envoy-gateway-system<APP_LOAD_PATH>`.
+- **Load reaches the app.** Run `kubectl exec -n flux-system deploy/flagger-loadtester -- hey -n 20 -host localhost https://<gateway-service>.envoy-gateway-system<APP_LOAD_PATH>`.
   The status distribution is the app's (for example `[200] 20`), not `[404]`.
 - **Proof.** Save the `describe canary` events and the `./fleet test` output.
 
