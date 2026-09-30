@@ -182,6 +182,10 @@ spec:
           env:
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
+            # Stop a launched app after this many minutes without proxied
+            # requests; 0 keeps launched apps running until stopped.
+            - name: IDLE_MINUTES
+              value: "30"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

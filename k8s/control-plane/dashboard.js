@@ -64,8 +64,9 @@ function card(app) {
   el.querySelector("h2").textContent = app.title;
   el.querySelector(".name").textContent = app.selected ? `${app.name} · default` : app.name;
   el.querySelector(".desc").textContent = app.description;
-  el.querySelector(".label").textContent =
-    app.phase ? `${LABEL[app.state]} · canary ${app.phase}` : LABEL[app.state];
+  let status = app.phase ? `${LABEL[app.state]} · canary ${app.phase}` : LABEL[app.state];
+  if (app.sleeps_in != null) status += ` · sleeps in ${app.sleeps_in} min`;
+  el.querySelector(".label").textContent = status;
 
   const actions = el.querySelector(".actions");
   if (app.state === "running") {

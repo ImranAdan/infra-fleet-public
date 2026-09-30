@@ -10,6 +10,9 @@ filled with the app's contract) that run as the app-deployer service account.
 That identity can change application workloads and app-owned Grafana dashboard
 ConfigMaps; it has no cluster-wide grant. Stopping deletes the Kustomizations
 and Flux prunes the stack.
+
+A launched app goes back to sleep: a background sweep stops any launched app
+that no proxied request has reached for IDLE_MINUTES (0 disables it).
 """
 
 import http.client
@@ -18,6 +21,8 @@ import os
 import re
 import ssl
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -54,6 +59,11 @@ HOP_BY_HOP = {
 _LINE = re.compile(r"^  (APP_[A-Z_]+):\s*(.*)$")
 _APP_HOST = re.compile(r"^([a-z0-9]([-a-z0-9]*[a-z0-9])?)\.localhost(:\d+)?$")
 _CONTROL_HOST = re.compile(r"^localhost(:\d+)?$")
+IDLE_MINUTES = float(os.environ.get("IDLE_MINUTES", "30"))
+# Monotonic time of each app's last proxied request or launch. In memory only:
+# after a restart an app has no entry, and its first sighting starts a fresh
+# grace period rather than stopping it at once.
+last_seen: dict[str, float] = {}
 _LAUNCH_SUBSTITUTIONS = (
     "APP_NAME",
     "APP_PORT",
@@ -254,7 +264,40 @@ def live_apps() -> list[dict]:
         item["metadata"]["name"]: item.get("status", {})
         for item in kube("/apis/apps/v1/namespaces/applications/deployments")["items"]
     }
-    return catalogue(catalog, canaries, deployments, selected, launched_apps())
+    apps = catalogue(catalog, canaries, deployments, selected, launched_apps())
+    now = time.monotonic()
+    for app in apps:
+        app["sleeps_in"] = sleeps_in(app["name"], now) if app["launched"] else None
+    return apps
+
+
+def sleeps_in(name: str, now: float) -> int | None:
+    """Whole minutes until the idle sweep stops a launched app; None if disabled."""
+    if not IDLE_MINUTES:
+        return None
+    left = last_seen.setdefault(name, now) + IDLE_MINUTES * 60 - now
+    return max(0, -int(-left // 60))
+
+
+def sweep(now: float) -> None:
+    """Stop every launched app, never the selected one, idle past IDLE_MINUTES."""
+    if not IDLE_MINUTES:
+        return
+    _, selected = read_catalog()
+    for name in launched_apps() - {selected}:
+        if now - last_seen.setdefault(name, now) > IDLE_MINUTES * 60:
+            print(f"stopping {name}: idle for over {IDLE_MINUTES:g} min", flush=True)
+            stop(name)
+            last_seen.pop(name, None)
+
+
+def sleeper() -> None:
+    while True:
+        time.sleep(60)
+        try:
+            sweep(time.monotonic())
+        except Exception as exc:  # noqa: BLE001 - keep sweeping after a failed pass
+            print(f"idle sweep failed: {exc}", file=sys.stderr, flush=True)
 
 
 def launch(name: str) -> None:
@@ -277,6 +320,7 @@ def launch(name: str) -> None:
             existing = kube(f"{KUSTOMIZATIONS}/{body['metadata']['name']}")
             if existing.get("metadata", {}).get("deletionTimestamp"):
                 raise ValueError(f"{name} is still stopping; launch it again shortly") from exc
+    last_seen[name] = time.monotonic()
 
 
 def stop(name: str) -> None:
@@ -317,6 +361,7 @@ class Handler(BaseHTTPRequestHandler):
         names = {contract(text).get("APP_NAME") for text in catalog.values()}
         app = app_for_host(self.headers.get("Host", ""), names)
         if app:
+            last_seen[app] = time.monotonic()
             return self.proxy(gateway_host(app, selected))
         if not control_host(self.headers.get("Host", "")):
             return self.reply(421, b"dashboard requires a localhost Host header\n", "text/plain")
@@ -451,8 +496,8 @@ data:
     assert row["launched"] is False
 
     # Launch and stop against a fake API, for the review's failure scenarios.
-    global kube, read_catalog, launched_apps
-    real = (kube, read_catalog, launched_apps)
+    global kube, read_catalog, launched_apps, stop, IDLE_MINUTES
+    real = (kube, read_catalog, launched_apps, stop, IDLE_MINUTES)
     calls: list[tuple[str, str]] = []
     responses: dict[tuple[str, str], object] = {}
 
@@ -499,8 +544,29 @@ data:
             raise AssertionError("stopping the default app was accepted")
         except ValueError:
             pass
+        # Idle sweep on a fake clock. "game" is selected, so never stopped.
+        stopped: list[str] = []
+        stop = stopped.append
+        read_catalog = lambda: ({}, "game")  # noqa: E731
+        launched_apps = lambda: {"game", "idle", "busy", "new"}  # noqa: E731
+        IDLE_MINUTES = 30
+        last_seen.clear()
+        last_seen.update({"game": 0.0, "idle": 0.0, "busy": 0.0})
+        assert sleeps_in("idle", 60.0) == 29
+        last_seen["busy"] = 1500.0  # recent proxied traffic
+        sweep(1801.0)  # "new" has no record, as after a restart: grace starts now
+        assert stopped == ["idle"] and "idle" not in last_seen
+        assert last_seen["new"] == 1801.0 and sleeps_in("new", 1801.0) == 30
+        sweep(1801.0 + 1800 + 1)
+        assert sorted(stopped) == ["busy", "idle", "new"]
+        stopped.clear()
+        IDLE_MINUTES = 0
+        last_seen.clear()
+        sweep(10**9)
+        assert stopped == [] and sleeps_in("busy", 10**9) is None
     finally:
-        kube, read_catalog, launched_apps = real
+        kube, read_catalog, launched_apps, stop, IDLE_MINUTES = real
+        last_seen.clear()
     print("self-test passed")
 
 
@@ -508,4 +574,5 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["--self-test"]:
         self_test()
     else:
+        threading.Thread(target=sleeper, daemon=True).start()
         ThreadingHTTPServer(("", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
