@@ -128,7 +128,7 @@ import sys, urllib.request
 request = urllib.request.Request(
     f"http://127.0.0.1:8080/api/apps/{sys.argv[1]}/{sys.argv[2]}",
     method="POST",
-    headers={"X-Fleet-Action": "1"},
+    headers={"Host": "localhost:9000", "X-Fleet-Action": "1"},
 )
 with urllib.request.urlopen(request, timeout=15) as response:
     assert response.status == 202

@@ -48,4 +48,7 @@ wait z'
   exit 1
 }
 
+grep -Fq 'headers={"Host": "localhost:9000", "X-Fleet-Action": "1"}' \
+  "$root/scripts/fleet-profiles/test-local.sh"
+
 echo 'local control-plane lifecycle contract passed'
