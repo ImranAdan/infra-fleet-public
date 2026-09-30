@@ -44,6 +44,7 @@ echo ""
 
 # Track cleanup status
 CLEANUP_METHOD=""
+FLUX_SUSPEND_FAILED=false
 
 # =============================================================================
 # Phase 1: Determine Cleanup Strategy
@@ -98,10 +99,14 @@ if [ "$CLEANUP_METHOD" == "kubernetes" ]; then
             -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name' \
             2>/dev/null | sed 's/^/         /'
     else
-        kubectl patch kustomizations.kustomize.toolkit.fluxcd.io --all -A \
-            --type=merge -p '{"spec":{"suspend":true}}'
-        echo "      ✅ Suspended all Flux Kustomizations"
-        sleep 5
+        if kubectl patch kustomizations.kustomize.toolkit.fluxcd.io --all -A \
+            --type=merge -p '{"spec":{"suspend":true}}'; then
+            echo "      ✅ Suspended all Flux Kustomizations"
+            sleep 5
+        else
+            echo "      ⚠️  Could not suspend Flux Kustomizations; continuing cleanup"
+            FLUX_SUSPEND_FAILED=true
+        fi
     fi
 
     # Step 1: Delete Gateway API entry points. Envoy Gateway owns the generated
@@ -368,6 +373,10 @@ else
     echo "   🔍 Checking for remaining resources..."
 
     REMAINING_ISSUES=0
+    if [ "$FLUX_SUSPEND_FAILED" == "true" ]; then
+        echo "   ⚠️  Flux suspension failed; reconciliation may recreate resources"
+        REMAINING_ISSUES=1
+    fi
 
     # Check for remaining ELBv2 load balancers
     REMAINING_LBS=0
@@ -439,7 +448,11 @@ echo "   Cleanup method: $CLEANUP_METHOD"
 echo "   Mode: $([ "$DRY_RUN" == "dry-run" ] && echo "DRY RUN" || echo "LIVE")"
 echo ""
 echo "✅ Cleanup script complete"
-echo "✅ Safe to proceed with Terraform destroy"
+if [ "$DRY_RUN" == "dry-run" ] || [ "${REMAINING_ISSUES:-0}" -eq 0 ]; then
+    echo "✅ Safe to proceed with Terraform destroy"
+else
+    echo "⚠️  Cleanup needs attention before Terraform destroy"
+fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Exit with appropriate code

@@ -40,7 +40,17 @@ HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
 }
-HOP_BY_HOP = {"connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade", "te"}
+HOP_BY_HOP = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "proxy-connection",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
 _LINE = re.compile(r"^  (APP_[A-Z_]+):\s*(.*)$")
 _APP_HOST = re.compile(r"^([a-z0-9]([-a-z0-9]*[a-z0-9])?)\.localhost(:\d+)?$")
 _LAUNCH_SUBSTITUTIONS = (
@@ -49,6 +59,21 @@ _LAUNCH_SUBSTITUTIONS = (
     "APP_HEALTH_PATH",
     "APP_LOAD_PATH",
 )
+
+
+def forwardable_headers(
+    headers: list[tuple[str, str]], extra: set[str] | frozenset[str] = frozenset()
+) -> list[tuple[str, str]]:
+    """Remove fixed and Connection-nominated hop-by-hop fields."""
+    nominated = {
+        token.strip().lower()
+        for name, value in headers
+        if name.lower() == "connection"
+        for token in value.split(",")
+        if token.strip()
+    }
+    blocked = HOP_BY_HOP | nominated | {name.lower() for name in extra}
+    return [(name, value) for name, value in headers if name.lower() not in blocked]
 
 
 def contract(text: str) -> dict[str, str]:
@@ -308,9 +333,7 @@ class Handler(BaseHTTPRequestHandler):
         verified against the fleet's local CA for the app's own host name."""
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
-        headers = {
-            k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP | {"host"}
-        }
+        headers = dict(forwardable_headers(list(self.headers.items()), {"host"}))
         headers["Host"] = host
         connection = GatewayConnection(host)
         try:
@@ -322,9 +345,8 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             connection.close()
         self.send_response(response.status)
-        for name, value in response.getheaders():
-            if name.lower() not in HOP_BY_HOP | {"content-length"}:
-                self.send_header(name, value)
+        for name, value in forwardable_headers(response.getheaders(), {"content-length"}):
+            self.send_header(name, value)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -396,6 +418,16 @@ data:
     assert app_for_host("game.localhost.evil.test", names) is None
     assert gateway_host("game", selected="game") == "localhost"
     assert gateway_host("sample", selected="game") == "sample.apps.localhost"
+
+    assert forwardable_headers(
+        [
+            ("Connection", "X-Internal, keep-alive"),
+            ("X-Internal", "must not cross the proxy"),
+            ("Trailer", "Digest"),
+            ("X-End-To-End", "kept"),
+        ],
+        {"host"},
+    ) == [("X-End-To-End", "kept")]
 
     # The default app never offers Stop, even if it was launched earlier.
     [row] = catalogue({"game": text}, {}, {}, "game", {"game"})
