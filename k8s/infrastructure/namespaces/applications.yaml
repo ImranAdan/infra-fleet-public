@@ -32,10 +32,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  # Infrastructure receives the selected contract in both profiles. Keeping
-  # this identity contract-derived also preserves M-004's rule that every
-  # application-namespace NetworkPolicy reads its name from APP_NAME.
-  name: default-deny-${APP_NAME}
+  name: default-deny-applications
   namespace: applications
 spec:
   podSelector: {}
