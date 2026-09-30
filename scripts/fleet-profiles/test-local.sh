@@ -166,7 +166,7 @@ test_control_plane() {
   # shellcheck disable=SC2016
   launch_app=$(kctl get configmap fleet-catalog -n flux-system \
     -o go-template='{{range $key, $value := .data}}{{printf "%s\n" $key}}{{end}}' | \
-    awk -v selected="$APP_NAME" '$0 != selected { print; exit }')
+    awk -v selected="$APP_NAME" '$0 != selected && !found { print; found = 1 }')
   [ -n "$launch_app" ] || fail 'The dashboard acceptance needs another app contract.' || return 1
   contract=$(kctl get configmap fleet-catalog -n flux-system -o "jsonpath={.data['$launch_app']}")
   app_port=$(awk '$1 == "APP_PORT:" { sub(/^[^:]*:[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit }' <<< "$contract")
