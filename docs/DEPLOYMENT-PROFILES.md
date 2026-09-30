@@ -66,7 +66,10 @@ After committing a change:
 configuration. Flux then reconciles it. It never pushes to GitHub. Runtime state
 under `.git/fleet/local` is shared across linked worktrees; teardown retains
 the pinned CLI cache, registry data and local credentials. Compose volumes are
-separate.
+separate. When more than one application is running, sync promotes them in
+sequence so their Flagger load tests do not compete for the local node. It
+returns only after every target revision reaches its primary, and returns a
+failure if any canary rolls back while that app's prior primary remains live.
 
 `test` temporarily commits promotion and fault-injection snapshots into the
 local-only Git source, verifies outcomes, and restores the deployed source. It

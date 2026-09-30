@@ -69,6 +69,10 @@ the change and reconcile that revision:
 ./fleet test --profile local
 ```
 
+`sync` promotes running applications one at a time and returns only after each
+requested revision reaches its primary. A failed canary keeps the previous
+primary serving and makes the command fail.
+
 `test` exercises Flux drift repair, Kyverno admission, network isolation, an
 on-demand app launch and removal, monitoring, healthy canary promotion, and
 forced-failure rollback. Remove the local cluster when finished:

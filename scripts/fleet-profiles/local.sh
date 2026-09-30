@@ -306,13 +306,79 @@ local_suspend_launched_apps() {
     -l infra-fleet.io/launched-app -o go-template='{{range .items}}{{printf "%s\n" .metadata.name}}{{end}}')
 }
 
+# A Flux Kustomization is Ready once it has applied a Deployment; Flagger may
+# still be analysing that Deployment. A successful sync means the requested
+# revision reached the generated primary, not merely that Flux submitted it.
+# Checking the primary revision prevents a stale success from being accepted;
+# comparing Flagger's applied-spec hash with its pre-resume value does the same
+# for a stale failure before Flagger observes the new target.
+local_wait_canary() {
+  local app=$1 timeout=${2:-900} baseline_spec=${3:-}
+  local deadline phase applied_spec target_revision primary_revision
+  deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    target_revision=$(kctl get deployment "$app" -n applications \
+      -o 'jsonpath={.spec.template.metadata.annotations.infra-fleet\.io/runtime-config-revision}' \
+      2>/dev/null || true)
+    primary_revision=$(kctl get deployment "$app-primary" -n applications \
+      -o 'jsonpath={.spec.template.metadata.annotations.infra-fleet\.io/runtime-config-revision}' \
+      2>/dev/null || true)
+    phase=$(kctl get canary "$app" -n applications -o jsonpath='{.status.phase}' \
+      2>/dev/null || true)
+    applied_spec=$(kctl get canary "$app" -n applications \
+      -o jsonpath='{.status.lastAppliedSpec}' 2>/dev/null || true)
+
+    if [ "$target_revision" = "$FLEET_SHA" ]; then
+      if [ "$phase" = Failed ] && [ -n "$applied_spec" ] && \
+        [ "$applied_spec" != "$baseline_spec" ]; then
+        kctl describe canary "$app" -n applications >&2 || true
+        fail "$app rolled back revision $FLEET_SHA." || return 1
+      fi
+      case "$phase" in
+        Initialized|Succeeded)
+          if [ "$primary_revision" = "$FLEET_SHA" ]; then
+            echo "$app promoted revision $FLEET_SHA."
+            return 0
+          fi
+          ;;
+      esac
+    fi
+    sleep 5
+  done
+  kctl describe canary "$app" -n applications >&2 || true
+  fail "$app did not promote revision $FLEET_SHA within ${timeout}s." || return 1
+}
+
+local_canary_applied_spec() {
+  kctl get canary "$1" -n applications -o jsonpath='{.status.lastAppliedSpec}' \
+    2>/dev/null || true
+}
+
+# Resume one complete app at a time. Parallel Flagger load tests compete for
+# the same local node and can make a healthy revision breach its latency gate.
+# Continue after a rollback so no app is accidentally left suspended, while
+# preserving a failing exit status for the operator and CI.
 local_resume_launched_apps() {
-  local name result=0
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    fctl resume kustomization "$name" --timeout=15m || result=1
+  local app layer baseline_spec result=0 app_ready
+  while IFS= read -r app; do
+    [ -n "$app" ] || continue
+    app_ready=true
+    baseline_spec=$(local_canary_applied_spec "$app")
+    for layer in "app-$app" "app-$app-platform"; do
+      if kctl get kustomization "$layer" -n flux-system >/dev/null 2>&1; then
+        fctl resume kustomization "$layer" --timeout=15m || {
+          result=1
+          app_ready=false
+        }
+      fi
+    done
+    if [ "$app_ready" = true ] && kctl get canary "$app" -n applications >/dev/null 2>&1; then
+      local_wait_canary "$app" 900 "$baseline_spec" || result=1
+    fi
   done < <(kctl get kustomizations -n flux-system \
-    -l infra-fleet.io/launched-app -o go-template='{{range .items}}{{printf "%s\n" .metadata.name}}{{end}}' | LC_ALL=C sort)
+    -l infra-fleet.io/launched-app \
+    -o go-template='{{range .items}}{{index .metadata.labels "infra-fleet.io/launched-app"}}{{"\n"}}{{end}}' |
+    LC_ALL=C sort -u)
   return "$result"
 }
 
@@ -490,6 +556,7 @@ local_wait_gateway() {
 }
 
 local_up() {
+  local app_result=0 selected selected_baseline
   local_revision "$1"
   if local_cluster_exists; then
     local_existing_cluster
@@ -520,15 +587,23 @@ local_up() {
   local_wait_gateway
   local_configuration "$(local_gateway_service).envoy-gateway-system"
   # A sync interrupted between suspend and resume must not leave the app held.
+  selected=$(local_contract_value k8s/fleet-app/fleet-app.yaml APP_NAME)
+  selected_baseline=$(local_canary_applied_spec "$selected")
   kctl patch kustomization applications -n flux-system --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
-  fctl reconcile kustomization applications --with-source --timeout=15m
-  local_resume_launched_apps
+  if fctl reconcile kustomization applications --with-source --timeout=15m; then
+    local_wait_canary "$selected" 900 "$selected_baseline" || app_result=1
+  else
+    app_result=1
+  fi
+  local_resume_launched_apps || app_result=1
   kctl wait --for=condition=Ready kustomization/policies -n flux-system --timeout=5m
   kctl wait --for=condition=Ready kustomization/control-plane -n flux-system --timeout=10m
+  [ "$app_result" -eq 0 ] || return 1
   echo 'Local Kubernetes is ready. Open the dashboard with ./fleet access --profile local --service dashboard.'
 }
 
 local_sync() {
+  local app_result=0 selected selected_baseline
   local_existing_cluster
   local_revision "$1"
   local_build_image
@@ -544,8 +619,15 @@ local_sync() {
     local_resume_launched_apps || true
     return 1
   fi
-  fctl resume kustomization applications --timeout=15m
-  local_resume_launched_apps
+  selected=$(local_contract_value k8s/fleet-app/fleet-app.yaml APP_NAME)
+  selected_baseline=$(local_canary_applied_spec "$selected")
+  if fctl resume kustomization applications --timeout=15m; then
+    local_wait_canary "$selected" 900 "$selected_baseline" || app_result=1
+  else
+    app_result=1
+  fi
+  local_resume_launched_apps || app_result=1
+  return "$app_result"
 }
 
 local_sync_platform() {

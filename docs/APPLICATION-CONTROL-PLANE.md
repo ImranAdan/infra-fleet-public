@@ -85,4 +85,7 @@ Run `./fleet sync --profile local` after committing changes; it reconciles the
 control plane and every currently launched app to the new revision. Sync holds
 all app reconcilers until the Git snapshot and image tag agree. If a launched
 app becomes the selected app, sync prunes its launch objects first and transfers
-ownership to the fleet's selected-application layer.
+ownership to the fleet's selected-application layer. The selected app and each
+launched app are then promoted one at a time. Sync exits successfully only when
+every requested revision has reached its generated primary; a Flagger rollback
+leaves the previous primary serving and makes sync fail.

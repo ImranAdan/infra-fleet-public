@@ -22,7 +22,9 @@ method in [pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT).
 ```
 
 `up` and `sync` deploy **committed** revisions only; commit first. Ready means
-`up` or `sync` exits 0 and the doctor passes. Use only the fleet's own
+`up` or `sync` exits 0, every running app has promoted that revision, and the
+doctor passes. App canaries are promoted serially on the local node; a rollback
+keeps the previous primary live and makes the command fail. Use only the fleet's own
 kubeconfig, `$(git rev-parse --git-common-dir)/fleet/local/kubeconfig`, never
 the default context: it may point at a deleted cluster. One cluster exists per
 checkout; there is no second instance to run side by side, so never drive it
