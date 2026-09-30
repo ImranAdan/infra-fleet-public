@@ -50,9 +50,15 @@ launch objects. It cannot edit workloads directly.
   infrastructure, Secrets or namespaces.
 - A deny-ingress NetworkPolicy prevents other pods from reaching the control
   API. The supported entry point is a loopback-bound `kubectl port-forward`.
-- Launch and Stop require `X-Fleet-Action: 1`. Browsers cannot send that custom
-  header cross-origin without a CORS preflight, which the server does not
-  grant.
+- Dashboard and API requests require the documented `localhost` Host header,
+  which prevents a hostile DNS name rebound to the loopback port-forward from
+  becoming same-origin. Launch and Stop also require `X-Fleet-Action: 1`;
+  ordinary cross-origin requests cannot send it without a CORS preflight,
+  which the server does not grant.
+- The `applications` namespace has a permanent default-deny ingress policy.
+  Each app's platform layer adds its explicit Gateway, load-test, monitoring
+  and same-app paths, so a partial launch or asynchronous stop cannot expose a
+  workload while its app-specific policy is absent.
 - App traffic is proxied through Envoy Gateway over TLS verified against the
   local CA. The dashboard does not bypass the declared ingress path or disable
   certificate verification.

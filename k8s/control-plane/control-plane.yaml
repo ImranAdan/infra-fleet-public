@@ -30,7 +30,7 @@ rules:
   # launched ones may be deleted.
   - apiGroups: [kustomize.toolkit.fluxcd.io]
     resources: [kustomizations]
-    verbs: [list, create, delete]
+    verbs: [get, list, create, delete]
 ---
 # The identity used to deploy launched apps. Its second, narrow grant below
 # lets an app carry Grafana dashboard ConfigMaps with its own manifests.

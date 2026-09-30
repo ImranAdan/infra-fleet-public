@@ -61,6 +61,9 @@ def test_only_aws_profile_contains_aws_runtime_resources():
 
 def test_local_control_plane_is_isolated_and_least_privileged():
     resources = load("local")
+    default_deny = one(resources, "NetworkPolicy", "default-deny-applications")
+    assert default_deny["metadata"]["namespace"] == "applications"
+    assert default_deny["spec"] == {"podSelector": {}, "policyTypes": ["Ingress"]}
     policy = one(resources, "NetworkPolicy", "control-plane")
     assert policy["metadata"]["namespace"] == "fleet-control"
     assert policy["spec"] == {
@@ -82,6 +85,11 @@ def test_local_control_plane_is_isolated_and_least_privileged():
     dashboard_role = one(resources, "Role", "app-deployer-dashboards")
     assert dashboard_role["metadata"]["namespace"] == "observability"
     assert dashboard_role["rules"][0]["resources"] == ["configmaps"]
+    control_role = one(resources, "Role", "control-plane-catalog")
+    launch_rule = next(
+        rule for rule in control_role["rules"] if rule["resources"] == ["kustomizations"]
+    )
+    assert launch_rule["verbs"] == ["get", "list", "create", "delete"]
 
     admission = one(resources, "ValidatingAdmissionPolicy", "control-plane-launches")
     expressions = "\n".join(item["expression"] for item in admission["spec"]["validations"])

@@ -112,8 +112,10 @@ The dashboard account cannot deploy workloads directly. Admission confines its
 launch objects to the local Git source, known paths and the `app-deployer`
 identity. That identity can change application resources and app-owned Grafana
 dashboard ConfigMaps; it has no cluster-wide role. A deny-ingress NetworkPolicy
-keeps other pods from driving the control API. See [application control
-plane](APPLICATION-CONTROL-PLANE.md).
+keeps other pods from driving the control API, a localhost Host allowlist
+blocks DNS-rebinding access, and the applications namespace keeps a permanent
+default deny while app-specific policy layers are created or removed. See
+[application control plane](APPLICATION-CONTROL-PLANE.md).
 
 ## Progressive delivery
 

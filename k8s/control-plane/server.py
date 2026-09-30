@@ -53,6 +53,7 @@ HOP_BY_HOP = {
 }
 _LINE = re.compile(r"^  (APP_[A-Z_]+):\s*(.*)$")
 _APP_HOST = re.compile(r"^([a-z0-9]([-a-z0-9]*[a-z0-9])?)\.localhost(:\d+)?$")
+_CONTROL_HOST = re.compile(r"^localhost(:\d+)?$")
 _LAUNCH_SUBSTITUTIONS = (
     "APP_NAME",
     "APP_PORT",
@@ -182,6 +183,16 @@ def app_for_host(host: str, catalog_names: set[str]) -> str | None:
     return match[1] if match and match[1] in catalog_names else None
 
 
+def control_host(host: str) -> bool:
+    """Whether a request uses the dashboard's documented loopback name.
+
+    A loopback-bound port-forward alone does not prevent DNS rebinding: a
+    hostile origin can resolve its own name to 127.0.0.1. Requiring localhost
+    closes that same-origin browser path.
+    """
+    return bool(_CONTROL_HOST.fullmatch(host or ""))
+
+
 def route_host(app: str) -> str:
     """A launched app's route host. Two labels after the certificate's wildcard
     (*.apps.localhost): TLS clients reject a wildcard directly over a single
@@ -307,6 +318,8 @@ class Handler(BaseHTTPRequestHandler):
         app = app_for_host(self.headers.get("Host", ""), names)
         if app:
             return self.proxy(gateway_host(app, selected))
+        if not control_host(self.headers.get("Host", "")):
+            return self.reply(421, b"dashboard requires a localhost Host header\n", "text/plain")
         if self.command == "GET" and path == "/api/apps":
             try:
                 return self.reply(200, json.dumps({"apps": live_apps()}).encode(), "application/json")
@@ -416,6 +429,10 @@ data:
     assert app_for_host("localhost:9000", names) is None
     assert app_for_host("evil.localhost:9000", names) is None
     assert app_for_host("game.localhost.evil.test", names) is None
+    assert control_host("localhost")
+    assert control_host("localhost:9000")
+    assert not control_host("127.0.0.1:9000")
+    assert not control_host("dashboard.example:9000")
     assert gateway_host("game", selected="game") == "localhost"
     assert gateway_host("sample", selected="game") == "sample.apps.localhost"
 
