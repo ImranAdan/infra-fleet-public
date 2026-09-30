@@ -1,0 +1,36 @@
+# app-deployer may write ConfigMaps in observability so an app's Grafana
+# dashboards travel with it. RBAC cannot scope a create by name, so the API
+# server confines it to dashboard ConfigMaps: it cannot touch Prometheus,
+# Grafana or alerting configuration there.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: app-deployer-dashboards
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: observability
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [configmaps]
+  matchConditions:
+    - name: from-app-deployer
+      expression: request.userInfo.username == 'system:serviceaccount:flux-system:app-deployer'
+  validations:
+    - expression: >-
+        [object, oldObject].all(o, o == null || (
+          o.metadata.name.startsWith('grafana-dashboard-') &&
+          o.metadata.?labels['grafana_dashboard'].orValue('') == '1'))
+      message: app-deployer may only manage Grafana dashboard ConfigMaps in observability.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: app-deployer-dashboards
+spec:
+  policyName: app-deployer-dashboards
+  validationActions: [Deny]
