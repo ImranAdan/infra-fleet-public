@@ -2,6 +2,7 @@
 
 const LABEL = { running: "Running", starting: "Starting", sleeping: "Not running" };
 const COLORS = ["#e74c3c", "#8e44ad", "#16a085", "#d35400", "#2980b9", "#c0392b", "#27ae60"];
+const pending = new Set();
 // Every app answers on its own host through this dashboard's port-forward.
 const appUrl = (name) => `${location.protocol}//${name}.localhost:${location.port}/`;
 
@@ -12,22 +13,30 @@ function color(name) {
 }
 
 async function act(name, action) {
-  // The custom header proves the request came from this page, not another site.
-  const response = await fetch(`/api/apps/${name}/${action}`, {
-    method: "POST",
-    headers: { "X-Fleet-Action": "1" },
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    let message = text || response.statusText;
-    try {
-      message = JSON.parse(text).error || message;
-    } catch {
-      // The API deliberately uses plain text for request-boundary errors.
+  if (pending.has(name)) return;
+  pending.add(name);
+  try {
+    // The custom header proves the request came from this page, not another site.
+    const response = await fetch(`/api/apps/${name}/${action}`, {
+      method: "POST",
+      headers: { "X-Fleet-Action": "1" },
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let message = text || response.statusText;
+      try {
+        message = JSON.parse(text).error || message;
+      } catch {
+        // The API deliberately uses plain text for request-boundary errors.
+      }
+      alert(message);
     }
-    alert(message);
+  } catch (error) {
+    alert(`The ${action} request failed: ${error.message}`);
+  } finally {
+    await refresh();
+    pending.delete(name);
   }
-  refresh();
 }
 
 function button(text, onClick, secondary) {
