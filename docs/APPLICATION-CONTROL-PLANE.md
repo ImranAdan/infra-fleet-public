@@ -15,6 +15,14 @@ Open <http://localhost:9000/>. **Launch** deploys an app's complete stack;
 fleet default and cannot be stopped here. Each running app opens at
 `http://<app-name>.localhost:9000/`.
 
+Launched apps go back to sleep. When no request has reached a launched app
+through the dashboard for `IDLE_MINUTES` (30 by default, set on the
+control-plane Deployment; `0` disables it), the dashboard stops it as if
+**Stop** were pressed, and its card shows "sleeps in N min" meanwhile. The
+idle clock starts at launch and is kept in memory, so after a control-plane
+restart every launched app starts a fresh idle period. The selected app never
+sleeps. Only traffic through the `<app>.localhost:9000` proxy counts.
+
 ## Reconciliation model
 
 The dashboard reads `fleet-catalog`, a ConfigMap built from every
