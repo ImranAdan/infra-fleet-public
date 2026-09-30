@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.10.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.9.0...v1.10.0) (2026-09-30)
+
+
+### Features
+
+* **control-plane:** application dashboard with on-demand launch ([7d3de74](https://github.com/ImranAdan/infra-fleet-public/commit/7d3de7402802c0edfd83ef4b9aeaa8b474451ec7))
+
+
+### Bug Fixes
+
+* **aws:** align teardown with gateway routing ([a887e9e](https://github.com/ImranAdan/infra-fleet-public/commit/a887e9e3b7fa31bd5ea07da495736ae0c8ab844c))
+* **control-plane:** isolate and prove on-demand apps ([da1cf0b](https://github.com/ImranAdan/infra-fleet-public/commit/da1cf0b45aa60d23e7110a96c8776885b58aec47))
+
 ## [1.9.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.8.2...v1.9.0) (2026-09-27)
 
 
