@@ -1,11 +1,12 @@
 # Dependabot
 
-`.github/dependabot.yml` checks four dependency surfaces every month:
+`.github/dependabot.yml` checks these dependency surfaces every month:
 
 | Ecosystem | Directory | Update behavior |
 |---|---|---|
 | Python | `/applications/load-harness` | grouped |
-| Docker | `/applications/load-harness` | one update stream |
+| Python | `/` (development tools) | grouped |
+| Docker | each `/applications/<app>` and `/platform/local/git-server` | one update stream per directory |
 | GitHub Actions | `/` | grouped; major-version jumps ignored |
 | Terraform | `/infrastructure/staging` and `/infrastructure/permanent` | grouped per stack |
 

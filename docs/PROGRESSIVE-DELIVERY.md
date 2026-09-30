@@ -51,12 +51,12 @@ route: every request gets a 404 from the gateway itself.
 
 ## Gates are measured at the gateway
 
-The app needs no metrics of its own. Each profile ships its MetricTemplates
-under `k8s/profiles/<profile>/applications/`:
-
-| Profile | Source | Notes |
-|---|---|---|
-| local and aws-staging | Envoy `envoy_cluster_upstream_rq*` for `httproute/<namespace>/<canary>/rule/*` | Envoy Gateway keeps primary and canary endpoints in one cluster per route rule, so the gates are route-wide. A failing canary still breaks them as its share of traffic rises. |
+The app needs no metrics of its own. Both profiles share the MetricTemplates in
+`k8s/applications/observability/metrictemplate.yaml`, which query Envoy's
+`envoy_cluster_upstream_rq*` for `httproute/<namespace>/<canary>/rule/*`.
+Envoy Gateway keeps primary and canary endpoints in one cluster per route rule,
+so the gates are route-wide; a failing canary still breaks them as its share of
+traffic rises.
 
 ## Try it
 
@@ -89,7 +89,7 @@ kubectl describe canary -n applications     # events: Advance, Halt, Promotion
 
 **`no values found for custom metric`.** No request reached the route in the
 last minute. Check that the load test reaches the app:
-`kubectl exec -n flux-system deploy/flagger-loadtester -- hey -n 20 -host localhost http://<gateway-service>.envoy-gateway-system/`
+`kubectl exec -n flux-system deploy/flagger-loadtester -- hey -n 20 -host localhost https://<gateway-service>.envoy-gateway-system/`
 should return 200s, not 404s.
 
 **A healthy revision fails the latency gate.** Compare gateway p99 with the

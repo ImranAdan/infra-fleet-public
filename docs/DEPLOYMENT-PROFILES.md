@@ -39,7 +39,7 @@ snapshot contract test couples that promise to exact-revision publication.
 In separate terminals, forward only the services you need:
 
 ```bash
-./fleet access --profile local --service app         # http://localhost:8080/ui/
+./fleet access --profile local --service app         # selected app at http://localhost:8080
 ./fleet access --profile local --service dashboard   # http://localhost:9000
 ./fleet access --profile local --service prometheus  # http://localhost:9090
 ./fleet access --profile local --service grafana     # http://localhost:3000
@@ -103,7 +103,7 @@ Existing `terraform-outputs` values are translated into the common
 
 Both profiles use the shared Envoy Gateway route (HTTPS only) and gate
 canaries on Envoy's route metrics; they differ in exposure (port-forward vs
-NLB) and certificate issuer (self-signed vs Let's Encrypt). This local profile
+NLB) and certificate issuer (in-cluster CA vs Let's Encrypt). This local profile
 does not certify the AWS load balancer, Let's Encrypt, IAM or production
 readiness.
 
@@ -113,8 +113,8 @@ The local profile has been exercised end to end with a real kind cluster. Its
 acceptance suite verifies Flux reconciliation and drift repair, Kyverno
 rejections, Calico isolation, Prometheus visibility of the app, on-demand app
 launch and removal, healthy canary promotion and forced-failure rollback, for whichever app the
-[application contract](APPLICATION-CONTRACT.md) selects. The weekly workflow
-discovers all shipped contracts; the current set is Load Harness, podinfo and
+[application contract](APPLICATION-CONTRACT.md) selects. The Local Kubernetes
+workflow discovers all shipped contracts; the current set is Load Harness, podinfo and
 Fleet Runner.
 Before checking monitoring and isolation, the suite waits for Flagger's
 generated primary endpoint to become healthy, so controller startup time is
@@ -130,12 +130,11 @@ Pull-request CI renders, schema-checks and policy-checks both profiles without
 creating a cluster. Application tests, the container smoke test and the image
 scan also remain ordinary PR checks. This is the fast feedback path.
 
-The full local acceptance suite is a deployment workflow rather than a check on
-every PR and subsequent `main` push. Dispatch **Local Kubernetes** against the
-candidate branch when a group of changes is ready for final review:
+The full local acceptance suite is the **Local Kubernetes** workflow. It can
+also be dispatched against any branch:
 
 ```bash
-gh workflow run local-kubernetes.yml --ref YOUR_CANDIDATE_BRANCH
+gh workflow run local-kubernetes.yml --ref YOUR_BRANCH
 ```
 
 GitHub binds `GITHUB_SHA` to the branch head at dispatch, checks out that exact
@@ -164,7 +163,11 @@ evidence that AWS resources were created or destroyed successfully.
 - `k8s/applications/platform/`: the canary, HPA and network policy, written
   once for any app; `k8s/applications/<app>/`: each app's own manifests.
 - `k8s/infrastructure/`: reusable controllers and AWS infrastructure components.
-- `k8s/profiles/local/`: local controllers, Gateway API, metrics and registry policy.
+- `k8s/profiles/local/`: local controllers, the in-cluster CA issuer, the
+  control-plane overlay and registry policy.
+- `k8s/routing/`: the shared Gateway, HTTPS redirect and certificate.
+- `k8s/control-plane/`: the local application dashboard, its RBAC, launch
+  admission policy and NetworkPolicy.
 - `k8s/profiles/aws-staging/`: AWS configuration adapter, networking and ECR policy.
 - `k8s/clusters/`: distinct Flux roots; local cannot reconcile the AWS root.
 - `policies/`: common policies; `policies/aws/` supplies ECR restrictions.

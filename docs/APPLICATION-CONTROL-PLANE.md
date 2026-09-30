@@ -59,8 +59,8 @@ launch objects. It cannot edit workloads directly.
   Each app's platform layer adds its explicit Gateway, load-test, monitoring
   and same-app paths, so a partial launch or asynchronous stop cannot expose a
   workload while its app-specific policy is absent.
-- App traffic is proxied through Envoy Gateway over TLS verified against the
-  local CA. The dashboard does not bypass the declared ingress path or disable
+- App traffic is proxied through Envoy Gateway to the app's route host,
+  `<app-name>.apps.localhost`, over TLS verified against the local CA. The dashboard does not bypass the declared ingress path or disable
   certificate verification.
 
 The dashboard is a local operator tool. It is not installed by the AWS profile

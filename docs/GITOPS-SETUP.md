@@ -29,8 +29,11 @@ run `flux bootstrap` manually against this public template.
 k8s/
 ├── applications/                  # shared workload and delivery contract
 ├── infrastructure/                # shared controllers and observability
+├── fleet-app/                     # the selected application contract
+├── routing/                       # shared Gateway, HTTPS redirect and certificate
+├── control-plane/                 # local application dashboard (local only)
 ├── profiles/
-│   ├── local/                     # self-signed issuer, local metrics and registry policy
+│   ├── local/                     # in-cluster CA issuer, control plane and registry policy
 │   └── aws-staging/               # AWS adapter, NLB exposure, Let's Encrypt and ECR policy
 ├── clusters/
 │   ├── local/                     # local Flux dependency graph

@@ -17,11 +17,10 @@ The dashboard at <http://localhost:9000/> shows every included app and can run
 several together from the same deployed revision. The selected app remains the
 default and cannot be stopped there.
 
-For repository-wide integration evidence, dispatch the **Local Kubernetes**
-workflow against the candidate branch. It records the exact revision in the
-`local` GitHub Environment, executes the complete profile acceptance suite and
-tears the hosted-runner cluster down. It runs on demand and weekly against
-`main`; it does not run twice around every merge. See
+The **Local Kubernetes** workflow runs the complete acceptance suite for every
+app contract on pull requests that change runtime paths, weekly against `main`
+and on demand. It records the exact revision in the `local` GitHub Environment
+and tears the hosted-runner cluster down. See
 [GitHub Environments](GITHUB-ENVIRONMENTS.md) for the gate and the distinction
 between this ephemeral deployment and persistent AWS staging.
 
