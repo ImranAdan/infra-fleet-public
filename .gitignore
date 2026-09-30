@@ -173,3 +173,6 @@ temp/
 
 # Development tools (downloaded binaries)
 actionlint
+
+# Claude Code agent worktrees; local deployment requires a clean tree
+.claude/worktrees/
