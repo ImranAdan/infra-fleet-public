@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - control-plane.yaml
   - launch-policy.yaml
+  - dashboard-policy.yaml
   - networkpolicy.yaml
 # The dashboard's code ships as a ConfigMap with a stable name; the Deployment
 # rolls on each revision through its runtime-config annotation. Flux must not

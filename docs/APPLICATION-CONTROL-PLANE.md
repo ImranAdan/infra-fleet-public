@@ -53,8 +53,10 @@ launch objects. It cannot edit workloads directly.
   and HPA patch. Remote kubeconfigs, target namespaces and other Flux
   transformations are rejected.
 - `app-deployer` can reconcile the application workload types in
-  `applications` and ConfigMaps in `observability` for app-owned Grafana
-  dashboards. It has no cluster-wide role and cannot change Flux, policy,
+  `applications` and Grafana dashboard ConfigMaps in `observability`. RBAC
+  cannot scope a create by name, so the `app-deployer-dashboards` admission
+  policy admits only ConfigMaps named `grafana-dashboard-*` and labelled
+  `grafana_dashboard: "1"`, before and after the change. It has no cluster-wide role and cannot change Flux, policy,
   infrastructure, Secrets or namespaces.
 - A deny-ingress NetworkPolicy prevents other pods from reaching the control
   API. The supported entry point is a loopback-bound `kubectl port-forward`.
