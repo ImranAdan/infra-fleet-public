@@ -220,15 +220,27 @@ function draw() {
 
 addEventListener("keydown", (e) => { keys[e.code] = true; if (e.code.startsWith("Arrow") || e.code === "Space") e.preventDefault(); });
 addEventListener("keyup", (e) => { keys[e.code] = false; });
+// Pad buttons: each pointer (finger or mouse) holds one button, so Right can
+// stay down while another finger taps Jump. A key stays held while any
+// pointer still presses its button.
+const pressed = new Map(); // pointerId -> key
+const release = (e) => {
+  const key = pressed.get(e.pointerId);
+  if (!pressed.delete(e.pointerId)) return;
+  keys[key] = [...pressed.values()].includes(key);
+};
 for (const b of document.querySelectorAll("[data-key]")) {
-  const set = (v) => (e) => { e.preventDefault(); keys[b.dataset.key] = v; };
-  b.addEventListener("touchstart", set(true)); b.addEventListener("touchend", set(false));
-  b.addEventListener("touchcancel", set(false)); // a gesture can end a touch without touchend
-  b.addEventListener("mousedown", set(true)); b.addEventListener("mouseup", set(false));
-  b.addEventListener("mouseleave", set(false)); // released outside the button
+  b.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); // no emulated mouse events, focus or text selection
+    b.setPointerCapture(e.pointerId); // the release reaches us even off the button
+    pressed.set(e.pointerId, b.dataset.key); keys[b.dataset.key] = true;
+  });
+  // A gesture or a lost capture can end a pointer without pointerup.
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) b.addEventListener(type, release);
+  b.addEventListener("contextmenu", (e) => e.preventDefault()); // long press
 }
 // A key released while the window is unfocused never sends keyup.
-addEventListener("blur", () => { for (const code in keys) keys[code] = false; });
+addEventListener("blur", () => { pressed.clear(); for (const code in keys) keys[code] = false; });
 
 reset(false);
 // Physics and the clock advance in fixed 60 Hz steps whatever the display's

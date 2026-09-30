@@ -16,7 +16,9 @@ git commit -am "chore: run mario-game"
 ```
 
 Controls: arrows or A/D to run, Space or W to jump, Enter or Jump to play again.
-Touch screens get on-screen buttons.
+On a touch screen the game fills the screen in either orientation, with run
+buttons under the left thumb and Jump under the right; you can hold a run
+button and tap Jump at the same time.
 
 Its fault switch is `GAME_FAULT=true`, which makes every page request fail
 while the health probes keep answering; the acceptance test uses it to prove
