@@ -60,14 +60,17 @@ spec:
         retention: 2d
         retentionSize: "1GB"
 
-        # Resource limits for the single t3.large node
+        # Requests size scheduling on the single t3.large node. At a 500m limit
+        # Prometheus was throttled in over 90% of CPU periods with three apps,
+        # failed its probes, restarted, and Flagger's canary analysis lost its
+        # metrics; the limits leave headroom for scrapes and WAL replay.
         resources:
           requests:
             cpu: 100m
             memory: 256Mi
           limits:
-            cpu: 500m
-            memory: 512Mi
+            cpu: "1"
+            memory: 1Gi
 
         # Monitor discovery across all namespaces
         serviceMonitorSelectorNilUsesHelmValues: false
