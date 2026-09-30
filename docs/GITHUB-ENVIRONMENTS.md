@@ -13,8 +13,9 @@ revision and is subject to that environment's protection rules.
 
 The AWS onboarding coordinator creates `staging` before its first deployment
 and restricts it to `main` and release tags matching `v*`. Repository
-administrators own required reviewers and wait timers. Local workflow dispatch
-creates `local` on first use unless the repository owner configures it earlier.
+administrators own required reviewers and wait timers. The first job to reference `local`, whether from a pull request, the schedule
+or a dispatch, creates it with no protection rules; configure `local` before
+then if required reviewers must apply to that first run.
 
 ## Local acceptance
 

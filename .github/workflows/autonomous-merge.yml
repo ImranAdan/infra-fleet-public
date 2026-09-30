@@ -10,11 +10,13 @@ on:
   workflow_run:
     workflows:
       - Intent Gate
+      - Intent Gate (retarget)
       - Advisor remediation validation
       - Commit Message Lint
       - Infrastructure Validation
       - K8s Manifest Validation
       - Load Harness CI
+      - Local Kubernetes
       - Template Contract
       - Validate Automation Workflows
     types: [completed]
