@@ -2,6 +2,23 @@ body { margin: 0; background: #1b1b2f; color: #eee; font-family: monospace; }
 main { max-width: 820px; margin: 0 auto; padding: 16px; text-align: center; }
 h1 { margin: 8px 0 12px; letter-spacing: 2px; }
 canvas { width: 100%; max-width: 800px; image-rendering: pixelated; border: 4px solid #000; border-radius: 6px; }
-.pad { display: none; gap: 12px; justify-content: center; margin-top: 12px; }
-.pad button { font-size: 20px; padding: 14px 22px; border-radius: 10px; border: 0; background: #e52521; color: #fff; }
-@media (hover: none) { .pad { display: flex; } }
+.pad { display: none; }
+/* Touch screens: the canvas fills the screen without scrolling, and the
+   buttons sit under the thumbs, run on the left and Jump on the right. */
+@media (hover: none), (pointer: coarse) {
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  main { max-width: none; padding: 0; }
+  main > p { display: none; }
+  canvas { display: block; margin: 0 auto; border: 0; border-radius: 0; max-width: none;
+    width: min(100vw, 100vh * 5 / 3); width: min(100vw, 100dvh * 5 / 3); }
+  .pad { display: block; }
+  .pad button { position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); width: 80px; height: 80px;
+    border: 0; border-radius: 50%; background: rgba(229, 37, 33, 0.7); color: #fff; font: bold 22px monospace;
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  .pad button:active { background: rgba(229, 37, 33, 0.95); }
+  .pad [data-key="ArrowLeft"] { left: max(16px, env(safe-area-inset-left)); }
+  .pad [data-key="ArrowRight"] { left: calc(max(16px, env(safe-area-inset-left)) + 96px); }
+  .pad [data-key="Space"] { right: max(16px, env(safe-area-inset-right)); width: 96px; height: 96px; }
+}
+@media (hover: none) and (orientation: landscape), (pointer: coarse) and (orientation: landscape) { h1 { display: none; } }
