@@ -27,15 +27,15 @@ kctl() {
       printf '%s' "$FLEET_SHA" ;;
     'get deployment sample-primary -n applications -o jsonpath={.spec.template.metadata.annotations.infra-fleet\.io/runtime-config-revision}')
       if [ "$(cat "$phase_count")" -ge 3 ]; then printf '%s' "$FLEET_SHA"; else printf 'old-revision'; fi ;;
-    'get canary sample -n applications -o jsonpath={.status.phase}')
+    # Only the single-snapshot read is answered; separate phase and spec reads
+    # could pair a stale Failed phase with the next analysis's spec.
+    'get canary sample -n applications -o jsonpath={.status.phase}|{.status.lastAppliedSpec}')
       printf '%s\n' "$(($(cat "$phase_count") + 1))" > "$phase_count"
       case "$(cat "$phase_count")" in
-        1) printf 'Failed' ;;
-        2) printf 'Progressing' ;;
-        *) printf 'Succeeded' ;;
+        1) printf 'Failed|old-spec' ;;
+        2) printf 'Progressing|new-spec' ;;
+        *) printf 'Succeeded|new-spec' ;;
       esac ;;
-    'get canary sample -n applications -o jsonpath={.status.lastAppliedSpec}')
-      if [ "$(cat "$phase_count")" -le 1 ]; then printf 'old-spec'; else printf 'new-spec'; fi ;;
     *) printf 'kctl %s\n' "$*" >> "$calls" ;;
   esac
 }
@@ -54,8 +54,7 @@ kctl() {
   case "$*" in
     'get deployment sample -n applications -o jsonpath={.spec.template.metadata.annotations.infra-fleet\.io/runtime-config-revision}') printf '%s' "$FLEET_SHA" ;;
     'get deployment sample-primary -n applications -o jsonpath={.spec.template.metadata.annotations.infra-fleet\.io/runtime-config-revision}') printf 'old-revision' ;;
-    'get canary sample -n applications -o jsonpath={.status.phase}') printf 'Failed' ;;
-    'get canary sample -n applications -o jsonpath={.status.lastAppliedSpec}') printf 'new-spec' ;;
+    'get canary sample -n applications -o jsonpath={.status.phase}|{.status.lastAppliedSpec}') printf 'Failed|new-spec' ;;
     'describe canary sample -n applications') printf 'rollback evidence\n' >> "$calls" ;;
     *) return 1 ;;
   esac

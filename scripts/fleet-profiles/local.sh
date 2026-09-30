@@ -314,7 +314,7 @@ local_suspend_launched_apps() {
 # for a stale failure before Flagger observes the new target.
 local_wait_canary() {
   local app=$1 timeout=${2:-900} baseline_spec=${3:-}
-  local deadline phase applied_spec target_revision primary_revision
+  local deadline state phase applied_spec target_revision primary_revision
   deadline=$((SECONDS + timeout))
   while [ "$SECONDS" -lt "$deadline" ]; do
     target_revision=$(kctl get deployment "$app" -n applications \
@@ -323,10 +323,10 @@ local_wait_canary() {
     primary_revision=$(kctl get deployment "$app-primary" -n applications \
       -o 'jsonpath={.spec.template.metadata.annotations.infra-fleet\.io/runtime-config-revision}' \
       2>/dev/null || true)
-    phase=$(kctl get canary "$app" -n applications -o jsonpath='{.status.phase}' \
-      2>/dev/null || true)
-    applied_spec=$(kctl get canary "$app" -n applications \
-      -o jsonpath='{.status.lastAppliedSpec}' 2>/dev/null || true)
+    # One read, so the phase and the spec it belongs to come from one snapshot.
+    state=$(kctl get canary "$app" -n applications \
+      -o 'jsonpath={.status.phase}|{.status.lastAppliedSpec}' 2>/dev/null || true)
+    IFS='|' read -r phase applied_spec <<< "$state"
 
     if [ "$target_revision" = "$FLEET_SHA" ]; then
       if [ "$phase" = Failed ] && [ -n "$applied_spec" ] && \
