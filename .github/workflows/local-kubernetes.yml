@@ -20,6 +20,9 @@ on:
       - 'tests/profiles/**'
       - 'fleet'
       - '.github/workflows/local-kubernetes.yml'
+      # No image or manifest reads Markdown; READMEs and release changelogs
+      # under applications/ otherwise start three clusters for prose.
+      - '!**/*.md'
 
 permissions:
   contents: read
