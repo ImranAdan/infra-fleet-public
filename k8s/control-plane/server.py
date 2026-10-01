@@ -16,6 +16,7 @@ that no proxied request has reached for IDLE_MINUTES (0 disables it).
 """
 
 import http.client
+import io
 import json
 import os
 import re
@@ -70,6 +71,31 @@ _LAUNCH_SUBSTITUTIONS = (
     "APP_HEALTH_PATH",
     "APP_LOAD_PATH",
 )
+
+
+class LimitedReader:
+    """Expose exactly one HTTP request body's bytes as a file-like stream."""
+
+    def __init__(self, raw: object, length: int) -> None:
+        self.raw = raw
+        self.remaining = length
+
+    def read(self, size: int = -1) -> bytes:
+        if self.remaining == 0:
+            return b""
+        if size < 0 or size > self.remaining:
+            size = self.remaining
+        data = self.raw.read(size)  # type: ignore[attr-defined]
+        if not data:
+            raise ConnectionError("client closed before the request body ended")
+        self.remaining -= len(data)
+        return data
+
+
+def copy_stream(source: object, destination: object, block_size: int = 64 * 1024) -> None:
+    """Copy an HTTP body without retaining the complete payload in memory."""
+    while chunk := source.read(block_size):  # type: ignore[attr-defined]
+        destination.write(chunk)  # type: ignore[attr-defined]
 
 
 def forwardable_headers(
@@ -341,13 +367,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         self.route()
 
+    def do_HEAD(self) -> None:
+        self.route()
+
     def do_POST(self) -> None:
         self.route()
 
     def do_PUT(self) -> None:
         self.route()
 
+    def do_PATCH(self) -> None:
+        self.route()
+
     def do_DELETE(self) -> None:
+        self.route()
+
+    def do_OPTIONS(self) -> None:
         self.route()
 
     def route(self) -> None:
@@ -389,25 +424,40 @@ class Handler(BaseHTTPRequestHandler):
     def proxy(self, host: str) -> None:
         """Forward to the app through the Gateway, the declared ingress, over TLS
         verified against the fleet's local CA for the app's own host name."""
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length) if length else None
+        if self.headers.get("Transfer-Encoding"):
+            return self.reply(
+                501,
+                b"streaming request encodings are not supported\n",
+                "text/plain",
+            )
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return self.reply(400, b"invalid Content-Length\n", "text/plain")
+        if length < 0:
+            return self.reply(400, b"invalid Content-Length\n", "text/plain")
+        body = LimitedReader(self.rfile, length) if length else None
         headers = dict(forwardable_headers(list(self.headers.items()), {"host"}))
         headers["Host"] = host
         connection = GatewayConnection(host)
+        response_started = False
         try:
             connection.request(self.command, self.path, body=body, headers=headers)
             response = connection.getresponse()
-            data = response.read()
-        except OSError as exc:
+            self.send_response(response.status)
+            for name, value in forwardable_headers(response.getheaders()):
+                self.send_header(name, value)
+            self.end_headers()
+            response_started = True
+            if self.command != "HEAD":
+                copy_stream(response, self.wfile)
+        except (OSError, http.client.HTTPException) as exc:
+            if response_started:
+                self.close_connection = True
+                return None
             return self.reply(502, f"{host} is not reachable yet: {exc}\n".encode(), "text/plain")
         finally:
             connection.close()
-        self.send_response(response.status)
-        for name, value in forwardable_headers(response.getheaders(), {"content-length"}):
-            self.send_header(name, value)
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
 
     def reply(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -480,6 +530,8 @@ data:
     assert not control_host("dashboard.example:9000")
     assert gateway_host("game", selected="game") == "localhost"
     assert gateway_host("sample", selected="game") == "sample.apps.localhost"
+    for method in ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
+        assert callable(getattr(Handler, f"do_{method}"))
 
     assert forwardable_headers(
         [
@@ -496,7 +548,7 @@ data:
     assert row["launched"] is False
 
     # Launch and stop against a fake API, for the review's failure scenarios.
-    global kube, read_catalog, launched_apps, stop, IDLE_MINUTES
+    global kube, read_catalog, launched_apps, stop, IDLE_MINUTES, GatewayConnection
     real = (kube, read_catalog, launched_apps, stop, IDLE_MINUTES)
     calls: list[tuple[str, str]] = []
     responses: dict[tuple[str, str], object] = {}
@@ -567,6 +619,100 @@ data:
     finally:
         kube, read_catalog, launched_apps, stop, IDLE_MINUTES = real
         last_seen.clear()
+
+    # The app proxy streams in both directions. Whole-body buffering can OOM
+    # this 64 MiB control-plane pod when a contracted app transfers a large
+    # request or response.
+    real_gateway = GatewayConnection
+    request_body = b"request-body"
+    response_body = b"response-body"
+    forwarded: dict[str, object] = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __init__(self) -> None:
+            self.body = io.BytesIO(response_body)
+
+        def getheaders(self) -> list[tuple[str, str]]:
+            return [
+                ("Content-Length", str(len(response_body))),
+                ("Connection", "X-Upstream-Hop"),
+                ("X-Upstream-Hop", "drop"),
+                ("X-End-To-End", "kept"),
+            ]
+
+        def read(self, size: int = -1) -> bytes:
+            assert size > 0, "the proxy buffered the complete upstream response"
+            return self.body.read(min(size, 3))
+
+    class FakeGateway:
+        def __init__(self, host: str) -> None:
+            forwarded["gateway"] = host
+
+        def request(self, method: str, path: str, body: object, headers: dict[str, str]) -> None:
+            chunks = []
+            while True:
+                chunk = body.read(3)  # type: ignore[attr-defined]
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            forwarded.update(method=method, path=path, body=b"".join(chunks), headers=headers)
+
+        def getresponse(self) -> FakeResponse:
+            return FakeResponse()
+
+        def close(self) -> None:
+            forwarded["closed"] = True
+
+    handler = object.__new__(Handler)
+    handler.command = "PATCH"
+    handler.path = "/upload?part=1"
+    handler.rfile = io.BytesIO(request_body)
+    handler.wfile = io.BytesIO()
+    handler.headers = http.client.HTTPMessage()
+    handler.headers["Content-Length"] = str(len(request_body))
+    handler.headers["Connection"] = "X-Request-Hop"
+    handler.headers["X-Request-Hop"] = "drop"
+    handler.headers["X-End-To-End"] = "kept"
+    response_headers: list[tuple[str, str]] = []
+    handler.send_response = lambda status: forwarded.update(status=status)  # type: ignore[method-assign]
+    handler.send_header = lambda name, value: response_headers.append((name, value))  # type: ignore[method-assign]
+    handler.end_headers = lambda: None  # type: ignore[method-assign]
+    GatewayConnection = FakeGateway  # type: ignore[misc,assignment]
+    try:
+        handler.proxy("game.apps.localhost")
+    finally:
+        GatewayConnection = real_gateway
+    assert forwarded == {
+        "gateway": "game.apps.localhost",
+        "method": "PATCH",
+        "path": "/upload?part=1",
+        "body": request_body,
+        "headers": {
+            "Content-Length": str(len(request_body)),
+            "X-End-To-End": "kept",
+            "Host": "game.apps.localhost",
+        },
+        "status": 200,
+        "closed": True,
+    }
+    assert response_headers == [
+        ("Content-Length", str(len(response_body))),
+        ("X-End-To-End", "kept"),
+    ]
+    assert handler.wfile.getvalue() == response_body
+
+    # A client that hangs up mid-body must fail fast, not forward a short body
+    # the upstream would wait on until its timeout.
+    short = LimitedReader(io.BytesIO(b"ab"), 5)
+    assert short.read(64) == b"ab"
+    try:
+        short.read(64)
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("a truncated request body was forwarded as complete")
     print("self-test passed")
 
 

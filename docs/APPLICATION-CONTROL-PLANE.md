@@ -74,6 +74,13 @@ launch objects. It cannot edit workloads directly.
   launched one) over TLS verified against the local CA. The dashboard does not bypass the declared ingress path or disable
   certificate verification.
 
+The proxy streams fixed-length request bodies and response bodies rather than
+buffering them in the control-plane pod. It forwards the ordinary HTTP methods
+GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS. WebSocket upgrades and chunked
+request encoding are outside this local operator proxy; applications needing
+those protocols should be accessed directly through their declared Gateway
+route.
+
 The dashboard is a local operator tool. It is not installed by the AWS profile
 and has no user accounts or public exposure model.
 
