@@ -86,6 +86,8 @@ class LimitedReader:
         if size < 0 or size > self.remaining:
             size = self.remaining
         data = self.raw.read(size)  # type: ignore[attr-defined]
+        if not data:
+            raise ConnectionError("client closed before the request body ended")
         self.remaining -= len(data)
         return data
 
