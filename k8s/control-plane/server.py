@@ -16,6 +16,7 @@ that no proxied request has reached for IDLE_MINUTES (0 disables it).
 """
 
 import http.client
+import io
 import json
 import os
 import re
@@ -496,7 +497,7 @@ data:
     assert row["launched"] is False
 
     # Launch and stop against a fake API, for the review's failure scenarios.
-    global kube, read_catalog, launched_apps, stop, IDLE_MINUTES
+    global kube, read_catalog, launched_apps, stop, IDLE_MINUTES, GatewayConnection
     real = (kube, read_catalog, launched_apps, stop, IDLE_MINUTES)
     calls: list[tuple[str, str]] = []
     responses: dict[tuple[str, str], object] = {}
@@ -567,6 +568,89 @@ data:
     finally:
         kube, read_catalog, launched_apps, stop, IDLE_MINUTES = real
         last_seen.clear()
+
+    # The app proxy streams in both directions. Whole-body buffering can OOM
+    # this 64 MiB control-plane pod when a contracted app transfers a large
+    # request or response.
+    real_gateway = GatewayConnection
+    request_body = b"request-body"
+    response_body = b"response-body"
+    forwarded: dict[str, object] = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __init__(self) -> None:
+            self.body = io.BytesIO(response_body)
+
+        def getheaders(self) -> list[tuple[str, str]]:
+            return [
+                ("Content-Length", str(len(response_body))),
+                ("Connection", "X-Upstream-Hop"),
+                ("X-Upstream-Hop", "drop"),
+                ("X-End-To-End", "kept"),
+            ]
+
+        def read(self, size: int = -1) -> bytes:
+            assert size > 0, "the proxy buffered the complete upstream response"
+            return self.body.read(min(size, 3))
+
+    class FakeGateway:
+        def __init__(self, host: str) -> None:
+            forwarded["gateway"] = host
+
+        def request(self, method: str, path: str, body: object, headers: dict[str, str]) -> None:
+            chunks = []
+            while True:
+                chunk = body.read(3)  # type: ignore[attr-defined]
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            forwarded.update(method=method, path=path, body=b"".join(chunks), headers=headers)
+
+        def getresponse(self) -> FakeResponse:
+            return FakeResponse()
+
+        def close(self) -> None:
+            forwarded["closed"] = True
+
+    handler = object.__new__(Handler)
+    handler.command = "PATCH"
+    handler.path = "/upload?part=1"
+    handler.rfile = io.BytesIO(request_body)
+    handler.wfile = io.BytesIO()
+    handler.headers = http.client.HTTPMessage()
+    handler.headers["Content-Length"] = str(len(request_body))
+    handler.headers["Connection"] = "X-Request-Hop"
+    handler.headers["X-Request-Hop"] = "drop"
+    handler.headers["X-End-To-End"] = "kept"
+    response_headers: list[tuple[str, str]] = []
+    handler.send_response = lambda status: forwarded.update(status=status)  # type: ignore[method-assign]
+    handler.send_header = lambda name, value: response_headers.append((name, value))  # type: ignore[method-assign]
+    handler.end_headers = lambda: None  # type: ignore[method-assign]
+    GatewayConnection = FakeGateway  # type: ignore[misc,assignment]
+    try:
+        handler.proxy("game.apps.localhost")
+    finally:
+        GatewayConnection = real_gateway
+    assert forwarded == {
+        "gateway": "game.apps.localhost",
+        "method": "PATCH",
+        "path": "/upload?part=1",
+        "body": request_body,
+        "headers": {
+            "Content-Length": str(len(request_body)),
+            "X-End-To-End": "kept",
+            "Host": "game.apps.localhost",
+        },
+        "status": 200,
+        "closed": True,
+    }
+    assert response_headers == [
+        ("Content-Length", str(len(response_body))),
+        ("X-End-To-End", "kept"),
+    ]
+    assert handler.wfile.getvalue() == response_body
     print("self-test passed")
 
 
