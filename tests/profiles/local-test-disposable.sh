@@ -2,6 +2,8 @@
 # CI deletes its cluster after `fleet test`; restoring the original revision
 # there costs a full canary cycle for nothing. A shared cluster still restores.
 set -euo pipefail
+# State and stubs are read only by the sourced module's EXIT handler.
+# shellcheck disable=SC2034,SC2329
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 scratch=$(mktemp -d)
@@ -10,8 +12,6 @@ trap 'rm -rf "$scratch"' EXIT
 # Runs the EXIT handler after a test that failed with status 3.
 restore() {
   (
-    # Read by the sourced strategy module.
-    # shellcheck disable=SC2034
     fleet_root=$root
     # shellcheck source=../../scripts/fleet-profiles/test-local.sh
     source "$root/scripts/fleet-profiles/test-local.sh"
