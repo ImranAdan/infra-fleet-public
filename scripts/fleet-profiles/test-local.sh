@@ -245,6 +245,8 @@ EOF
 test_restore_snapshot() {
   local test_result=$?
   trap - EXIT INT TERM
+  # CI deletes its cluster next; restoring would cost a canary cycle for nothing.
+  if [ "${FLEET_TEST_DISPOSABLE:-}" = 1 ]; then exit "$test_result"; fi
   if [ -n "${FLEET_TEST_LAUNCHED:-}" ]; then
     test_dashboard_action "$FLEET_TEST_LAUNCHED" stop || test_result=1
   fi

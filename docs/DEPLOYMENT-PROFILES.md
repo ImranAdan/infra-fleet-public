@@ -75,6 +75,8 @@ failure if any canary rolls back while that app's prior primary remains live.
 local-only Git source, verifies outcomes, and restores the deployed source. It
 also launches and removes a second contracted app through the local control
 plane. It does not commit to the working branch or change the AWS image version.
+With `FLEET_TEST_DISPOSABLE=1`, set by pull-request CI whose cluster is deleted
+next, it skips restoring the deployed source and its extra canary cycle.
 
 ## AWS staging
 

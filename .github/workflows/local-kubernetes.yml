@@ -130,6 +130,11 @@ jobs:
         run: ./fleet up --profile local
 
       - name: Verify local Kubernetes behaviour
+        env:
+          # The cluster is deleted next, so a PR skips restoring the original
+          # revision (a third canary cycle). Scheduled and manual runs still
+          # restore, which keeps that path proven.
+          FLEET_TEST_DISPOSABLE: ${{ github.event_name == 'pull_request' && '1' || '' }}
         run: ./fleet test --profile local
 
       - name: Diagnose failure
