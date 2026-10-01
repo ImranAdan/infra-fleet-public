@@ -700,6 +700,17 @@ data:
         ("X-End-To-End", "kept"),
     ]
     assert handler.wfile.getvalue() == response_body
+
+    # A client that hangs up mid-body must fail fast, not forward a short body
+    # the upstream would wait on until its timeout.
+    short = LimitedReader(io.BytesIO(b"ab"), 5)
+    assert short.read(64) == b"ab"
+    try:
+        short.read(64)
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("a truncated request body was forwarded as complete")
     print("self-test passed")
 
 
