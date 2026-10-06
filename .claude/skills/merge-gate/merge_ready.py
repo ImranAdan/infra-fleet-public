@@ -484,17 +484,23 @@ def required_check_failures(
 
 
 def latest_check_runs(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep the newest run for each check name and publisher.
+    """Keep the newest rerun for each check name, publisher and workflow.
 
     GitHub's ``filter=latest`` can still return two check suites for events that
     arrive together, such as Dependabot opening and labelling a pull request.
     A cancelled superseded suite must not block the successful replacement.
-    Publisher is part of the key so one GitHub App cannot hide another App's
-    failing check by reusing its name.
+    Workflow identity is required before GitHub Actions runs may supersede one
+    another. Other publishers remain unique, so a same-name check cannot hide
+    another workflow or App's failure.
     """
-    newest: dict[tuple[str, str], dict[str, Any]] = {}
+    newest: dict[tuple[str, str, str], dict[str, Any]] = {}
     for run in runs:
-        key = (str(run.get("name", "")), str(run.get("app", "")))
+        workflow = str(run.get("workflow_path", ""))
+        if run.get("app") == "github-actions" and workflow:
+            identity = workflow
+        else:
+            identity = f"run:{run.get('id')}"
+        key = (str(run.get("name", "")), str(run.get("app", "")), identity)
         order = (str(run.get("started_at", "")), int(run.get("id", 0)))
         previous = newest.get(key)
         previous_order = (
@@ -698,15 +704,27 @@ def main(argv: list[str]) -> int:
         blocked.append(f"merge state is {pr['mergeStateStatus']} (conflicts, behind, or checks)")
 
     sha = pr["headRefOid"]
-    runs = latest_check_runs(
-        gh_json_lines(
-            "api",
-            "--paginate",
-            f"repos/{repo}/commits/{sha}/check-runs?per_page=100&filter=latest",
-            "--jq",
-            ".check_runs[]|{id,name,status,conclusion,started_at,app:.app.slug,details_url}",
-        )
+    raw_runs = gh_json_lines(
+        "api",
+        "--paginate",
+        f"repos/{repo}/commits/{sha}/check-runs?per_page=100&filter=latest",
+        "--jq",
+        ".check_runs[]|{id,name,status,conclusion,started_at,app:.app.slug,details_url}",
     )
+    workflow_runs: dict[str, dict[str, str]] = {}
+    for run in raw_runs:
+        run_id = _actions_run_id(repo, run.get("details_url"))
+        if not run_id:
+            continue
+        if run_id not in workflow_runs:
+            details = json.loads(gh("api", f"repos/{repo}/actions/runs/{run_id}"))
+            workflow_runs[run_id] = {
+                key: str(details.get(key, ""))
+                for key in ("path", "event", "head_sha", "head_branch")
+            }
+        run["run_id"] = run_id
+        run["workflow_path"] = workflow_runs[run_id]["path"].split("@", 1)[0]
+    runs = latest_check_runs(raw_runs)
     latest: dict[str, str] = {}
     for status in gh_json_lines(
         "api",
@@ -766,20 +784,6 @@ def main(argv: list[str]) -> int:
         print(f"PARK  decision policy is invalid: {exc}")
         print("verdict: PARK")
         return 10
-    required_names = {item["name"] for item in judge["required_checks"]}
-    workflow_runs: dict[str, dict[str, str]] = {}
-    for run in runs:
-        if run.get("name") not in required_names:
-            continue
-        run_id = _actions_run_id(repo, run.get("details_url"))
-        if not run_id:
-            continue
-        run["run_id"] = run_id
-        details = json.loads(gh("api", f"repos/{repo}/actions/runs/{run_id}"))
-        workflow_runs[run_id] = {
-            key: str(details.get(key, ""))
-            for key in ("path", "event", "head_sha", "head_branch")
-        }
     evidence_failures = required_check_failures(runs, judge["required_checks"], workflow_runs, sha)
     evidence_failures.extend(evidence_policy_failures(diff))
     if evidence_failures:
@@ -1046,6 +1050,7 @@ def self_test() -> int:
         "app": "github-actions",
         "run_id": "42",
         "started_at": "2026-09-28T01:00:00Z",
+        "workflow_path": ".github/workflows/intent-gate.yml",
     }
     workflow_runs = {
         "42": {
@@ -1069,11 +1074,19 @@ def self_test() -> int:
             "conclusion": "failure",
             "started_at": "2026-09-28T01:01:00Z",
         },
+        {
+            **required_run,
+            "id": 4,
+            "workflow_path": ".github/workflows/other.yml",
+            "conclusion": "failure",
+            "started_at": "2026-09-28T01:02:00Z",
+        },
     ]
     latest_runs = latest_check_runs(duplicate_runs)
     assert [(run["id"], run["app"]) for run in latest_runs] == [
         (2, "github-actions"),
         (3, "other-check-app"),
+        (4, "github-actions"),
     ]
     assert required_check_failures([required_run], required, workflow_runs, sha) == []
     assert required_check_failures([], required, {}, sha) == [
