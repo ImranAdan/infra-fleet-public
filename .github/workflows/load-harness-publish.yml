@@ -1,0 +1,104 @@
+name: Load Harness Publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-west-2
+  ECR_REPOSITORY: load-harness
+
+jobs:
+  validate:
+    name: Validate image
+    uses: ./.github/workflows/load-harness-ci.yml
+    with:
+      package_image: true
+
+  configuration:
+    name: ECR configuration
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check AWS role and source
+        id: check
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          SOURCE_REF: ${{ github.ref }}
+        run: |
+          if [[ "$SOURCE_REF" != refs/tags/v* ]] &&
+             [ "$SOURCE_REF" != "refs/heads/main" ]; then
+            echo "::error::Manual ECR publishing is allowed only from main."
+            exit 1
+          fi
+
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### ECR publish skipped"
+              echo
+              echo "The image was built and scanned. Configure ECR publication using CONFIGURATION.md."
+              echo "A configured private copy publishes release tags to ECR."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    name: Push to ECR
+    needs: [validate, configuration]
+    if: needs.configuration.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://github.com/${{ github.repository }}/deployments
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE_TAG: ${{ needs.validate.outputs.image_tag }}
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load < /tmp/image.tar.gz
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Push immutable image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          image_uri="$ECR_REGISTRY/$ECR_REPOSITORY"
+          if aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "Image already exists and ECR tags are immutable: $image_uri:$IMAGE_TAG"
+            exit 0
+          fi
+          docker tag "$ECR_REPOSITORY:$IMAGE_TAG" "$image_uri:$IMAGE_TAG"
+          docker push "$image_uri:$IMAGE_TAG"
+          echo "Pushed $image_uri:$IMAGE_TAG"
+
+# Flux Image Automation observes ECR and commits manifest updates separately.

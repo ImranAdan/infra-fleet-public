@@ -18,7 +18,7 @@ jobs:
     steps:
       # A GitHub App installation token, unlike GITHUB_TOKEN, triggers other
       # workflows. Without it the tag release-please pushes does not start
-      # Load Harness CI, and the release pull request does not trigger the
+      # Load Harness Publish, and the release pull request does not trigger the
       # normal pull_request checks.
       #
       # Optional on purpose: if the App secrets are absent this step is

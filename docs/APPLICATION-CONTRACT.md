@@ -85,7 +85,7 @@ from ECR, so an app also needs:
    the Flux image reflector may read (`infrastructure/staging/flux-image-reflector.tf`).
    Both are explicit per repository to keep least privilege;
 2. a CI workflow that publishes `vX.Y.Z` tags there, called by
-   `rebuild-stack.yml` in place of `load-harness-ci.yml`;
+   `rebuild-stack.yml` through `load-harness-publish.yml`;
 3. its first release tag on the `app` image in
    `k8s/profiles/aws-staging/applications/kustomization.yaml`;
 4. its `APP_SECRETS` created by `rebuild-stack.yml`.

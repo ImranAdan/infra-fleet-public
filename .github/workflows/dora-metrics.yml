@@ -5,7 +5,7 @@ on:
     workflows:
       - Rebuild Stack (Manual)
       - Infra Apply (main)
-      - Load Harness CI
+      - Load Harness Publish
     types:
       - completed
   # schedule:
@@ -101,7 +101,7 @@ jobs:
           case "$WORKFLOW_NAME" in
             "Rebuild Stack (Manual)") SOURCE="rebuild-stack" ;;
             "Infra Apply (main)") SOURCE="infra-apply" ;;
-            "Load Harness CI") SOURCE="load-harness-ci" ;;
+            "Load Harness Publish") SOURCE="load-harness-publish" ;;
             *) echo "Unknown workflow: $WORKFLOW_NAME"; exit 0 ;;
           esac
 
