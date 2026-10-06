@@ -7,6 +7,7 @@ on:
       - 'applications/load-harness/src/**'
       - 'applications/load-harness/tests/**'
       - 'applications/load-harness/Dockerfile'
+      - 'applications/load-harness/.dockerignore'
       - 'applications/load-harness/requirements.txt'
       - 'applications/load-harness/ci/**'
       - '.release-please-manifest.json'

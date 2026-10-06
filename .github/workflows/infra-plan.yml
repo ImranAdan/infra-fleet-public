@@ -6,11 +6,13 @@ on:
     paths:
       - 'infrastructure/**'
       - '!infrastructure/**/*.md'  # Exclude markdown files
+      - '.github/workflows/infra-plan.yml'
   push:
     branches: [ main ]
     paths:
       - 'infrastructure/**'
       - '!infrastructure/**/*.md'
+      - '.github/workflows/infra-plan.yml'
 
 permissions:
   contents: read
