@@ -74,6 +74,19 @@ jobs:
       - name: Load Docker image
         run: docker load < /tmp/image.tar.gz
 
+      # Keep the publish boundary independently fail-closed. Validation scans
+      # the same image before packaging; this second scan is release-only and
+      # makes the security condition explicit beside the ECR write.
+      - name: Security scan before publication
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: 'v0.74.0'
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          format: table
+          ignore-unfixed: true
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
