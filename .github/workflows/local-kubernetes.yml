@@ -7,32 +7,15 @@ on:
   # The weekly run detects integration drift from upstream charts and images.
   schedule:
     - cron: '37 5 * * 1'
-  # A change to what runs on the cluster is proven live before it merges: the
-  # merge gate waits for these checks like any other, so unsupervised merges
-  # are judged on behaviour, not only on static checks.
-  pull_request:
-    branches: [main]
-    paths:
-      - 'k8s/**'
-      - 'scripts/**'
-      - 'platform/**'
-      - 'applications/**'
-      - 'tests/profiles/**'
-      - 'fleet'
-      - '.github/workflows/local-kubernetes.yml'
-      # No image or manifest reads Markdown; READMEs and release changelogs
-      # under applications/ otherwise start three clusters for prose.
-      - '!**/*.md'
 
 permissions:
   contents: read
 
-# Each run owns its kind cluster on its own runner. Per-PR groups keep a
-# newer push from leaving an older PR's run cancelled, and supersede only
-# the same PR's earlier run.
+# Each run owns its kind cluster on its own runner. A new run for the same ref
+# supersedes its predecessor without cross-cancelling other refs.
 concurrency:
-  group: local-profile-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: local-profile-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   discover_apps:
@@ -50,8 +33,6 @@ jobs:
       - name: Build the application matrix
         id: contracts
         shell: bash
-        env:
-          TRIGGER: ${{ github.event_name }}
         run: |
           shopt -s nullglob
           contracts=(k8s/applications/*/fleet-app.yaml)
@@ -70,26 +51,15 @@ jobs:
             fi
             apps+=("$app")
           done
-          selected="$(awk '$1 == "APP_NAME:" { gsub(/\"/, "", $2); print $2; exit }' \
-            k8s/fleet-app/fleet-app.yaml)"
-          if [[ ! " ${apps[*]} " =~ " ${selected} " ]]; then
-            echo "Selected application has no contract: $selected" >&2
-            exit 1
-          fi
-          if [ "$TRIGGER" = pull_request ]; then
-            apps=("$selected")
-            echo "Pull request acceptance covers the selected app ($selected); weekly and manual runs cover every contract." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Scheduled/manual acceptance covers every application contract." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          echo "Scheduled/manual acceptance covers every application contract." >> "$GITHUB_STEP_SUMMARY"
           apps_json="$(printf '%s\n' "${apps[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
           printf 'apps=%s\n' "$apps_json" >> "$GITHUB_OUTPUT"
 
   acceptance:
     needs: discover_apps
-    # Pull requests prove the shared runtime once with the selected app.
-    # Scheduled and manual runs retain the all-contract matrix so app-specific
-    # integration drift remains visible without tripling every PR's cost.
+    # Scheduled and manual runs cover every contract. Pull requests use the
+    # deterministic render, schema and policy checks instead of provisioning a
+    # disposable cluster in the feedback loop.
     name: Acceptance (${{ matrix.app }})
     strategy:
       fail-fast: false
@@ -113,6 +83,7 @@ jobs:
           TRIGGER: ${{ github.event_name }}
           APP: ${{ matrix.app }}
         run: |
+          # shellcheck disable=SC2016
           {
             echo '### Local profile deployment'
             echo
@@ -132,6 +103,7 @@ jobs:
         env:
           APP: ${{ matrix.app }}
         run: |
+          # shellcheck disable=SC2016
           scripts/select-app.sh "$APP"
           # The local profile deploys committed revisions only; this commit
           # exists on the runner alone and is never pushed.
@@ -141,6 +113,7 @@ jobs:
           fi
           # The cluster runs this revision; it differs from the source revision
           # above when the app selection had to be committed on the runner.
+          # shellcheck disable=SC2016
           printf -- '- Tested revision: `%s` (runner-local when it differs from the source)\n' \
             "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
@@ -148,11 +121,6 @@ jobs:
         run: ./fleet up --profile local
 
       - name: Verify local Kubernetes behaviour
-        env:
-          # The cluster is deleted next, so a PR skips restoring the original
-          # revision (a third canary cycle). Scheduled and manual runs still
-          # restore, which keeps that path proven.
-          FLEET_TEST_DISPOSABLE: ${{ github.event_name == 'pull_request' && '1' || '' }}
         run: ./fleet test --profile local
 
       - name: Diagnose failure

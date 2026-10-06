@@ -498,9 +498,10 @@ def latest_check_runs(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         order = (str(run.get("started_at", "")), int(run.get("id", 0)))
         previous = newest.get(key)
         previous_order = (
-            str(previous.get("started_at", "")),
-            int(previous.get("id", 0)),
-        ) if previous else ("", 0)
+            (str(previous.get("started_at", "")), int(previous.get("id", 0)))
+            if previous
+            else ("", 0)
+        )
         if order > previous_order:
             newest[key] = run
     return list(newest.values())

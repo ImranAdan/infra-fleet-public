@@ -19,22 +19,20 @@ then if required reviewers must apply to that first run.
 
 ## Local acceptance
 
-**Local Kubernetes** runs on pull requests to `main` that change runtime paths
-(`k8s/`, `scripts/`, `platform/`, `applications/`, `tests/profiles/`, `fleet`),
-every Monday at 05:37 UTC against `main`, and on dispatch:
+**Local Kubernetes** runs every Monday at 05:37 UTC against `main` and on
+dispatch:
 
 ```bash
 gh workflow run local-kubernetes.yml --ref YOUR_BRANCH
 ```
 
 The workflow checks out the exact commit and records it in the `local`
-Environment. Pull requests create one profile with the selected app; weekly
-and manual runs create one profile per app contract. Every job runs the complete
+Environment. Weekly and manual runs create one profile per app contract. Every job runs the complete
 acceptance suite and always requests teardown. The environment URL points to
 the workflow evidence because the cluster does not outlive the hosted runner.
-The merge gate waits for these checks like any other. A newer push to a pull
-request cancels that pull request's earlier run. Adding a required reviewer to
-`local` gates every run, including pull requests and the weekly schedule.
+Pull-request CI does not provision a cluster. A newer run for the same ref
+cancels its predecessor. Adding a required reviewer to `local` gates every
+scheduled or manual run.
 
 ## AWS staging protection
 

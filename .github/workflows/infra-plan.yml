@@ -16,13 +16,13 @@ permissions:
   contents: read
 
 jobs:
-  validate-staging:
-    name: Validate staging
+  validate:
+    name: Infrastructure
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - name: Security scan (Trivy)
+      - name: Scan staging configuration
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: 'v0.74.0'
@@ -36,27 +36,7 @@ jobs:
         env:
           TRIVY_QUIET: true
 
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          terraform_version: '1.14.0'
-
-      - name: Terraform fmt (check)
-        run: terraform -chdir=infrastructure/staging fmt -check
-
-      - name: Terraform init
-        run: terraform -chdir=infrastructure/staging init -backend=false -input=false
-
-      - name: Terraform validate
-        run: terraform -chdir=infrastructure/staging validate
-
-  validate-permanent:
-    name: Validate permanent
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-
-      - name: Security scan (Trivy)
+      - name: Scan permanent configuration
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: 'v0.74.0'
@@ -74,11 +54,11 @@ jobs:
         with:
           terraform_version: '1.14.0'
 
-      - name: Terraform fmt (check)
-        run: terraform -chdir=infrastructure/permanent fmt -check
-
-      - name: Terraform init
-        run: terraform -chdir=infrastructure/permanent init -backend=false -input=false
-
-      - name: Terraform validate
-        run: terraform -chdir=infrastructure/permanent validate
+      - name: Format, initialize and validate both roots
+        run: |
+          set -euo pipefail
+          for root in staging permanent; do
+            terraform -chdir="infrastructure/$root" fmt -check
+            terraform -chdir="infrastructure/$root" init -backend=false -input=false
+            terraform -chdir="infrastructure/$root" validate
+          done

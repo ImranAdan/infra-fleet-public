@@ -100,11 +100,10 @@ platform file names an app, or if any app cannot be selected: each is swapped
 in on a scratch worktree and both profiles must render completely.
 `./fleet test --profile local` then proves drift repair, admission, monitoring,
 isolation, an on-demand launch and removal, promotion and rollback for whichever app is selected. The **Local
-Kubernetes** workflow runs that full cycle with the selected app on pull
-requests that change runtime paths. Weekly and manual runs discover every
-shipped `fleet-app.yaml` contract and run each on its own disposable cluster.
-Adding an app automatically extends that full-matrix backstop without tripling
-the cost of every platform pull request.
+Kubernetes** workflow is the slower live proof. Weekly and manual runs discover
+every shipped `fleet-app.yaml` contract and run the full cycle for each on its
+own disposable cluster. Adding an app automatically extends that full-matrix
+backstop without adding cluster provisioning to pull requests.
 
 The control plane's exact launch, privilege and network boundaries are in the
 [application control-plane guide](APPLICATION-CONTROL-PLANE.md).

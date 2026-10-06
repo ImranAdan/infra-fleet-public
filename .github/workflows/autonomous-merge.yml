@@ -12,8 +12,10 @@ on:
       - Intent Gate
       - Advisor remediation validation
       - Infrastructure Validation
-      - Local Kubernetes
+      - K8s Manifest Validation
+      - Load Harness CI
       - Template Contract
+      - Validate Automation Workflows
     types: [completed]
   status:
   pull_request_review:

@@ -17,10 +17,11 @@ The dashboard at <http://localhost:9000/> shows every included app and can run
 several together from the same deployed revision. The selected app remains the
 default and cannot be stopped there.
 
-The **Local Kubernetes** workflow runs the complete acceptance suite with the
-selected app on pull requests that change runtime paths. Weekly runs against
-`main` and manual runs cover every app contract. It records the exact revision
-in the `local` GitHub Environment and tears each hosted-runner cluster down. See
+The **Local Kubernetes** workflow runs the complete acceptance suite for every
+app contract weekly against `main` and on manual runs. It records the exact
+revision in the `local` GitHub Environment and tears each hosted-runner cluster
+down. Pull requests rely on the fast deterministic render, schema and policy
+checks. See
 [GitHub Environments](GITHUB-ENVIRONMENTS.md) for the gate and the distinction
 between this ephemeral deployment and persistent AWS staging.
 
