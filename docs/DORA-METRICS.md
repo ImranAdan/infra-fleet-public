@@ -20,7 +20,7 @@ We collect metrics from three sources:
 1) **Workflow runs** (GitHub Actions)
    - `rebuild-stack.yml`
    - `infra-apply.yml`
-   - `load-harness-ci.yml` (tag releases)
+   - `load-harness-publish.yml` (tag releases)
 
 2) **Flux GitOps**
    - `kustomization/applications` status and revision.

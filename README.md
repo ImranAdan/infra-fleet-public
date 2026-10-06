@@ -202,13 +202,14 @@ Verification is divided by cost and evidence level.
 | Layer | Trigger | Evidence |
 |---|---|---|
 | Pull request CI | every pull request | application tests, container build and scan, workflow validation, Terraform static checks, profile rendering, schema checks, policy checks, commit lint, and declared-intent evaluation |
-| Local Kubernetes deployment | pull requests that change runtime paths, on demand, and weekly against `main` | real Flux reconciliation, admission, isolation, on-demand app lifecycle, monitoring, canary promotion, rollback, and teardown for every included application |
+| Local Kubernetes deployment | on demand and weekly against `main` | real Flux reconciliation, admission, isolation, on-demand app lifecycle, monitoring, canary promotion, rollback, and teardown for every app |
 | AWS staging deployment | manual in a configured private copy | account-specific provisioning, image publication, EKS bootstrap, Flux reconciliation, rollout, and teardown |
 
-The Local Kubernetes workflow runs on pull requests that change runtime paths, and the
-merge gate waits for it. It records the exact tested revision in the `local` GitHub
-Environment, creates an ephemeral cluster per application, runs the acceptance cycle,
-and tears the cluster down. To run it on any branch:
+The Local Kubernetes workflow is the slower deployment proof, run weekly or on
+demand outside the pull-request feedback loop. It records the exact tested
+revision in the `local` GitHub Environment, creates one ephemeral cluster per
+application, runs the acceptance cycle, and tears each cluster down. To run it
+on any branch:
 
 ```bash
 gh workflow run local-kubernetes.yml --ref YOUR_BRANCH

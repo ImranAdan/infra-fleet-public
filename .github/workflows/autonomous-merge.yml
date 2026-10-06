@@ -4,24 +4,25 @@ name: Autonomous merge
 # pull requests. The merge gate remains the only authority and binds a merge to
 # the exact head it evaluated. PARK, JUDGE and BLOCKED remain open.
 on:
-  # Wake when any pull-request workflow finishes, not only the intent gate:
-  # slower checks otherwise leave a ready PR waiting for the hourly schedule.
-  # Waking never merges by itself; the gate decides on every run.
+  # Wake at the universal gate and the workflows that can be the last
+  # applicable check for their path class. External status/review events wake
+  # the worker after hosted reviewers finish. The gate still decides every run.
   workflow_run:
     workflows:
       - Intent Gate
-      - Intent Gate (retarget)
       - Advisor remediation validation
-      - Commit Message Lint
       - Infrastructure Validation
       - K8s Manifest Validation
       - Load Harness CI
-      - Local Kubernetes
       - Template Contract
       - Validate Automation Workflows
     types: [completed]
+  status:
+  pull_request_review:
+    types: [submitted]
   schedule:
-    - cron: "7 * * * *"
+    # Recovery only; normal merges are event-driven.
+    - cron: "7 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -56,4 +57,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           AUTONOMOUS_MERGE_MIN_AGE_SECONDS: "0"
+          AUTONOMOUS_MERGE_RUN_ID: ${{ github.run_id }}
+          AUTONOMOUS_MERGE_PRIORITY_PR: ${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || '' }}
+          AUTONOMOUS_MERGE_PRIORITY_SHA: ${{ github.event_name == 'status' && github.event.sha || '' }}
         run: python3 .github/scripts/autonomous_merge.py

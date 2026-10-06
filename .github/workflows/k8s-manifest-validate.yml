@@ -43,12 +43,8 @@ permissions:
   contents: read
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Step 1: YAML Syntax Validation
-  # Must pass before schema validation can work
-  # ---------------------------------------------------------------------------
-  yaml-lint:
-    name: YAML Syntax
+  validate:
+    name: Kubernetes manifests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -58,19 +54,6 @@ jobs:
         uses: ./.github/actions/yaml-lint
         with:
           path: k8s/
-
-  # ---------------------------------------------------------------------------
-  # Step 2: Kubernetes Schema Validation
-  # Validates structure against K8s API and CRD schemas
-  # Only runs if YAML syntax is valid
-  # ---------------------------------------------------------------------------
-  k8s-schema:
-    name: K8s Schema
-    needs: yaml-lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Validate Kubernetes schemas
         # Render effective profiles rather than validating unresolved bases.
@@ -86,26 +69,15 @@ jobs:
           python -m pip install PyYAML==6.0.3 pytest==8.3.5 --quiet
           FLEET_RENDER_DIR="$rendered" pytest tests/profiles/test_rendered.py -q -p no:cacheprovider
 
-  # ---------------------------------------------------------------------------
-  # Step 3: Kyverno Policy Validation
-  # Enforces organizational policies (security, standards, best practices)
-  # Only runs if schema validation passes
-  # ---------------------------------------------------------------------------
-  kyverno-policies:
-    name: Kyverno Policies
-    needs: k8s-schema
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        profile: [local, aws-staging]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-
-      - name: Validate against Kyverno policies
+      - name: Validate local profile against Kyverno policies
         uses: ./.github/actions/kyverno-validate
         with:
-          profile: ${{ matrix.profile }}
+          profile: local
+
+      - name: Validate AWS profile against Kyverno policies
+        uses: ./.github/actions/kyverno-validate
+        with:
+          profile: aws-staging
 
       - name: Test policy regression cases
         run: |

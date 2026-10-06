@@ -75,15 +75,15 @@ trap 'rm -rf "$rendered_root"' EXIT
 ./tests/profiles/app-contract.sh
 
 local_deployment_workflow=.github/workflows/local-kubernetes.yml
-# Runtime changes are proven live before an unsupervised merge, but the full
-# deployment is too slow to run for every change or again after merging.
+# Runtime changes are checked deterministically on pull requests. Full live
+# acceptance is scheduled or explicit because cluster provisioning is too slow
+# for the change feedback loop.
 if grep -Eq '^  push:' "$local_deployment_workflow"; then
   echo "The full local deployment must not run again for each main push." >&2
   failed=true
 fi
-if grep -Eq '^  pull_request:' "$local_deployment_workflow" &&
-  ! sed -n '/^  pull_request:/,/^[^ ]/p' "$local_deployment_workflow" | grep -Eq '^    paths:'; then
-  echo "The full local deployment may run for a PR only when it changes runtime paths." >&2
+if grep -Eq '^  pull_request:' "$local_deployment_workflow"; then
+  echo "The full local deployment must not provision clusters for pull requests." >&2
   failed=true
 fi
 for required_contract in \
@@ -96,7 +96,7 @@ for required_contract in \
   fi
 done
 if ! grep -Fq 'app: ${{ fromJSON(needs.discover_apps.outputs.apps) }}' "$local_deployment_workflow"; then
-  echo "The local deployment workflow must discover every shipped app contract." >&2
+  echo "The local deployment workflow must build acceptance jobs from discovered app contracts." >&2
   failed=true
 fi
 

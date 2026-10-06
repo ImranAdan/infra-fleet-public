@@ -11,6 +11,7 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -483,6 +484,46 @@ def required_check_failures(
     return failures
 
 
+def latest_check_runs(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the newest rerun for each check name, publisher and workflow.
+
+    GitHub's ``filter=latest`` can still return two check suites for events that
+    arrive together, such as Dependabot opening and labelling a pull request.
+    A cancelled superseded suite must not block the successful replacement.
+    Workflow identity is required before GitHub Actions runs may supersede one
+    another. Other publishers remain unique, so a same-name check cannot hide
+    another workflow or App's failure.
+    """
+    newest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for run in runs:
+        workflow = str(run.get("workflow_path", ""))
+        if run.get("app") == "github-actions" and workflow:
+            identity = workflow
+        else:
+            identity = f"run:{run.get('id')}"
+        key = (str(run.get("name", "")), str(run.get("app", "")), identity)
+        order = (str(run.get("started_at", "")), int(run.get("id", 0)))
+        previous = newest.get(key)
+        previous_order = (
+            (str(previous.get("started_at", "")), int(previous.get("id", 0)))
+            if previous
+            else ("", 0)
+        )
+        if order > previous_order:
+            newest[key] = run
+    return list(newest.values())
+
+
+def is_current_autonomous_worker(run: dict[str, Any], run_id: str) -> bool:
+    """Exclude only the trusted worker check that is presently running this gate."""
+    return bool(
+        run_id.isdigit()
+        and str(run.get("run_id", "")) == run_id
+        and run.get("workflow_path") == ".github/workflows/autonomous-merge.yml"
+        and run.get("status") != "completed"
+    )
+
+
 def _actions_run_id(repo: str, details_url: object) -> str | None:
     """Extract a run id only from this repository's GitHub Actions job URL."""
     if not isinstance(details_url, str):
@@ -674,13 +715,31 @@ def main(argv: list[str]) -> int:
         blocked.append(f"merge state is {pr['mergeStateStatus']} (conflicts, behind, or checks)")
 
     sha = pr["headRefOid"]
-    runs = gh_json_lines(
+    raw_runs = gh_json_lines(
         "api",
         "--paginate",
         f"repos/{repo}/commits/{sha}/check-runs?per_page=100&filter=latest",
         "--jq",
-        ".check_runs[]|{name,status,conclusion,started_at,app:.app.slug,details_url}",
+        ".check_runs[]|{id,name,status,conclusion,started_at,app:.app.slug,details_url}",
     )
+    workflow_runs: dict[str, dict[str, str]] = {}
+    for run in raw_runs:
+        run_id = _actions_run_id(repo, run.get("details_url"))
+        if not run_id:
+            continue
+        if run_id not in workflow_runs:
+            details = json.loads(gh("api", f"repos/{repo}/actions/runs/{run_id}"))
+            workflow_runs[run_id] = {
+                key: str(details.get(key, ""))
+                for key in ("path", "event", "head_sha", "head_branch")
+            }
+        run["run_id"] = run_id
+        run["workflow_path"] = workflow_runs[run_id]["path"].split("@", 1)[0]
+    current_worker = os.environ.get("AUTONOMOUS_MERGE_RUN_ID", "")
+    runs = []
+    for run in latest_check_runs(raw_runs):
+        if not is_current_autonomous_worker(run, current_worker):
+            runs.append(run)
     latest: dict[str, str] = {}
     for status in gh_json_lines(
         "api",
@@ -740,20 +799,6 @@ def main(argv: list[str]) -> int:
         print(f"PARK  decision policy is invalid: {exc}")
         print("verdict: PARK")
         return 10
-    required_names = {item["name"] for item in judge["required_checks"]}
-    workflow_runs: dict[str, dict[str, str]] = {}
-    for run in runs:
-        if run.get("name") not in required_names:
-            continue
-        run_id = _actions_run_id(repo, run.get("details_url"))
-        if not run_id:
-            continue
-        run["run_id"] = run_id
-        details = json.loads(gh("api", f"repos/{repo}/actions/runs/{run_id}"))
-        workflow_runs[run_id] = {
-            key: str(details.get(key, ""))
-            for key in ("path", "event", "head_sha", "head_branch")
-        }
     evidence_failures = required_check_failures(runs, judge["required_checks"], workflow_runs, sha)
     evidence_failures.extend(evidence_policy_failures(diff))
     if evidence_failures:
@@ -1020,6 +1065,7 @@ def self_test() -> int:
         "app": "github-actions",
         "run_id": "42",
         "started_at": "2026-09-28T01:00:00Z",
+        "workflow_path": ".github/workflows/intent-gate.yml",
     }
     workflow_runs = {
         "42": {
@@ -1028,6 +1074,44 @@ def self_test() -> int:
             "head_sha": sha,
         }
     }
+    duplicate_runs = [
+        {
+            **required_run,
+            "id": 1,
+            "conclusion": "cancelled",
+            "started_at": "2026-09-28T00:59:00Z",
+        },
+        {**required_run, "id": 2},
+        {
+            **required_run,
+            "id": 3,
+            "app": "other-check-app",
+            "conclusion": "failure",
+            "started_at": "2026-09-28T01:01:00Z",
+        },
+        {
+            **required_run,
+            "id": 4,
+            "workflow_path": ".github/workflows/other.yml",
+            "conclusion": "failure",
+            "started_at": "2026-09-28T01:02:00Z",
+        },
+    ]
+    latest_runs = latest_check_runs(duplicate_runs)
+    assert [(run["id"], run["app"]) for run in latest_runs] == [
+        (2, "github-actions"),
+        (3, "other-check-app"),
+        (4, "github-actions"),
+    ]
+    worker_run = {
+        **required_run,
+        "status": "in_progress",
+        "run_id": "99",
+        "workflow_path": ".github/workflows/autonomous-merge.yml",
+    }
+    assert is_current_autonomous_worker(worker_run, "99")
+    assert not is_current_autonomous_worker(worker_run, "98")
+    assert not is_current_autonomous_worker({**worker_run, "status": "completed"}, "99")
     assert required_check_failures([required_run], required, workflow_runs, sha) == []
     assert required_check_failures([], required, {}, sha) == [
         "required evidence check did not run: Intent gate / Declared intent or "

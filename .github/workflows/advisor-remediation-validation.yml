@@ -139,4 +139,4 @@ jobs:
     needs: scope
     uses: ./.github/workflows/load-harness-ci.yml
     with:
-      publish_to_ecr: false
+      package_image: false

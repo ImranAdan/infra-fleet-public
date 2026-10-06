@@ -143,14 +143,10 @@ GitHub binds `GITHUB_SHA` to the branch head at dispatch, checks out that exact
 commit and records the job in the `local` GitHub Environment. The cluster is
 ephemeral and is removed before the job completes; the deployment record is
 evidence of the completed integration cycle, not an endpoint that remains
-online. Each run owns its kind cluster; a newer push to a pull request supersedes
-that pull request's earlier run. Pull requests that change runtime paths
-(`k8s/`, `scripts/`, `platform/`, `applications/`, `tests/profiles/`, `fleet`)
-run it, and the merge gate waits for it, so an unsupervised merge is judged on
-live behaviour. Documentation-only changes skip it, and a weekly run applies
-the same proof to current `main`. Every run discovers and covers all application
-contracts, selecting each one with `scripts/select-app.sh` on its own runner,
-so the proof is of the platform rather than of one app.
+online. Each run owns its kind cluster. The weekly and manual matrices select
+every contract with `scripts/select-app.sh` on separate runners. Pull requests
+use deterministic render, schema and policy checks; live cluster acceptance
+stays out of the fast feedback loop.
 
 The AWS profile maps to the existing `staging` GitHub Environment because that
 name is part of its OIDC trust boundary. AWS remains limited to static PR

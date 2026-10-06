@@ -85,7 +85,7 @@ from ECR, so an app also needs:
    the Flux image reflector may read (`infrastructure/staging/flux-image-reflector.tf`).
    Both are explicit per repository to keep least privilege;
 2. a CI workflow that publishes `vX.Y.Z` tags there, called by
-   `rebuild-stack.yml` in place of `load-harness-ci.yml`;
+   `rebuild-stack.yml` through `load-harness-publish.yml`;
 3. its first release tag on the `app` image in
    `k8s/profiles/aws-staging/applications/kustomization.yaml`;
 4. its `APP_SECRETS` created by `rebuild-stack.yml`.
@@ -100,10 +100,10 @@ platform file names an app, or if any app cannot be selected: each is swapped
 in on a scratch worktree and both profiles must render completely.
 `./fleet test --profile local` then proves drift repair, admission, monitoring,
 isolation, an on-demand launch and removal, promotion and rollback for whichever app is selected. The **Local
-Kubernetes** workflow discovers every shipped `fleet-app.yaml` contract and
-runs that full cycle for each app on its own disposable cluster, on pull
-requests that change runtime paths, weekly and on dispatch. Adding an app contract automatically adds it to the
-matrix, so a platform change that works for only some apps fails there.
+Kubernetes** workflow is the slower live proof. Weekly and manual runs discover
+every shipped `fleet-app.yaml` contract and run the full cycle for each on its
+own disposable cluster. Adding an app automatically extends that full-matrix
+backstop without adding cluster provisioning to pull requests.
 
 The control plane's exact launch, privilege and network boundaries are in the
 [application control-plane guide](APPLICATION-CONTROL-PLANE.md).
