@@ -96,7 +96,13 @@ for required_contract in \
   fi
 done
 if ! grep -Fq 'app: ${{ fromJSON(needs.discover_apps.outputs.apps) }}' "$local_deployment_workflow"; then
-  echo "The local deployment workflow must discover every shipped app contract." >&2
+  echo "The local deployment workflow must build acceptance jobs from discovered app contracts." >&2
+  failed=true
+fi
+if ! grep -Fq 'TRIGGER: ${{ github.event_name }}' "$local_deployment_workflow" ||
+  ! grep -Fq 'if [ "$TRIGGER" = pull_request ]; then' "$local_deployment_workflow" ||
+  ! grep -Fq 'apps=("$selected")' "$local_deployment_workflow"; then
+  echo "The local deployment workflow must limit pull requests to the selected app and retain the discovered matrix for scheduled/manual runs." >&2
   failed=true
 fi
 

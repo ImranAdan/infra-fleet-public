@@ -50,6 +50,8 @@ jobs:
       - name: Build the application matrix
         id: contracts
         shell: bash
+        env:
+          TRIGGER: ${{ github.event_name }}
         run: |
           shopt -s nullglob
           contracts=(k8s/applications/*/fleet-app.yaml)
@@ -68,13 +70,26 @@ jobs:
             fi
             apps+=("$app")
           done
+          selected="$(awk '$1 == "APP_NAME:" { gsub(/\"/, "", $2); print $2; exit }' \
+            k8s/fleet-app/fleet-app.yaml)"
+          if [[ ! " ${apps[*]} " =~ " ${selected} " ]]; then
+            echo "Selected application has no contract: $selected" >&2
+            exit 1
+          fi
+          if [ "$TRIGGER" = pull_request ]; then
+            apps=("$selected")
+            echo "Pull request acceptance covers the selected app ($selected); weekly and manual runs cover every contract." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Scheduled/manual acceptance covers every application contract." >> "$GITHUB_STEP_SUMMARY"
+          fi
           apps_json="$(printf '%s\n' "${apps[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
           printf 'apps=%s\n' "$apps_json" >> "$GITHUB_OUTPUT"
 
   acceptance:
     needs: discover_apps
-    # Every shipped contract gets its own cluster. Adding an app does not
-    # require a second workflow edit that can be forgotten.
+    # Pull requests prove the shared runtime once with the selected app.
+    # Scheduled and manual runs retain the all-contract matrix so app-specific
+    # integration drift remains visible without tripling every PR's cost.
     name: Acceptance (${{ matrix.app }})
     strategy:
       fail-fast: false

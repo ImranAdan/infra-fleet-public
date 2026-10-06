@@ -483,6 +483,29 @@ def required_check_failures(
     return failures
 
 
+def latest_check_runs(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the newest run for each check name and publisher.
+
+    GitHub's ``filter=latest`` can still return two check suites for events that
+    arrive together, such as Dependabot opening and labelling a pull request.
+    A cancelled superseded suite must not block the successful replacement.
+    Publisher is part of the key so one GitHub App cannot hide another App's
+    failing check by reusing its name.
+    """
+    newest: dict[tuple[str, str], dict[str, Any]] = {}
+    for run in runs:
+        key = (str(run.get("name", "")), str(run.get("app", "")))
+        order = (str(run.get("started_at", "")), int(run.get("id", 0)))
+        previous = newest.get(key)
+        previous_order = (
+            str(previous.get("started_at", "")),
+            int(previous.get("id", 0)),
+        ) if previous else ("", 0)
+        if order > previous_order:
+            newest[key] = run
+    return list(newest.values())
+
+
 def _actions_run_id(repo: str, details_url: object) -> str | None:
     """Extract a run id only from this repository's GitHub Actions job URL."""
     if not isinstance(details_url, str):
@@ -674,12 +697,14 @@ def main(argv: list[str]) -> int:
         blocked.append(f"merge state is {pr['mergeStateStatus']} (conflicts, behind, or checks)")
 
     sha = pr["headRefOid"]
-    runs = gh_json_lines(
-        "api",
-        "--paginate",
-        f"repos/{repo}/commits/{sha}/check-runs?per_page=100&filter=latest",
-        "--jq",
-        ".check_runs[]|{name,status,conclusion,started_at,app:.app.slug,details_url}",
+    runs = latest_check_runs(
+        gh_json_lines(
+            "api",
+            "--paginate",
+            f"repos/{repo}/commits/{sha}/check-runs?per_page=100&filter=latest",
+            "--jq",
+            ".check_runs[]|{id,name,status,conclusion,started_at,app:.app.slug,details_url}",
+        )
     )
     latest: dict[str, str] = {}
     for status in gh_json_lines(
@@ -1028,6 +1053,27 @@ def self_test() -> int:
             "head_sha": sha,
         }
     }
+    duplicate_runs = [
+        {
+            **required_run,
+            "id": 1,
+            "conclusion": "cancelled",
+            "started_at": "2026-09-28T00:59:00Z",
+        },
+        {**required_run, "id": 2},
+        {
+            **required_run,
+            "id": 3,
+            "app": "other-check-app",
+            "conclusion": "failure",
+            "started_at": "2026-09-28T01:01:00Z",
+        },
+    ]
+    latest_runs = latest_check_runs(duplicate_runs)
+    assert [(run["id"], run["app"]) for run in latest_runs] == [
+        (2, "github-actions"),
+        (3, "other-check-app"),
+    ]
     assert required_check_failures([required_run], required, workflow_runs, sha) == []
     assert required_check_failures([], required, {}, sha) == [
         "required evidence check did not run: Intent gate / Declared intent or "

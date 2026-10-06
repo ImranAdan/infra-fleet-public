@@ -147,10 +147,10 @@ online. Each run owns its kind cluster; a newer push to a pull request supersede
 that pull request's earlier run. Pull requests that change runtime paths
 (`k8s/`, `scripts/`, `platform/`, `applications/`, `tests/profiles/`, `fleet`)
 run it, and the merge gate waits for it, so an unsupervised merge is judged on
-live behaviour. Documentation-only changes skip it, and a weekly run applies
-the same proof to current `main`. Every run discovers and covers all application
-contracts, selecting each one with `scripts/select-app.sh` on its own runner,
-so the proof is of the platform rather than of one app.
+live behaviour. Documentation-only changes skip it. Pull requests use the
+selected app for one full platform proof; the weekly and manual matrices select
+every contract with `scripts/select-app.sh` on separate runners. This preserves
+all-app drift detection while avoiding redundant clusters on every change.
 
 The AWS profile maps to the existing `staging` GitHub Environment because that
 name is part of its OIDC trust boundary. AWS remains limited to static PR
