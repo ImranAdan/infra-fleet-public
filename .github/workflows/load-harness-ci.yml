@@ -9,6 +9,10 @@ on:
       - 'applications/load-harness/Dockerfile'
       - 'applications/load-harness/.dockerignore'
       - 'applications/load-harness/requirements.txt'
+      - 'applications/load-harness/package.json'
+      - 'applications/load-harness/package-lock.json'
+      - 'applications/load-harness/tailwind.config.js'
+      - 'applications/load-harness/tailwind.input.css'
       - 'applications/load-harness/ci/**'
       - '.release-please-manifest.json'
       - '.github/workflows/load-harness-ci.yml'
@@ -61,6 +65,15 @@ jobs:
       - name: Run unit tests
         run: |
           pytest tests/ -v -W error::DeprecationWarning
+
+      # app.css is committed so the image needs no Node; fail when a template,
+      # script or Tailwind change was not followed by `npm run build:css`.
+      # Uses the runner's preinstalled Node; the lockfile pins tailwindcss.
+      - name: Check built CSS is current
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build:css
+          git diff --exit-code -- src/load_harness/static/css/app.css
 
       - name: Test image tag selection
         run: ./ci/test-image-tag.sh
