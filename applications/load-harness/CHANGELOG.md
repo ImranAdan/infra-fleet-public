@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.10.1](https://github.com/ImranAdan/infra-fleet-public/compare/v1.10.0...v1.10.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **ci:** enforce action pins and refresh guides ([e35140e](https://github.com/ImranAdan/infra-fleet-public/commit/e35140e5d534744f7b9849964dca5bb9070c45ef))
+* **load-harness:** remove 'unsafe-inline' from script CSP ([b8d9648](https://github.com/ImranAdan/infra-fleet-public/commit/b8d96485fe70b2c376fbd50adcac4d176a64b27f))
+* **load-harness:** remove 'unsafe-inline' from script CSP ([0970552](https://github.com/ImranAdan/infra-fleet-public/commit/09705525e8740fc5f4c2bfdade4351ca1f658e4f)), closes [#143](https://github.com/ImranAdan/infra-fleet-public/issues/143)
+
 ## [1.10.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.9.0...v1.10.0) (2026-09-30)
 
 
