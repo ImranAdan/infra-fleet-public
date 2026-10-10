@@ -1335,19 +1335,43 @@ def self_test() -> int:
         },
     ]
     assert not owner_approval(owner_revoked, sha, judge["trusted_author"])
-    owner_event = [{"event": "labeled", "actor": "ImranAdan", "label": "owner-approved"}]
+    # The label binds to the head that was reviewed: it must postdate every
+    # check run on that head. A later push starts new checks, so it unbinds.
+    checks_started = "2026-10-10T20:00:00Z"
+    owner_event = [
+        {
+            "event": "labeled",
+            "actor": "ImranAdan",
+            "label": "owner-approved",
+            "created_at": "2026-10-10T20:05:00Z",
+        }
+    ]
     non_owner_event = [
         *owner_event,
-        {"event": "labeled", "actor": "contributor", "label": "owner-approved"},
+        {
+            "event": "labeled",
+            "actor": "contributor",
+            "label": "owner-approved",
+            "created_at": "2026-10-10T20:06:00Z",
+        },
     ]
     removed_event = [
         *owner_event,
-        {"event": "unlabeled", "actor": "ImranAdan", "label": "owner-approved"},
+        {
+            "event": "unlabeled",
+            "actor": "ImranAdan",
+            "label": "owner-approved",
+            "created_at": "2026-10-10T20:06:00Z",
+        },
     ]
-    assert owner_label_approval(owner_event, "ImranAdan")
-    assert not owner_label_approval(non_owner_event, "ImranAdan")
-    assert not owner_label_approval(removed_event, "ImranAdan")
-    assert not owner_label_approval(owner_event, "another-owner")
+    assert owner_label_approval(owner_event, "ImranAdan", checks_started)
+    assert not owner_label_approval(non_owner_event, "ImranAdan", checks_started)
+    assert not owner_label_approval(removed_event, "ImranAdan", checks_started)
+    assert not owner_label_approval(owner_event, "another-owner", checks_started)
+    # Approved before the current head's checks began: a push after approval.
+    assert not owner_label_approval(owner_event, "ImranAdan", "2026-10-10T20:07:00Z")
+    assert not owner_label_approval(owner_event, "ImranAdan", "")
+    assert not owner_label_approval([{**owner_event[0], "created_at": ""}], "ImranAdan", checks_started)
     assert decide(credential, rules, {"owner-approved"}, decision, True)[0] == "READY"
     authority = [_finding("merge-authority", "gate")]
     authority_approve = ("APPROVE", frozenset({"merge-authority"}))
