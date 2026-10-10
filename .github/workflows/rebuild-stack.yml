@@ -383,7 +383,7 @@ jobs:
       # the CLI is. Unpinned, a rebuild silently upgrades the cluster's Flux
       # control plane and rewrites a committed manifest.
       - name: Install Flux CLI
-        uses: fluxcd/flux2/action@dd233c4fadef306a62b7893204f8e3817fecc2b2 # v2.9.5
+        uses: fluxcd/flux2/action@b9c17924adb533d3617ec7de97a7b0f4acc07b39 # v2.9.6
         with:
           version: 2.7.3
 
