@@ -52,6 +52,16 @@ merge. Remove the marker to hold the PR open.
 - **Evidence:** the body has a `## Verification` section with at least one
   line of the form `` `command` → result``: what was run and what it showed (see the pull request template and
   the Verification section of `AGENTS.md`).
+- **Dependabot version-only bumps:** a PR opened by Dependabot on a
+  `dependabot/*` branch, whose commits are all verified Dependabot commits,
+  none tagged `semver-major`, and whose diff only moves versions (outside
+  lockfiles, every changed line is a `FROM`, `uses:`, `==`, package.json
+  dependency or Terraform `version =` line naming the same image, action or
+  package) needs no Verification section: its exact-head checks are the
+  evidence. A `.terraform.lock.hcl`-only change in `infrastructure/permanent/`
+  then counts as a dependency manifest, not permanent infrastructure. The
+  autonomous worker considers such PRs without the marker. Everything else
+  still applies, and gate files still park.
 - **Scope:** changes the policy assigns to evidence or the owner, found in the diff: a workflow
   permission or `write` scope, a new `secrets.` reference, a remote action, a
   base image, a chart or dependency version, a dependency manifest, IAM,

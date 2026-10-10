@@ -25,7 +25,11 @@ MAX_CANDIDATES_PER_RUN = 20
 
 
 def eligible(pr: dict[str, Any], repository: str, now: datetime, minimum_age: int) -> bool:
-    """Accept only mature, non-draft PRs from a branch in this repository."""
+    """Accept only mature, non-draft PRs from a branch in this repository.
+
+    A PR opts in with the marker; Dependabot PRs are considered without it, and
+    the gate itself decides whether one is a version-only bump it may merge.
+    """
     owner, name = repository.split("/", 1)
     head_owner = (pr.get("headRepositoryOwner") or {}).get("login")
     head_name = (pr.get("headRepository") or {}).get("name")
@@ -41,7 +45,13 @@ def eligible(pr: dict[str, Any], repository: str, now: datetime, minimum_age: in
         not pr.get("isDraft", False)
         and head_owner == owner
         and head_name == name
-        and MARKER in body
+        and (
+            MARKER in body
+            or (
+                pr.get("author") == "dependabot[bot]"
+                and str(pr.get("headRefName") or "").startswith("dependabot/")
+            )
+        )
         and age >= minimum_age
     )
 
@@ -166,6 +176,7 @@ def _self_test() -> int:
             [
                 {
                     "number": 7,
+                    "user": {"login": "dependabot[bot]"},
                     "body": f"Verification\n{MARKER}",
                     "created_at": "2026-09-28T11:30:00Z",
                     "draft": False,
@@ -182,6 +193,7 @@ def _self_test() -> int:
     assert _parse_pull_request_pages(pages) == [
         {
             **candidate,
+            "author": "dependabot[bot]",
             "headRefName": "feature",
         }
     ]
@@ -225,6 +237,7 @@ def _parse_pull_request_pages(raw: str) -> list[dict[str, Any]]:
             normalized.append(
                 {
                     "number": item["number"],
+                    "author": (item.get("user") or {}).get("login"),
                     "body": item.get("body"),
                     "createdAt": item.get("created_at"),
                     "isDraft": item.get("draft", False),

@@ -631,6 +631,88 @@ def has_verification(body: str) -> bool:
     )
 
 
+DEPENDABOT_AUTHORS = {"app/dependabot", "dependabot[bot]"}
+LOCKFILE = re.compile(r"(?:^|/)(?:\.terraform\.lock\.hcl|package-lock\.json|uv\.lock|go\.sum)$")
+# One dependency reference per line; "key" must survive the bump unchanged, so
+# a bump can move a version but cannot swap the image, action or package.
+VERSION_LINES = (
+    re.compile(
+        r"^FROM\s+(?:--platform=\S+\s+)?(?P<key>[^\s:@]+)(?::\S+?)?(?:@sha256:[0-9a-f]{64})?"
+        r"(?:\s+AS\s+\S+)?$",
+        re.I,
+    ),
+    re.compile(r"^(?:-\s*)?uses:\s*(?P<key>[^\s@]+)@[0-9a-f]{40}(?:\s+#\s*\S+)?$"),
+    re.compile(r"^(?P<key>[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]*\])?)==\d[^\s;#]*$"),
+    re.compile(r'^"(?P<key>[@A-Za-z0-9_./-]+)":\s*"[\^~]?\d[\w.+-]*",?$'),
+    re.compile(r'^(?P<key>version)\s*=\s*"[^"]+"$'),
+)
+
+
+def _version_key(text: str) -> str | None:
+    for pattern in VERSION_LINES:
+        if match := pattern.match(text.strip()):
+            return match.group("key")
+    return None
+
+
+def dependabot_bump_failures(
+    author: str, branch: str, commits: list[dict[str, Any]], diff: str
+) -> list[str]:
+    """Why a PR is not a Dependabot version-only bump; empty means it is.
+
+    Such a PR proves itself through its exact-head checks, so it needs no
+    hand-written Verification section and no autonomous-merge marker.
+    """
+    failures: list[str] = []
+    if author not in DEPENDABOT_AUTHORS:
+        failures.append(f"author {author} is not Dependabot")
+    if not branch.startswith("dependabot/"):
+        failures.append(f"branch {branch} is not a Dependabot branch")
+    if not commits:
+        failures.append("no commits")
+    for commit in commits:
+        if commit.get("author") != "dependabot[bot]" or not commit.get("verified"):
+            failures.append("a commit is not a verified Dependabot commit")
+        if "update-type: version-update:semver-major" in (commit.get("message") or ""):
+            failures.append("a major version update")
+    path = ""
+    removed: dict[str, list[str]] = {}
+    added: dict[str, list[str]] = {}
+    for line in diff.splitlines():
+        if header := re.match(r"^diff --git a/(.*) b/(.*)$", line):
+            path = header.group(2)
+            if header.group(1) != path:
+                failures.append(f"renames a file: {path}")
+            continue
+        if re.match(r"^(?:new|deleted) file mode ", line):
+            failures.append(f"adds or deletes a file: {path}")
+        if line.startswith(("+++", "---")) or not line.startswith(("+", "-")):
+            continue
+        if LOCKFILE.search(path):
+            continue
+        (added if line.startswith("+") else removed).setdefault(path, []).append(line[1:])
+    for changed in sorted(set(removed) | set(added)):
+        before, after = removed.get(changed, []), added.get(changed, [])
+        if len(before) != len(after):
+            failures.append(f"changes more than versions in {changed}")
+            continue
+        for old, new in zip(before, after):
+            key = _version_key(old)
+            if key is None or key != _version_key(new):
+                failures.append(f"changes more than a version in {changed}: {new.strip()[:80]}")
+    return list(dict.fromkeys(failures))
+
+
+def dependabot_scope(findings: list[Finding]) -> list[Finding]:
+    """A lockfile-only permanent change in a verified bump is a dependency bump."""
+    return [
+        _finding("dependency-manifest", description)
+        if category == "permanent-infrastructure" and LOCKFILE.search(description)
+        else (category, description)
+        for category, description in findings
+    ]
+
+
 def gh(*args: str) -> str:
     result = subprocess.run(["gh", *args], check=True, capture_output=True, text=True)  # noqa: S603, S607
     return result.stdout
@@ -704,7 +786,7 @@ def main(argv: list[str]) -> int:
             "-R",
             repo,
             "--json",
-            "state,isDraft,mergeStateStatus,body,headRefOid,author,labels",
+            "state,isDraft,mergeStateStatus,body,headRefOid,headRefName,author,labels",
         )
     )
     blocked: list[str] = []
@@ -779,11 +861,26 @@ def main(argv: list[str]) -> int:
         blocked.append(f"{unresolved} review thread(s) unresolved")
     if silent:
         blocked.append(f"{silent} thread(s) resolved without a reply from {author}")
-    if not has_verification(pr["body"] or ""):
-        blocked.append("no '## Verification' section with commands and results")
-
     diff = gh("pr", "diff", number, "-R", repo)
     findings = scope_findings(diff)
+    bump_failures = ["not Dependabot"]
+    if author in DEPENDABOT_AUTHORS:
+        commits = gh_json_lines(
+            "api",
+            "--paginate",
+            f"repos/{repo}/pulls/{number}/commits?per_page=100",
+            "--jq",
+            ".[]|{author:.author.login,verified:.commit.verification.verified,"
+            "message:.commit.message}",
+        )
+        bump_failures = dependabot_bump_failures(author, pr["headRefName"], commits, diff)
+        for reason in bump_failures:
+            print(f"NOTE  not a Dependabot version-only bump: {reason}")
+    if not bump_failures:
+        print("NOTE  Dependabot version-only bump: exact-head checks are its verification")
+        findings = dependabot_scope(findings)
+    elif not has_verification(pr["body"] or ""):
+        blocked.append("no '## Verification' section with commands and results")
     print(f"{repo}#{number} at {sha[:12]}: {len(runs)} check runs, {len(threads)} threads")
     for category, description in findings:
         print(f"DECISION {category}: {description}")
