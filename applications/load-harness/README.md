@@ -32,6 +32,7 @@ LoadHarness supports optional API key authentication to protect endpoints.
 | `/health`, `/ready` | No (K8s probes) |
 | `/apidocs`, `/apispec.json` | No (Swagger docs) |
 | `/ui/login` | No (login page) |
+| `/static/*` | No (dashboard CSS/JS, which the login page loads; no data) |
 | `/ui/*` | **Session required** (redirects to login) |
 | `/`, `/load/*` | **API key required** |
 | `/metrics` | No (Prometheus scraping) |
@@ -436,6 +437,23 @@ docker compose --profile test run --rm test
 docker compose run --rm test pytest tests/test_app.py -v -k "test_cpu"
 ```
 
+### Dashboard CSS (Tailwind)
+
+The dashboard's CSS is built ahead of time from the templates and
+`static/js/`, and `static/css/app.css` is committed, so the image needs no
+Node. Rebuild it whenever you add or change Tailwind classes:
+
+```bash
+cd applications/load-harness
+npm ci --ignore-scripts   # tailwindcss pinned in package-lock.json
+npm run build:css         # writes src/load_harness/static/css/app.css
+```
+
+Pages run no inline scripts: the CSP `script-src` is `'self'` plus the
+SRI-pinned HTMX and Chart.js CDNs, so put new page scripts in `static/js/`.
+`tests/test_security_headers.py` fails on any inline `<script>` or `on*=`
+handler.
+
 ### Project Structure
 
 ```
@@ -459,10 +477,15 @@ applications/load-harness/
 │   │   └── security_headers.py   # HTTP security headers (CSP, HSTS, etc.)
 │   ├── dashboard/
 │   │   └── routes.py             # Dashboard endpoints
-│   ├── static/js/                # Frontend JavaScript
-│   │   ├── dashboard.js          # Dashboard interactivity
-│   │   └── theme.js              # Dark mode toggle
+│   ├── static/
+│   │   ├── css/app.css           # Built Tailwind CSS (npm run build:css)
+│   │   └── js/
+│   │       ├── dashboard.js      # Dashboard interactivity
+│   │       ├── theme-init.js     # Sets dark mode before first paint
+│   │       └── theme.js          # Dark mode toggle
 │   └── templates/
+│       ├── base.html             # Shared layout (dashboard)
+│       ├── login.html            # Login page
 │       ├── dashboard.html        # Main dashboard UI
 │       └── partials/
 │           ├── live_metrics.html # Metrics panel
@@ -479,6 +502,8 @@ applications/load-harness/
 ├── local-dev/
 │   ├── docker-compose.yml        # Local dev setup
 │   └── prometheus.yml            # Local Prometheus config
+├── package.json                  # Tailwind build (build-time only)
+├── tailwind.config.js            # Tailwind theme and content paths
 └── Dockerfile                    # Production image
 ```
 

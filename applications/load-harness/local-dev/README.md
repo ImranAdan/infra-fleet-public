@@ -208,9 +208,9 @@ load-harness/
 │   ├── workers/            # Background workers (CPU, Memory)
 │   ├── middleware/         # Auth, Chaos, Security headers
 │   ├── dashboard/          # Dashboard routes
-│   ├── static/js/          # Frontend JavaScript
+│   ├── static/             # Built CSS and frontend JavaScript
 │   └── templates/          # Jinja2 templates
-├── tests/                  # Test suite (104 tests)
+├── tests/                  # Test suite
 │   ├── conftest.py         # Shared fixtures
 │   ├── test_app.py
 │   ├── test_security_headers.py
