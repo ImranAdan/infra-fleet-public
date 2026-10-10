@@ -70,7 +70,9 @@ merge a pull request it raised only by rerunning
 reports `READY`, or by leaving the template's `<!-- autonomous-merge -->`
 marker for the trusted default-branch worker to run that exact command. Both
 paths bind the merge to the checked head SHA. Remove the marker to hold a PR
-open. An agent must say what merged and why. It never adds the `owner-approved`
+open. Dependabot PRs that only move versions need neither the marker nor a
+Verification section: the worker considers them and the gate accepts their
+exact-head checks as evidence (see `.claude/skills/merge-gate/SKILL.md`). An agent must say what merged and why. It never adds the `owner-approved`
 label and never posts or imitates a merge-judge comment. The workflow binds an owner-applied
 label to the exact head SHA; a label without that trusted record does not
 approve a merge, and the gate also requires the latest label event to come from
