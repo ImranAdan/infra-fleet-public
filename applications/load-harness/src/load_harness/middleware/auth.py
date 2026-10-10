@@ -18,6 +18,7 @@ PUBLIC_ENDPOINTS = frozenset([
 # Prefixes that bypass authentication
 PUBLIC_PREFIXES = (
     "/flasgger_static/",  # Swagger static assets
+    "/static/",  # Dashboard CSS/JS: the public login page needs them; no data
 )
 
 
@@ -32,6 +33,7 @@ def init_auth(app, config_override=None):
     - /health, /ready (K8s probes)
     - /ui/login (login page)
     - /flasgger_static/* (Swagger assets)
+    - /static/* (dashboard CSS/JS, which the login page loads)
 
     If API_KEY is not set, authentication is disabled (dev mode).
 

@@ -14,6 +14,19 @@ updates:
           - "*"
     open-pull-requests-limit: 3
 
+  # Tailwind CSS build tool - monthly. Build-time only: after a bump, run
+  # `npm run build:css` and commit static/css/app.css. Major versions are
+  # ignored: Tailwind 4 replaces tailwind.config.js and the build command.
+  - package-ecosystem: "npm"
+    directory: "/applications/load-harness"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+    ignore:
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
+
   # Docker base images - monthly
   - package-ecosystem: "docker"
     directory: "/applications/load-harness"

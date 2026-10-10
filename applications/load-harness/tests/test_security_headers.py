@@ -5,6 +5,8 @@ Headers tested address common web vulnerabilities identified by security
 scanners (e.g., OWASP ZAP).
 """
 
+from html.parser import HTMLParser
+
 import pytest
 
 
@@ -44,7 +46,6 @@ class TestSecurityHeaders:
         csp = response.headers.get("Content-Security-Policy")
 
         # CDN dependencies
-        assert "cdn.tailwindcss.com" in csp
         assert "unpkg.com" in csp
         assert "cdn.jsdelivr.net" in csp
 
@@ -147,3 +148,86 @@ class TestSecurityHeadersOnDifferentEndpoints:
 
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
         assert response.headers.get("X-Frame-Options") == "DENY"
+
+
+def _script_src(client):
+    csp = client.get("/health").headers["Content-Security-Policy"]
+    directives = dict(d.strip().split(" ", 1) for d in csp.split(";") if d.strip())
+    return directives["script-src"].split()
+
+
+def test_script_src_forbids_inline_scripts(client):
+    """No inline script may run: no 'unsafe-inline', no Tailwind Play CDN."""
+    assert _script_src(client) == ["'self'", "https://unpkg.com", "https://cdn.jsdelivr.net"]
+
+
+class _ScriptAudit(HTMLParser):
+    """Collect what a script-src without 'unsafe-inline' would block or need."""
+
+    def __init__(self):
+        super().__init__()
+        self.inline, self.handlers, self.local = [], [], []
+        self._open_inline = False
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        self.handlers += [(tag, k) for k in attrs if k.startswith("on")]
+        self.handlers += [(tag, k) for k, v in attrs.items() if v and v.lstrip().startswith("javascript:")]
+        for key in ("src", "href"):
+            if (attrs.get(key) or "").startswith("/static/"):
+                self.local.append(attrs[key])
+        self._open_inline = tag == "script" and "src" not in attrs
+
+    def handle_data(self, data):
+        if self._open_inline and data.strip():
+            self.inline.append(data.strip()[:60])
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self._open_inline = False
+
+
+def _audit(client, path, expected_status=200):
+    response = client.get(path)
+    assert response.status_code == expected_status, path
+    audit = _ScriptAudit()
+    audit.feed(response.get_data(as_text=True))
+    return audit
+
+
+@pytest.mark.parametrize("path", ["/ui/", "/ui/partials/active-jobs", "/ui/partials/live-metrics"])
+def test_dashboard_pages_have_no_inline_script(client, path):
+    audit = _audit(client, path)
+    assert audit.inline == []
+    assert audit.handlers == []
+
+
+def test_login_page_has_no_inline_script(client_with_auth):
+    audit = _audit(client_with_auth, "/ui/login")
+    assert audit.inline == []
+    assert audit.handlers == []
+
+
+def test_login_page_assets_load_before_login(client_with_auth):
+    """The login page is public, so its stylesheet and scripts must be too."""
+    login = set(_audit(client_with_auth, "/ui/login").local)
+    assert login == {"/static/css/app.css", "/static/js/theme-init.js", "/static/js/theme.js"}
+    for asset in login:
+        assert client_with_auth.get(asset).status_code == 200, asset
+
+
+def test_dashboard_assets_load(client):
+    dashboard = set(_audit(client, "/ui/").local)
+    assert dashboard == {
+        "/static/css/app.css", "/static/js/theme-init.js",
+        "/static/js/theme.js", "/static/js/dashboard.js",
+    }
+    for asset in dashboard:
+        assert client.get(asset).status_code == 200, asset
+
+
+def test_built_css_includes_custom_theme_and_dark_mode(client):
+    """app.css came from tailwind.config.js: custom primary colours, class dark mode."""
+    css = client.get("/static/css/app.css").get_data(as_text=True)
+    assert ".text-primary-600{" in css
+    assert ".dark\\:bg-gray-900:is(.dark *){" in css
