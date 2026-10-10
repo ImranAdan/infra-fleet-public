@@ -20,8 +20,41 @@ if git grep -n -E 'your-org|your-terraform-org|123456789012|app\.example\.com|ad
   failed=true
 fi
 
-if git grep -n -E '^[[:space:]]*(- )?uses: [^./][^ ]*@v?[0-9]+(\.[0-9]+)*([[:space:]]|$)' \
-  -- '.github/**/*.yml' '.github/**/*.yaml'; then
+unpinned_actions=""
+while IFS= read -r match; do
+  line=${match#*:}
+  line=${line#*:}
+  value=${line#*uses:}
+  value="${value#"${value%%[![:space:]]*}"}"
+  case "$value" in
+    \"*)
+      reference=${value#\"}
+      reference=${reference%%\"*}
+      ;;
+    \'*)
+      reference=${value#\'}
+      reference=${reference%%\'*}
+      ;;
+    *)
+      reference=${value%%[[:space:]#]*}
+      ;;
+  esac
+  case "$reference" in
+    ./*|docker://*) continue ;;
+  esac
+  revision=${reference##*@}
+  if [ "$reference" = "$revision" ] || ! [[ "$revision" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    if [ -n "$unpinned_actions" ]; then
+      unpinned_actions+=$'\n'
+    fi
+    unpinned_actions+="$match"
+  fi
+done < <(
+  git grep -n -E '^[[:space:]]*(- )?uses:' \
+    -- '.github/**/*.yml' '.github/**/*.yaml' || true
+)
+if [ -n "$unpinned_actions" ]; then
+  printf '%s\n' "$unpinned_actions"
   echo "Third-party GitHub Actions must be pinned to a full commit SHA." >&2
   failed=true
 fi
