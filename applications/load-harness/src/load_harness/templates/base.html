@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
     <title>{% block title %}LoadHarness Dashboard{% endblock %}</title>
 
     <!-- Dark mode initialization (prevents flash) -->
@@ -24,37 +25,6 @@
             integrity="sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws"
             crossorigin="anonymous"></script>
 
-    <!-- Custom styles -->
-    <style>
-        /* Loading spinner */
-        .htmx-indicator {
-            display: none;
-        }
-        .htmx-request .htmx-indicator {
-            display: inline-block;
-        }
-        .htmx-request.htmx-indicator {
-            display: inline-block;
-        }
-
-        /* Spinner animation */
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .animate-spin {
-            animation: spin 1s linear infinite;
-        }
-
-        /* Smooth transitions for HTMX swaps */
-        .htmx-swapping {
-            opacity: 0;
-            transition: opacity 200ms ease-out;
-        }
-        .htmx-settling {
-            opacity: 1;
-            transition: opacity 200ms ease-in;
-        }
-    </style>
 
     {% block head %}{% endblock %}
 </head>

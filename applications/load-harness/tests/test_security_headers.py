@@ -294,7 +294,7 @@ def test_cluster_metric_bars_use_width_classes(app):
 
 def test_built_css_carries_widths_and_indicator(client):
     css = client.get("/static/css/app.css").get_data(as_text=True)
-    assert ".w-pct-0{width:0%}" in css
+    assert ".w-pct-0{width:0}" in css
     assert ".w-pct-42{width:42%}" in css
     assert ".w-pct-100{width:100%}" in css
-    assert ".htmx-request .htmx-indicator{display:inline-block}" in css
+    assert ".htmx-request .htmx-indicator,.htmx-request.htmx-indicator{display:inline-block}" in css

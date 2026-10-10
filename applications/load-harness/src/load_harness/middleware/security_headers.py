@@ -10,15 +10,17 @@ libraries (HTMX on unpkg.com, Chart.js on cdn.jsdelivr.net) carry SRI hashes.
 Tailwind is built ahead of time into static/css/app.css (`npm run build:css`),
 so no inline script runs and script-src does not allow 'unsafe-inline'.
 
-style-src still allows 'unsafe-inline': the metrics partials set widths with
-style attributes and HTMX injects its indicator styles at runtime.
+Styles are external only too: metric bar widths are w-pct-<n> classes rather
+than style attributes, and base.html turns off HTMX's injected indicator
+stylesheet (htmx-config includeIndicatorStyles=false), whose rules app.css
+carries instead. Chart.js sizes its canvas through the CSSOM, which CSP allows.
 """
 
 # Content Security Policy configuration
 CSP_POLICY = (
     "default-src 'self'; "
     "script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline'; "
+    "style-src 'self'; "
     "img-src 'self' data:; "
     "font-src 'self'; "
     "connect-src 'self'; "

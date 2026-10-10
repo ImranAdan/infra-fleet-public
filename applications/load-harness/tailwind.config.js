@@ -5,8 +5,12 @@ module.exports = {
     './src/load_harness/static/js/**/*.js',
   ],
   darkMode: 'class',
+  // Metric bars render their width as w-pct-<0..100> (no style attribute, so
+  // style-src needs no 'unsafe-inline'); the names are built in templates.
+  safelist: [{ pattern: /^w-pct-\d+$/ }],
   theme: {
     extend: {
+      width: Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`pct-${i}`, `${i}%`])),
       colors: {
         primary: {
           50: '#eff6ff',

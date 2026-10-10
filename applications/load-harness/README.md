@@ -453,10 +453,13 @@ Load Harness CI rebuilds the CSS and fails if `app.css` differs from the
 committed file, so a missed rebuild (including after a Dependabot
 `tailwindcss` bump) cannot merge.
 
-Pages run no inline scripts: the CSP `script-src` is `'self'` plus the
-SRI-pinned HTMX and Chart.js CDNs, so put new page scripts in `static/js/`.
-`tests/test_security_headers.py` fails on any inline `<script>` or `on*=`
-handler.
+Pages run no inline scripts or styles: the CSP `script-src` is `'self'` plus
+the SRI-pinned HTMX and Chart.js CDNs, and `style-src` is `'self'`. Put new
+page scripts in `static/js/` and CSS in `tailwind.input.css`. For a dynamic
+width use the `w-pct-0`…`w-pct-100` classes (e.g.
+`w-pct-{{ (value|round|int) }}`), not a `style` attribute.
+`tests/test_security_headers.py` fails on any inline `<script>`, `on*=`
+handler, `<style>` or `style=` attribute.
 
 ### Project Structure
 
