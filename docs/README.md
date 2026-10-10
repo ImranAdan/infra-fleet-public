@@ -33,7 +33,7 @@ progressive delivery, request paths, observability and guardrails.
 | Flow | Path |
 |------|------|
 | **Fast CI** | Pull request → render/test/scan → intent gate → exact-head merge gate |
-| **Local acceptance** | Runtime-path pull request → kind cluster per app → promote/rollback → teardown |
+| **Local acceptance** | Weekly or manual dispatch → kind cluster per app → promote/rollback → teardown |
 | **Local GitOps** | Committed snapshot → read-only local Git source → Flux → kind |
 | **AWS CI/CD** | Release/Rebuild → GitHub Actions → Build/Test/Scan → ECR → Flux |
 | **AWS GitOps** | Manifest change → Flux detects → applies to EKS |
@@ -137,8 +137,8 @@ the stack itself is destroyed only manually. Review current AWS pricing first.
 - [ ] Validate the remaining IAM permissions-boundary design in a real AWS lifecycle
 
 ### Possible extensions
-- [ ] OIDC/SSO cluster access (Issue #92)
-- [ ] Multi-environment architecture (Issue #264)
+- [ ] OIDC/SSO cluster access
+- [ ] Multi-environment architecture; constraints are recorded in [Multi-environment design](MULTI-ENVIRONMENT-DESIGN.md)
 
 ---
 

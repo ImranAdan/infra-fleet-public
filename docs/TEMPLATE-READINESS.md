@@ -3,7 +3,7 @@
 [Documentation index](README.md) · [Security policy](../SECURITY.md) ·
 [Deployment profiles](DEPLOYMENT-PROFILES.md)
 
-Reviewed 30 September 2026.
+Reviewed 10 October 2026.
 
 Infra Fleet is ready to use as a local Kubernetes platform template and as an
 inspectable AWS staging implementation. It is not presented as a production
@@ -22,10 +22,10 @@ validated statically and still needs a complete account-specific lifecycle.
 | Change governance | Exact-head CI, the advisor intent gate, review-thread checks and the merge gate govern pull requests | Intent, merge authority, IAM, credentials, migrations and permanent infrastructure remain owner decisions |
 | Advisor | Deterministic collectors review a clean Fleet commit and approved reports can create Fleet issues; registered remediation still passes Fleet gates | The advisor does not inspect a live AWS account, HCP Terraform or a Kubernetes cluster |
 
-The long local workflow runs for pull requests that change runtime paths, on
-demand, and weekly against `main`. It records the exact commit in the `local`
-GitHub Environment and tears the cluster down. Fast pull-request checks remain
-the first feedback path.
+The long local workflow runs on demand and weekly against `main`. It records the
+exact commit in the `local` GitHub Environment, exercises every application
+contract in its own cluster, and tears each cluster down. Path-scoped,
+deterministic pull-request checks remain the fast feedback path.
 
 ## Remaining AWS acceptance
 

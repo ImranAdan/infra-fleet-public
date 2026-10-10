@@ -58,10 +58,12 @@ fleet declares and how it is running are read together. See
 1. The advisor compiles declared intent into registered deterministic checks.
 2. It records collected evidence, incomplete coverage, and unverified intent.
 3. Its advisory workflow proposes a report PR in the advisor repository.
-4. The trusted autonomous worker merges the report-only PR only after Quality,
-   the ratchet and the exact-head merge gate pass. Remove its marker to hold it;
-   close it to decline that material report. The merge is the issue-creation
-   decision record and lifecycle baseline.
+4. The trusted autonomous worker merges the report-only PR only after
+   `Advisor Quality`, the isolated `Advisor Gates` job and the exact-head merge
+   gate pass. `Advisor Gates` contains the drills, ratchet, workflow lint and
+   security scan. Remove the marker to hold the PR; close it to decline that
+   material report. The merge is the issue-creation decision record and
+   lifecycle baseline.
 5. A separate configured issues-only workflow verifies that merge,
    revalidates its exact report and creates eligible fleet issues. Each new
    issue links to the report PR. Unsupported intent and incomplete

@@ -164,12 +164,16 @@ east-west requests as confidential merely because a NetworkPolicy is present.
 
 **Finding:** Flux installed via unverified `curl | bash` pattern.
 
-**Fix:** Use official GitHub Action with verified checksums.
+**Current disposition:** Resolved. Local setup installs the pinned Flux CLI
+through `scripts/install-profile-tools.sh`, which verifies the downloaded
+archive checksum. AWS rebuild uses the official Flux action pinned to a full
+commit SHA. The template contract rejects mutable action tags and moving
+download URLs.
 
 ```yaml
-# .github/actions/cleanup-kubernetes-resources/action.yml
+# .github/workflows/rebuild-stack.yml
 - name: Install Flux CLI
-  uses: fluxcd/flux2/action@main
+  uses: fluxcd/flux2/action@dd233c4fadef306a62b7893204f8e3817fecc2b2 # v2.9.5
 ```
 
 ---
@@ -226,7 +230,7 @@ htmlcov/
 
 ---
 
-### H5: IAM Permission Scoping (High) - Issue #296
+### H5: IAM Permission Scoping (High)
 
 **Finding:** Overly broad IAM wildcards on the GitHub Actions role.
 
@@ -291,9 +295,9 @@ add that action to the relevant statement rather than restoring a wildcard.
 
 ---
 
-## Deferred Items (GitHub Issues)
+## Deferred and accepted items
 
-### C3: TLS/HTTPS (Critical) - Issue #295
+### C3: TLS/HTTPS (Critical)
 
 **Finding:** Traffic unencrypted between client and NLB.
 
@@ -402,11 +406,13 @@ Current disposition: all third-party action references are pinned by full
 commit SHA with a version comment. `scripts/validate-template-contract.sh`
 rejects newly introduced version-tag references.
 
-**M2 — `iam:PassRole` without a condition** (`AVD-AWS-0342`)
+**M2 — `iam:PassRole` without a condition (resolved in desired state)**
+(`AVD-AWS-0342`)
 
-Present in the current stack. A narrower proposal exists, but it has not been
-validated through a complete AWS apply/destroy cycle and should not be treated
-as approved merely because it is open. IAM scoping remains follow-up work.
+`iam:PassRole` now has an `iam:PassedToService` condition limited to EC2, EKS
+and EKS managed node groups. The remaining IAM write permissions and their
+permissions-boundary design still require the complete AWS lifecycle described
+under H5; that broader gap must not be confused with this resolved condition.
 
 **L1 — Dependabot security updates are repository state.** Version updates are
 configured in `.github/dependabot.yml`, but alerts and security-update pull
@@ -416,8 +422,10 @@ requests are separate GitHub settings that every adopter must verify.
 workflow now declares its baseline explicitly; jobs add only the capabilities
 they require. The template contract rejects workflows that omit the baseline.
 
-**L3 — No `.gitleaks.toml`.** An adopter running a secret scan gets six false
-positives from the test fixtures with nothing recording that they are expected.
+**L3 — No `.gitleaks.toml` (resolved).** The repository now has a narrow
+allowlist that requires both the known fixture value and its test path. A
+different value in the same path, or the fixture value elsewhere, remains a
+finding.
 
 ### Not this repository's to fix
 

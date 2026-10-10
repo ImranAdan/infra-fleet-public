@@ -193,6 +193,7 @@ flowchart LR
 ```
 
 After merge, [Infra Fleet Advisor](ADVISOR-INTEGRATION.md) reviews the new
-revision nightly, merges a changed report only after its Quality and ratchet
-gates pass, and turns eligible findings into issues here. Registered mechanical
-findings can continue through an opted-in Fleet PR and the same gates above.
+revision nightly, merges a changed report only after `Advisor Quality`, the
+isolated `Advisor Gates` evidence job and the merge gate pass, and turns
+eligible findings into issues here. Registered mechanical findings can continue
+through an opted-in Fleet PR and the same gates above.

@@ -201,7 +201,7 @@ Verification is divided by cost and evidence level.
 
 | Layer | Trigger | Evidence |
 |---|---|---|
-| Pull request CI | every pull request | application tests, container build and scan, workflow validation, Terraform static checks, profile rendering, schema checks, policy checks, commit lint, and declared-intent evaluation |
+| Pull request CI | path-scoped, with commit and intent checks on every PR | only the relevant application, workflow, Terraform, manifest, profile, schema and policy checks; no cluster provisioning |
 | Local Kubernetes deployment | on demand and weekly against `main` | real Flux reconciliation, admission, isolation, on-demand app lifecycle, monitoring, canary promotion, rollback, and teardown for every app |
 | AWS staging deployment | manual in a configured private copy | account-specific provisioning, image publication, EKS bootstrap, Flux reconciliation, rollout, and teardown |
 

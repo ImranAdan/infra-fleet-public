@@ -26,7 +26,8 @@ design context.
 
 ## What CI checks
 
-Pull requests receive these static and application checks:
+Verification separates fast, path-scoped pull-request checks from the slower
+scheduled acceptance run:
 
 | Check | Scope |
 |-------|-------|
@@ -37,7 +38,7 @@ Pull requests receive these static and application checks:
 | `trivy config` | Terraform misconfiguration |
 | Unit tests, container build, image scan | The sample application |
 | Declared intent | Advisor positions affected by the proposed Fleet change |
-| Local Kubernetes | Full kind acceptance for every app weekly and on demand |
+| Local Kubernetes | Full kind acceptance for every app weekly and on demand; it does not run for pull requests |
 
 `terraform plan` and `apply` do **not** run here, so Terraform changes are
 validated for syntax and static correctness only. Say so in the pull request
@@ -79,8 +80,8 @@ remain with the repository owner.
 
 The pull request template opts same-repository branches into the autonomous
 worker. Keep the marker to merge when the gate reaches `READY`; remove it to
-hold the PR. The worker reruns whenever a pull-request check workflow
-completes, and hourly.
+hold the PR. Relevant completed check workflows, external status updates and
+submitted reviews wake the worker. A six-hour schedule recovers missed events.
 
 This default path needs no model or API key. The Anthropic transport remains
 available only if a future policy category explicitly uses the `judge` decider.
