@@ -100,6 +100,32 @@ PR. Because token-authored PRs suppress ordinary pull-request events, trusted
 Fleet code explicitly dispatches read-only validation on the exact generated
 branch; it receives no path around this gate.
 
+## Autonomy
+
+The owner runs this project with autonomous agents and does not want work to
+wait for approval. Decide, record the decision and the alternative you
+rejected in the pull request, and keep going. Docs, decision records and
+earlier statements describe the current design, not a fixed law: when a
+better design needs one changed, change it in the same pull request and say
+why.
+
+Without asking first you may push branches you created and delete them once
+merged; open, update, comment on, label and close issues and pull requests;
+merge through the merge gate; trigger, re-run or cancel workflows, including
+to verify your own work; and change a repository's security-and-analysis
+settings (Dependabot alerts and security updates, secret scanning) when the
+change moves it toward declared intent. State each outward action, and how to
+undo it, in the pull request or issue it serves.
+
+**Owner-only actions.** Never do these without the owner: add
+`owner-approved` or post or imitate a merge-judge comment; create, read or
+rotate a secret or credential; add or widen a permission held by a token,
+GitHub App or workflow; change branch protection, rulesets, the Actions policy
+or merge settings; delete a repository, release, tag or data; force-push over
+work you did not author; spend on a paid API beyond the usage CI already
+incurs. When one is the next step, open a **Decision needed** issue (below)
+and carry on with other work.
+
 ## When a decision is not yours
 
 Decisions should almost never reach the owner: constant approvals defeat the
