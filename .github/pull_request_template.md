@@ -5,8 +5,6 @@
 
 ## What changed and why
 
-
-
 ## Verification
 
 <!-- The commands you ran and what they showed: exit codes, counts, the
@@ -20,3 +18,12 @@
 <!-- Anything a human must decide: permissions, credentials, dependencies,
      intent, policy, decision records, product requirements or permanent
      infrastructure. Write "none" if there is nothing. -->
+
+## Sources
+
+<!-- Links to the primary source for every claim about something outside this
+     repository: GitHub or vendor docs, changelogs, advisories, release notes.
+     Official sources first. Write "none" if the change rests only on
+     repository evidence. -->
+
+- none

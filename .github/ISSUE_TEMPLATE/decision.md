@@ -38,3 +38,10 @@ D1: A
 <!-- the implementation plan, or the spec someone else can build from -->
 
 </details>
+
+## Sources
+
+<!-- Primary links behind the evidence and options (official docs, changelogs,
+     advisories), so the owner can decide without re-researching. -->
+
+-
