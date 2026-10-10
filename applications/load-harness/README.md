@@ -449,6 +449,10 @@ npm ci --ignore-scripts   # tailwindcss pinned in package-lock.json
 npm run build:css         # writes src/load_harness/static/css/app.css
 ```
 
+`package.json` overrides `postcss-selector-parser` to 7.x: Tailwind 3 asks for
+6.x, which has a CPU-exhaustion advisory, and the built CSS is byte-identical
+either way. Drop the override when moving to Tailwind 4.
+
 Load Harness CI rebuilds the CSS and fails if `app.css` differs from the
 committed file, so a missed rebuild (including after a Dependabot
 `tailwindcss` bump) cannot merge.
