@@ -5,6 +5,7 @@ Headers tested address common web vulnerabilities identified by security
 scanners (e.g., OWASP ZAP).
 """
 
+import json
 from html.parser import HTMLParser
 
 import pytest
@@ -166,7 +167,8 @@ class _ScriptAudit(HTMLParser):
 
     def __init__(self):
         super().__init__()
-        self.inline, self.handlers, self.local = [], [], []
+        self.inline, self.handlers, self.local, self.styles = [], [], [], []
+        self.htmx_config = None
         self._open_inline = False
 
     def handle_starttag(self, tag, attrs):
@@ -177,6 +179,10 @@ class _ScriptAudit(HTMLParser):
             if (attrs.get(key) or "").startswith("/static/"):
                 self.local.append(attrs[key])
         self._open_inline = tag == "script" and "src" not in attrs
+        if "style" in attrs or tag == "style":
+            self.styles.append((tag, attrs.get("style")))
+        if tag == "meta" and attrs.get("name") == "htmx-config":
+            self.htmx_config = attrs.get("content")
 
     def handle_data(self, data):
         if self._open_inline and data.strip():
@@ -200,12 +206,14 @@ def test_dashboard_pages_have_no_inline_script(client, path):
     audit = _audit(client, path)
     assert audit.inline == []
     assert audit.handlers == []
+    assert audit.styles == []
 
 
 def test_login_page_has_no_inline_script(client_with_auth):
     audit = _audit(client_with_auth, "/ui/login")
     assert audit.inline == []
     assert audit.handlers == []
+    assert audit.styles == []
 
 
 def test_login_page_assets_load_before_login(client_with_auth):
@@ -231,3 +239,62 @@ def test_built_css_includes_custom_theme_and_dark_mode(client):
     css = client.get("/static/css/app.css").get_data(as_text=True)
     assert ".text-primary-600{" in css
     assert ".dark\\:bg-gray-900:is(.dark *){" in css
+
+
+def _style_src(client):
+    csp = client.get("/health").headers["Content-Security-Policy"]
+    directives = dict(d.strip().split(" ", 1) for d in csp.split(";") if d.strip())
+    return directives["style-src"].split()
+
+
+def test_style_src_forbids_inline_styles(client):
+    assert _style_src(client) == ["'self'"]
+
+
+def test_htmx_does_not_inject_its_stylesheet(client):
+    """HTMX adds a <style> element unless told not to; app.css carries its rules."""
+    config = _audit(client, "/ui/").htmx_config
+    assert config is not None and json.loads(config) == {"includeIndicatorStyles": False}
+
+
+def _render(app, template, **context):
+    from flask import render_template
+
+    with app.test_request_context():
+        audit = _ScriptAudit()
+        html = render_template(template, **context)
+        audit.feed(html)
+        return html, audit
+
+
+def test_cluster_metric_bars_use_width_classes(app):
+    """Bars render widths as classes: no inline style, clamped and rounded."""
+    html, audit = _render(
+        app,
+        "partials/live_metrics.html",
+        is_local=False,
+        cpu_usage=42.4,
+        cpu_usage_max=87.6,
+        memory_usage=130,
+        memory_usage_max=None,
+    )
+    assert audit.styles == []
+    for width in ("w-pct-42", "w-pct-88", "w-pct-100"):
+        assert width in html, width
+
+    html, audit = _render(
+        app,
+        "partials/pod_metrics.html",
+        is_local=False,
+        pods=[{"name": "p", "short_name": "p", "cpu_percent": 55.5, "memory_percent": None, "status": "Running"}],
+    )
+    assert audit.styles == []
+    assert "w-pct-56" in html and "w-pct-0" in html
+
+
+def test_built_css_carries_widths_and_indicator(client):
+    css = client.get("/static/css/app.css").get_data(as_text=True)
+    assert ".w-pct-0{width:0%}" in css
+    assert ".w-pct-42{width:42%}" in css
+    assert ".w-pct-100{width:100%}" in css
+    assert ".htmx-request .htmx-indicator{display:inline-block}" in css
