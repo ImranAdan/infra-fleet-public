@@ -20,8 +20,13 @@ if git grep -n -E 'your-org|your-terraform-org|123456789012|app\.example\.com|ad
   failed=true
 fi
 
-if git grep -n -E '^[[:space:]]*(- )?uses: [^./][^ ]*@v?[0-9]+(\.[0-9]+)*([[:space:]]|$)' \
-  -- '.github/**/*.yml' '.github/**/*.yaml'; then
+unpinned_actions="$(
+  git grep -n -E '^[[:space:]]*(- )?uses:[[:space:]]+[^./][^[:space:]]+@' \
+    -- '.github/**/*.yml' '.github/**/*.yaml' | \
+    grep -v -E '@[0-9a-fA-F]{40}([[:space:]]*(#.*)?)?$' || true
+)"
+if [ -n "$unpinned_actions" ]; then
+  printf '%s\n' "$unpinned_actions"
   echo "Third-party GitHub Actions must be pinned to a full commit SHA." >&2
   failed=true
 fi
