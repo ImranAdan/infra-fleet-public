@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.2](https://github.com/ImranAdan/infra-fleet-public/compare/v1.10.1...v1.10.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **load-harness:** override postcss-selector-parser to 7.1.6 ([4aea1cd](https://github.com/ImranAdan/infra-fleet-public/commit/4aea1cd4156dbf9b47ca1563f68eb18788ba2a04))
+* **load-harness:** override postcss-selector-parser to 7.1.6 ([fc8c870](https://github.com/ImranAdan/infra-fleet-public/commit/fc8c870e0b89621650c87c865579e4aaeef704e0))
+
 ## [1.10.1](https://github.com/ImranAdan/infra-fleet-public/compare/v1.10.0...v1.10.1) (2026-10-10)
 
 
