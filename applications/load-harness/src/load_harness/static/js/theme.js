@@ -1,7 +1,7 @@
 /**
  * Dark mode toggle functionality.
  * This script handles the theme toggle button interactions.
- * Note: Initial theme detection is done inline in base.html to prevent flash.
+ * Note: Initial theme detection is done in theme-init.js to prevent flash.
  */
 (function() {
     'use strict';

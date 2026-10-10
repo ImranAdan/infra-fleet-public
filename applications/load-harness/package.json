@@ -1,0 +1,11 @@
+{
+  "name": "load-harness-assets",
+  "private": true,
+  "description": "Build-time only: compiles Tailwind CSS into src/load_harness/static/css/app.css, which is committed so the image needs no Node.",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i tailwind.input.css -o src/load_harness/static/css/app.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.19"
+  }
+}

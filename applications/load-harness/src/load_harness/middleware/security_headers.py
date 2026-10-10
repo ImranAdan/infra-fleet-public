@@ -3,36 +3,21 @@
 Implements security headers to protect against common web vulnerabilities.
 These headers address findings from ZAP baseline security scans.
 
-CSP 'unsafe-inline' Rationale:
-------------------------------
-The current CSP includes 'unsafe-inline' for scripts and styles because:
+CSP:
+----
+Scripts are external only: page scripts live in static/js/ and the CDN
+libraries (HTMX on unpkg.com, Chart.js on cdn.jsdelivr.net) carry SRI hashes.
+Tailwind is built ahead of time into static/css/app.css (`npm run build:css`),
+so no inline script runs and script-src does not allow 'unsafe-inline'.
 
-1. **Tailwind CSS CDN** requires inline <script> for configuration
-2. **Dark mode initialization** must run inline before body renders to prevent
-   flash of incorrect theme (FOUC)
-3. **Tailwind JIT mode** (CDN) generates inline styles at runtime
-
-For production hardening, consider:
-- Build Tailwind CSS at compile time (removes CDN dependency)
-- Use nonce-based CSP for remaining inline scripts
-- Move all inline scripts to external files (dashboard.js, theme.js done)
-
-External scripts now live in static/js/ to reduce inline dependencies.
+style-src still allows 'unsafe-inline': the metrics partials set widths with
+style attributes and HTMX injects its indicator styles at runtime.
 """
 
 # Content Security Policy configuration
-# Whitelists script sources for CDN dependencies:
-# - Tailwind CSS (cdn.tailwindcss.com) - requires 'unsafe-inline' for config
-# - HTMX (unpkg.com)
-# - Chart.js (cdn.jsdelivr.net)
-#
-# TODO: Remove 'unsafe-inline' by:
-# 1. Building Tailwind at compile time instead of using CDN
-# 2. Computing SHA-256 hashes for remaining inline scripts
-# 3. Using nonce-based CSP (requires request-time nonce generation)
 CSP_POLICY = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net; "
+    "script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
     "font-src 'self'; "
