@@ -73,10 +73,12 @@ paths bind the merge to the checked head SHA. Remove the marker to hold a PR
 open. Dependabot PRs that only move versions need neither the marker nor a
 Verification section: the worker considers them and the gate accepts their
 exact-head checks as evidence (see `.claude/skills/merge-gate/SKILL.md`). An agent must say what merged and why. It never adds the `owner-approved`
-label and never posts or imitates a merge-judge comment. The workflow binds an owner-applied
-label to the exact head SHA; a label without that trusted record does not
-approve a merge, and the gate also requires the latest label event to come from
-the repository owner. `PARK` means stop and tell the owner. `JUDGE` means wait
+label and never posts or imitates a merge-judge comment. An owner approval is
+the repository owner adding `owner-approved` after every check run on the
+current head started: GitHub records both with server time, so a push after the
+approval starts new checks and unbinds it. No `pull_request_target` workflow is
+involved; GitHub blocks that trigger on public repositories by default from
+2026-11-02. `PARK` means stop and tell the owner. `JUDGE` means wait
 for the independent base-branch judge. `BLOCKED` means fix the reported defect
 and run the gate again.
 

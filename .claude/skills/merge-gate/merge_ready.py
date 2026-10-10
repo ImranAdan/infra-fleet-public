@@ -569,9 +569,17 @@ def owner_approval(comments: list[dict[str, str]], sha: str, trusted_author: str
     return False
 
 
-def owner_label_approval(events: list[dict[str, str]], repository_owner: str) -> bool:
-    """Require the newest owner-approved label event to come from the owner."""
-    if not repository_owner:
+def owner_label_approval(
+    events: list[dict[str, str]], repository_owner: str, head_checks_started: str
+) -> bool:
+    """Require the newest owner-approved label event to be the owner adding it
+    after every check run on the current head had started.
+
+    GitHub records label events and check-run starts with server time, so a
+    push after the approval starts new checks and unbinds it. This replaces
+    the trusted comment that the pull_request_target judge used to post.
+    """
+    if not repository_owner or not head_checks_started:
         return False
     for event in reversed(events):
         if event.get("label") != "owner-approved":
@@ -579,6 +587,7 @@ def owner_label_approval(events: list[dict[str, str]], repository_owner: str) ->
         return (
             event.get("event") == "labeled"
             and event.get("actor", "").casefold() == repository_owner.casefold()
+            and event.get("created_at", "") > head_checks_started
         )
     return False
 
@@ -917,15 +926,16 @@ def main(argv: list[str]) -> int:
         "--paginate",
         f"repos/{repo}/issues/{number}/events?per_page=100",
         "--jq",
-        '.[]|select(.label.name=="owner-approved")|{event,actor:.actor.login,label:.label.name}',
+        '.[]|select(.label.name=="owner-approved")'
+        "|{event,actor:.actor.login,label:.label.name,created_at}",
     )
+    head_checks_started = max((str(run.get("started_at") or "") for run in runs), default="")
     verdict, reasons = decide(
         findings,
         rules,
         labels,
         decision,
-        owner_approval(comments, sha, judge["trusted_author"])
-        and owner_label_approval(owner_events, owner),
+        owner_label_approval(owner_events, owner, head_checks_started),
     )
     for reason in reasons:
         print(f"{verdict}  {reason}")

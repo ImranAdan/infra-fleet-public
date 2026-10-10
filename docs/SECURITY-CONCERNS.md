@@ -369,7 +369,7 @@ alternative would have been serious.
 | Check | Result |
 |-------|--------|
 | Secrets in git history | The recorded `gitleaks` scan reports 6 fixture matches across 40 commits in `conftest.py` and `test_app.py` |
-| Privileged triggers | Historical result: none. Current disposition: `pull_request_target` is confined to the same-repository merge judge, which checks out trusted base code with credentials disabled; `issue_comment` is confined to owner-authored decision records. Neither executes proposed code |
+| Privileged triggers | Historical result: none. Current disposition: no `pull_request_target` workflow (the merge judge was removed; the gate reads owner approval from label and check-run records); `issue_comment` is confined to owner-authored decision records and executes no proposed code |
 | Script injection | Untrusted values (`workflow_run.*`, `head_commit.message`) are passed through `env:`, not interpolated into `run:`. The one direct interpolation is `pull_request.number`, an integer GitHub controls |
 | `workflow_run` handling | `dora-metrics.yml` runs with secrets, but checks out the **default branch**, not pull request head. No "pwn request" |
 | Container image | 0 HIGH/CRITICAL with `--ignore-unfixed`, matching what CI enforces |
