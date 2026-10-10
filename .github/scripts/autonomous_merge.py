@@ -122,6 +122,18 @@ def _self_test() -> int:
     assert not eligible({**candidate, "createdAt": "2026-09-28T11:50:00Z"}, "owner/repo", now, 900)
     assert not eligible({**candidate, "createdAt": "invalid"}, "owner/repo", now, 900)
     assert not eligible({**candidate, "createdAt": "2026-09-28T11:30:00"}, "owner/repo", now, 900)
+    dependabot = {
+        **candidate,
+        "body": "Bumps x from 1.0.0 to 1.0.1.",
+        "author": "dependabot[bot]",
+        "headRefName": "dependabot/pip/x-1.0.1",
+    }
+    assert eligible(dependabot, "owner/repo", now, 900)
+    assert not eligible({**dependabot, "author": "someone"}, "owner/repo", now, 900)
+    assert not eligible({**dependabot, "headRefName": "feature"}, "owner/repo", now, 900)
+    assert not eligible(
+        {**dependabot, "headRepositoryOwner": {"login": "fork"}}, "owner/repo", now, 900
+    )
     os.environ["AUTONOMOUS_MERGE_POST_MERGE_WORKFLOW"] = "publish.yml"
     os.environ["AUTONOMOUS_MERGE_POST_MERGE_HEAD"] = "advisory/latest"
     assert post_merge_command({**candidate, "headRefName": "advisory/latest"}, "owner/repo") == [
