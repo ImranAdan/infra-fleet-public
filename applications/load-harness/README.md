@@ -449,6 +449,10 @@ npm ci --ignore-scripts   # tailwindcss pinned in package-lock.json
 npm run build:css         # writes src/load_harness/static/css/app.css
 ```
 
+Load Harness CI rebuilds the CSS and fails if `app.css` differs from the
+committed file, so a missed rebuild (including after a Dependabot
+`tailwindcss` bump) cannot merge.
+
 Pages run no inline scripts: the CSP `script-src` is `'self'` plus the
 SRI-pinned HTMX and Chart.js CDNs, so put new page scripts in `static/js/`.
 `tests/test_security_headers.py` fails on any inline `<script>` or `on*=`
