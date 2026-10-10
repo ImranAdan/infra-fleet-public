@@ -37,11 +37,9 @@
         <div class="mt-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 relative">
             {# In cluster mode, show max as background, avg as foreground #}
             {% if not is_local and cpu_usage_max is not none %}
-            <div class="absolute bg-primary-300 dark:bg-primary-800 h-2 rounded-full transition-all duration-500"
-                 style="width: {{ [cpu_usage_max|default(0), 100]|min }}%"></div>
+            <div class="absolute bg-primary-300 dark:bg-primary-800 h-2 rounded-full transition-all duration-500 w-pct-{{ ([cpu_usage_max|default(0, true), 100]|min)|round|int }}"></div>
             {% endif %}
-            <div class="relative bg-primary-500 h-2 rounded-full transition-all duration-500"
-                 style="width: {{ [cpu_usage|default(0), 100]|min }}%"></div>
+            <div class="relative bg-primary-500 h-2 rounded-full transition-all duration-500 w-pct-{{ ([cpu_usage|default(0, true), 100]|min)|round|int }}"></div>
         </div>
     </div>
 
@@ -82,11 +80,9 @@
         <div class="mt-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 relative">
             {# In cluster mode, show max as background, avg as foreground #}
             {% if not is_local and memory_usage_max is not none %}
-            <div class="absolute bg-green-300 dark:bg-green-800 h-2 rounded-full transition-all duration-500"
-                 style="width: {{ [memory_usage_max|default(0), 100]|min }}%"></div>
+            <div class="absolute bg-green-300 dark:bg-green-800 h-2 rounded-full transition-all duration-500 w-pct-{{ ([memory_usage_max|default(0, true), 100]|min)|round|int }}"></div>
             {% endif %}
-            <div class="relative bg-green-500 h-2 rounded-full transition-all duration-500"
-                 style="width: {{ [memory_usage|default(0), 100]|min }}%"></div>
+            <div class="relative bg-green-500 h-2 rounded-full transition-all duration-500 w-pct-{{ ([memory_usage|default(0, true), 100]|min)|round|int }}"></div>
         </div>
     </div>
 

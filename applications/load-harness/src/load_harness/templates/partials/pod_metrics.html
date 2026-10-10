@@ -46,7 +46,7 @@
             <div class="w-full bg-blue-100 dark:bg-blue-900/50 rounded-full h-1.5">
                 {% set cpu_width = pod.cpu_percent if pod.cpu_percent is not none else 0 %}
                 {% set cpu_color = 'bg-red-500' if cpu_width > 80 else ('bg-yellow-500' if cpu_width > 50 else 'bg-blue-500') %}
-                <div class="{{ cpu_color }} h-1.5 rounded-full transition-all duration-300" style="width: {{ [cpu_width, 100] | min }}%"></div>
+                <div class="{{ cpu_color }} h-1.5 rounded-full transition-all duration-300 w-pct-{{ ([cpu_width, 100]|min)|round|int }}"></div>
             </div>
         </div>
 
@@ -61,7 +61,7 @@
             <div class="w-full bg-blue-100 dark:bg-blue-900/50 rounded-full h-1.5">
                 {% set mem_width = pod.memory_percent if pod.memory_percent is not none else 0 %}
                 {% set mem_color = 'bg-red-500' if mem_width > 80 else ('bg-yellow-500' if mem_width > 50 else 'bg-green-500') %}
-                <div class="{{ mem_color }} h-1.5 rounded-full transition-all duration-300" style="width: {{ [mem_width, 100] | min }}%"></div>
+                <div class="{{ mem_color }} h-1.5 rounded-full transition-all duration-300 w-pct-{{ ([mem_width, 100]|min)|round|int }}"></div>
             </div>
         </div>
     </div>

@@ -1,3 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* HTMX states. base.html sets htmx-config includeIndicatorStyles=false, so
+   HTMX injects no <style> of its own and style-src stays 'self'. */
+.htmx-indicator {
+  display: none;
+}
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: inline-block;
+}
+.htmx-swapping {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+.htmx-settling {
+  opacity: 1;
+  transition: opacity 200ms ease-in;
+}
