@@ -298,3 +298,31 @@ def test_built_css_carries_widths_and_indicator(client):
     assert ".w-pct-42{width:42%}" in css
     assert ".w-pct-100{width:100%}" in css
     assert ".htmx-request .htmx-indicator,.htmx-request.htmx-indicator{display:inline-block}" in css
+
+
+class _IconLinks(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.icons = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "link" and "icon" in (attrs.get("rel") or "").split():
+            self.icons.append(attrs.get("href"))
+
+
+def _icons(response):
+    parser = _IconLinks()
+    parser.feed(response.get_data(as_text=True))
+    return parser.icons
+
+
+def test_dashboard_declares_an_inline_icon(client):
+    """Without one, browsers fetch /favicon.ico: 404 after sign-in."""
+    assert _icons(client.get("/ui/")) == ["data:,"]
+    assert "img-src 'self' data:" in client.get("/health").headers["Content-Security-Policy"]
+
+
+def test_login_declares_an_inline_icon(client_with_auth):
+    """Without one, browsers fetch /favicon.ico: 401 before sign-in."""
+    assert _icons(client_with_auth.get("/ui/login")) == ["data:,"]
