@@ -18,13 +18,15 @@ on:
       - Validate Automation Workflows
     types: [completed]
   status:
-  # A head-bound owner command wakes trusted default-branch code immediately.
-  issue_comment:
-    types: [created]
   schedule:
     # Recovery only; normal merges are event-driven.
     - cron: "7 */6 * * *"
   workflow_dispatch:
+    inputs:
+      priority_pr:
+        description: Pull request to evaluate first
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -40,11 +42,6 @@ concurrency:
 
 jobs:
   merge:
-    if: >-
-      github.event_name != 'issue_comment' ||
-      (github.event.issue.pull_request &&
-       github.event.comment.user.login == github.repository_owner &&
-       startsWith(github.event.comment.body, '/approve '))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -64,6 +61,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           AUTONOMOUS_MERGE_MIN_AGE_SECONDS: "0"
           AUTONOMOUS_MERGE_RUN_ID: ${{ github.run_id }}
-          AUTONOMOUS_MERGE_PRIORITY_PR: ${{ github.event.issue.number || github.event.workflow_run.pull_requests[0].number || '' }}
+          AUTONOMOUS_MERGE_PRIORITY_PR: ${{ inputs.priority_pr || github.event.workflow_run.pull_requests[0].number || '' }}
           AUTONOMOUS_MERGE_PRIORITY_SHA: ${{ github.event_name == 'status' && github.event.sha || '' }}
         run: python3 .github/scripts/autonomous_merge.py
