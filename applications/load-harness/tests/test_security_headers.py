@@ -5,6 +5,8 @@ Headers tested address common web vulnerabilities identified by security
 scanners (e.g., OWASP ZAP).
 """
 
+import base64
+import hashlib
 import json
 from html.parser import HTMLParser
 from pathlib import Path
@@ -328,3 +330,10 @@ def test_vendored_htmx_matches_package_json(client):
     """A package.json bump without `npm run build:vendor` leaves the old file."""
     version = json.loads((_APP_ROOT / "package.json").read_text())["devDependencies"]["htmx.org"]
     assert f'version:"{version}"' in client.get("/static/vendor/htmx.min.js").get_data(as_text=True)
+
+
+def test_vendored_htmx_is_the_published_file(client):
+    """Bytes equal htmx.org 1.9.10's dist/htmx.min.js (the CDN's former SRI hash)."""
+    body = client.get("/static/vendor/htmx.min.js").get_data()
+    digest = base64.b64encode(hashlib.sha384(body).digest()).decode()
+    assert digest == "D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"

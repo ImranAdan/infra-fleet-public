@@ -455,7 +455,8 @@ requests. `static/vendor/` holds `htmx.min.js` from the locked `htmx.org`
 package (1.9.10, BSD 2-Clause, licence beside it as `htmx.LICENSE`). After
 bumping `htmx.org`, run `npm run build:vendor` and commit the result:
 `tests/test_security_headers.py` fails while the committed file's version
-differs from `package.json`.
+differs from `package.json`, and a second test pins the file's sha384 (update
+it with the bump).
 
 `package.json` overrides `postcss-selector-parser` to 7.x: Tailwind 3 asks for
 6.x, which has a CPU-exhaustion advisory, and the built CSS is byte-identical
