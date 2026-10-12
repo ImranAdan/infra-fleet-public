@@ -82,6 +82,19 @@ if ! jq -e 'length > 0 and all(.[]; test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' .releas
   failed=true
 fi
 
+if ! jq -e '
+  .packages | all(
+    .[];
+    .["pull-request-header"] as $header
+    | ($header | contains("<!-- autonomous-merge -->"))
+      and ($header | contains("## Verification"))
+      and ($header | contains("`release-please manifest` →"))
+  )
+' release-please-config.json >/dev/null; then
+  echo "Release pull requests must opt into the evidence gate with verification." >&2
+  failed=true
+fi
+
 # release-please advances the release manifest before the image is published;
 # Flux advances the deployment only after ECR contains the release. These tags
 # legitimately differ while a release is being built or deployed.
