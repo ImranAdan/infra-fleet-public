@@ -1,2 +1,3 @@
 # Test and development dependencies; requirements.txt is the runtime image.
 -r requirements.txt
+pytest==9.1.1

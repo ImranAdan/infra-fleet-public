@@ -1,4 +1,7 @@
-"""Infrastructure profiles do not select the metrics or authentication mode."""
+"""Infrastructure profiles do not select the metrics or authentication mode,
+and the runtime image carries no test tooling."""
+
+from pathlib import Path
 
 import pytest
 
@@ -51,3 +54,11 @@ def test_public_scheme_decides_secure_cookies_in_a_cluster(monkeypatch, scheme, 
     monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
     monkeypatch.setenv("PUBLIC_SCHEME", scheme)
     assert create_app({"API_KEY": "fixture-key"}).config["SESSION_COOKIE_SECURE"] is secure
+
+
+def test_runtime_requirements_exclude_test_tooling():
+    """requirements.txt is what the image installs; pytest belongs in requirements-dev.txt."""
+    runtime = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text()
+    names = {line.split("==")[0].strip().lower() for line in runtime.splitlines() if line.strip()}
+    assert "pytest" not in names
+    assert "flask" in names  # parsed the real file
