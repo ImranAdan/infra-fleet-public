@@ -5,10 +5,15 @@ Headers tested address common web vulnerabilities identified by security
 scanners (e.g., OWASP ZAP).
 """
 
+import base64
+import hashlib
 import json
 from html.parser import HTMLParser
+from pathlib import Path
 
 import pytest
+
+_APP_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestSecurityHeaders:
@@ -40,15 +45,6 @@ class TestSecurityHeaders:
         assert "frame-ancestors 'none'" in csp  # Clickjacking protection
         assert "base-uri 'self'" in csp  # Base tag hijacking protection
         assert "form-action 'self'" in csp  # Form submission protection
-
-    def test_csp_whitelists_cdn_sources(self, client):
-        """Verify CSP whitelists required CDN sources for dependencies."""
-        response = client.get("/health")
-        csp = response.headers.get("Content-Security-Policy")
-
-        # CDN dependencies
-        assert "unpkg.com" in csp
-        assert "cdn.jsdelivr.net" in csp
 
     def test_permissions_policy(self, client):
         """Verify Permissions-Policy disables unused browser features."""
@@ -158,8 +154,8 @@ def _script_src(client):
 
 
 def test_script_src_forbids_inline_scripts(client):
-    """No inline script may run: no 'unsafe-inline', no Tailwind Play CDN."""
-    assert _script_src(client) == ["'self'", "https://unpkg.com", "https://cdn.jsdelivr.net"]
+    """Same-origin scripts only: no 'unsafe-inline', no CDN hosts."""
+    assert _script_src(client) == ["'self'"]
 
 
 class _ScriptAudit(HTMLParser):
@@ -229,6 +225,7 @@ def test_dashboard_assets_load(client):
     assert dashboard == {
         "/static/css/app.css", "/static/js/theme-init.js",
         "/static/js/theme.js", "/static/js/dashboard.js",
+        "/static/vendor/htmx.min.js",
     }
     for asset in dashboard:
         assert client.get(asset).status_code == 200, asset
@@ -326,3 +323,17 @@ def test_dashboard_declares_an_inline_icon(client):
 def test_login_declares_an_inline_icon(client_with_auth):
     """Without one, browsers fetch /favicon.ico: 401 before sign-in."""
     assert _icons(client_with_auth.get("/ui/login")) == ["data:,"]
+
+
+
+def test_vendored_htmx_matches_package_json(client):
+    """A package.json bump without `npm run build:vendor` leaves the old file."""
+    version = json.loads((_APP_ROOT / "package.json").read_text())["devDependencies"]["htmx.org"]
+    assert f'version:"{version}"' in client.get("/static/vendor/htmx.min.js").get_data(as_text=True)
+
+
+def test_vendored_htmx_is_the_published_file(client):
+    """Bytes equal htmx.org 1.9.10's dist/htmx.min.js (the CDN's former SRI hash)."""
+    body = client.get("/static/vendor/htmx.min.js").get_data()
+    digest = base64.b64encode(hashlib.sha384(body).digest()).decode()
+    assert digest == "D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"

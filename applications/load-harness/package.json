@@ -1,11 +1,13 @@
 {
   "name": "load-harness-assets",
   "private": true,
-  "description": "Build-time only: compiles Tailwind CSS into src/load_harness/static/css/app.css, which is committed so the image needs no Node.",
+  "description": "Build-time only: compiles Tailwind CSS into src/load_harness/static/css/app.css and copies HTMX into src/load_harness/static/vendor/; both are committed so the image needs no Node.",
   "scripts": {
-    "build:css": "tailwindcss -c tailwind.config.js -i tailwind.input.css -o src/load_harness/static/css/app.css --minify"
+    "build:css": "tailwindcss -c tailwind.config.js -i tailwind.input.css -o src/load_harness/static/css/app.css --minify",
+    "build:vendor": "mkdir -p src/load_harness/static/vendor && cp node_modules/htmx.org/dist/htmx.min.js src/load_harness/static/vendor/ && cp node_modules/htmx.org/LICENSE src/load_harness/static/vendor/htmx.LICENSE"
   },
   "devDependencies": {
+    "htmx.org": "1.9.10",
     "tailwindcss": "3.4.19"
   },
   "overrides": {
