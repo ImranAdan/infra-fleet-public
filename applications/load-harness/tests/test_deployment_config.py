@@ -1,5 +1,5 @@
 """Infrastructure profiles do not select the metrics or authentication mode,
-and the runtime image carries no test tooling."""
+and the runtime image carries no test tooling but shares its base with tests."""
 
 from pathlib import Path
 
@@ -62,3 +62,15 @@ def test_runtime_requirements_exclude_test_tooling():
     names = {line.split("==")[0].strip().lower() for line in runtime.splitlines() if line.strip()}
     assert "pytest" not in names
     assert "flask" in names  # parsed the real file
+
+
+def _from_lines(dockerfile):
+    text = (Path(__file__).resolve().parents[1] / dockerfile).read_text()
+    return [line.split()[1] for line in text.splitlines() if line.startswith("FROM ")]
+
+
+def test_test_image_uses_the_production_base_digest():
+    """Dockerfile.test must run tests on the exact base the image ships."""
+    runtime_base = _from_lines("Dockerfile")[-1]
+    assert "@sha256:" in runtime_base
+    assert _from_lines("Dockerfile.test") == [runtime_base]

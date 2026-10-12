@@ -527,7 +527,7 @@ applications/load-harness/
 ├── requirements.txt              # Runtime dependencies (the image)
 ├── requirements-dev.txt          # Runtime plus test tooling (#176)
 ├── Dockerfile                    # Production image
-└── Dockerfile.test               # Compose test image (adds pytest)
+└── Dockerfile.test               # Compose test image (adds pytest; same base digest, tested)
 ```
 
 ### Building Production Image

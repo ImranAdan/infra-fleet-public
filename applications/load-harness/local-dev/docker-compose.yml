@@ -35,6 +35,8 @@ services:
       - ../tests:/app/tests
       - ../package.json:/app/package.json:ro
       - ../requirements.txt:/app/requirements.txt:ro
+      - ../Dockerfile:/app/Dockerfile:ro
+      - ../Dockerfile.test:/app/Dockerfile.test:ro
     env_file:
       - ../.env
     environment:
