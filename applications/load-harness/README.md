@@ -524,6 +524,8 @@ applications/load-harness/
 │   └── prometheus.yml            # Local Prometheus config
 ├── package.json                  # Tailwind and HTMX builds (build-time only)
 ├── tailwind.config.js            # Tailwind theme and content paths
+├── requirements.txt              # Runtime dependencies (the image)
+├── requirements-dev.txt          # Runtime plus test tooling (#176)
 └── Dockerfile                    # Production image
 ```
 
