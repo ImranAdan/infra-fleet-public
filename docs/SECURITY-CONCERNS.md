@@ -325,7 +325,12 @@ confirmation `destroy staging`.
 
 **Finding:** No CSRF protection on forms.
 
-**Status:** Skipped - API-first design, browser sessions are secondary.
+**Status:** Accepted with a compensating control. The API is key-authenticated,
+but when `API_KEY` is set the dashboard's `/ui/*` POST routes (which start load
+tests) use a Flask session cookie. That cookie is `SameSite=Lax; HttpOnly`, so
+browsers do not send it on cross-site POSTs. `test_login_session_cookie_is_samesite_lax_and_httponly`
+(`applications/load-harness/tests/test_app.py`) fails if the issued cookie loses
+either attribute. Advisor position S-008 records this decision.
 
 ---
 

@@ -616,6 +616,15 @@ def test_login_with_valid_key(client_with_auth):
     assert '/ui/' in response.location or response.location.endswith('/ui/')
 
 
+def test_login_session_cookie_is_samesite_lax_and_httponly(client_with_auth):
+    """S-008: SameSite=Lax is the accepted CSRF control for /ui POST routes."""
+    response = client_with_auth.post('/ui/login', data={'api_key': 'test-api-key-12345'})
+    cookie = response.headers['Set-Cookie']
+    assert cookie.startswith('session=')
+    assert '; SameSite=Lax' in cookie
+    assert '; HttpOnly' in cookie
+
+
 def test_login_with_invalid_key(client_with_auth):
     """Test login with invalid API key shows error."""
     response = client_with_auth.post('/ui/login', data={'api_key': 'wrong-key'})
