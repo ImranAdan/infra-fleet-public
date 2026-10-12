@@ -9,3 +9,7 @@ See the [application contract](../../docs/APPLICATION-CONTRACT.md).
 
 Its fault switch is `PODINFO_RANDOM_ERROR=true`, which fails about a third of
 requests; the acceptance test uses it to prove automatic rollback.
+
+The image is the upstream release pinned by digest, plus one `apk upgrade`
+layer for Alpine security fixes published since. Findings in podinfo's Go
+binaries need an upstream release, which Dependabot proposes.
