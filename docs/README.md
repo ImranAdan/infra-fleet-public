@@ -126,7 +126,7 @@ the stack itself is destroyed only manually. Review current AWS pricing first.
 - [x] HPA autoscaling, plus AWS cluster-autoscaler and a weekday worker window
 - [x] Prometheus + Grafana observability
 - [x] Ephemeral DORA proxy signals and dashboard JSON
-- [x] release-please versioning
+- [x] release-please versioning with evidence-gated release pull requests
 - [x] Dependabot dependency automation
 - [x] Kyverno policies in CI and at admission
 - [x] Intent gate, exact-head merge gate and opt-in autonomous merge

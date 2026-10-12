@@ -6,7 +6,8 @@
       "release-type": "simple",
       "package-name": "load-harness",
       "changelog-path": "CHANGELOG.md",
-      "pull-request-title-pattern": "chore(release): release ${version}"
+      "pull-request-title-pattern": "chore(release): release ${version}",
+      "pull-request-header": "<!-- autonomous-merge -->\n\n## Verification\n\n- `release-please manifest` → generated this version, manifest update and changelog from merged conventional commits."
     }
   }
 }
