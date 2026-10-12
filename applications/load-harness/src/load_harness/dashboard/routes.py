@@ -511,27 +511,3 @@ def cluster_result():
         # running. Count it against the same budget as the inner work requests
         # so probes always retain request capacity, including on one replica.
         service.release_cpu_work_slot()
-
-
-@dashboard.route("/partials/active-jobs")
-def active_jobs():
-    """Return active jobs partial with status from the API.
-
-    Note: This endpoint is kept for backwards compatibility but the dashboard
-    now uses client-side job tracking to avoid multi-pod polling issues.
-    """
-    try:
-        data = _service().get_cpu_status()
-        return render_template(
-            "partials/active_jobs.html",
-            jobs=data.get("jobs", []),
-            active_jobs_count=data.get("active_jobs", 0),
-        )
-    except Exception as e:
-        current_app.logger.warning("Failed to fetch jobs status: %s", e)
-
-    return render_template(
-        "partials/active_jobs.html",
-        jobs=[],
-        active_jobs_count=0,
-    )

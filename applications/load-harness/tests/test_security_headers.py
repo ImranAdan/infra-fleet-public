@@ -197,7 +197,7 @@ def _audit(client, path, expected_status=200):
     return audit
 
 
-@pytest.mark.parametrize("path", ["/ui/", "/ui/partials/active-jobs", "/ui/partials/live-metrics"])
+@pytest.mark.parametrize("path", ["/ui/", "/ui/partials/live-metrics"])
 def test_dashboard_pages_have_no_inline_script(client, path):
     audit = _audit(client, path)
     assert audit.inline == []
