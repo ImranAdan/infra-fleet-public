@@ -347,7 +347,7 @@ either attribute. Advisor position S-008 records this decision.
 
 | ID | Finding | Status |
 |----|---------|--------|
-| M2 | No rate limiting | Backlog |
+| M2 | No rate limiting | Partly addressed: failed dashboard logins lock out per client address after `LOGIN_MAX_ATTEMPTS` (5 per pod, 429), and CPU work holds at most `CPU_WORK_MAX_CONCURRENCY` slots per pod (429 when busy). There is no general per-client request rate limit; the API key gates every load endpoint. |
 | M3 | imagePullPolicy not Always | Backlog |
 | M4 | API_KEY secret optional | By design (dev mode) |
 | M5 | EKS public API | Accepted risk |
