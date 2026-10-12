@@ -23,3 +23,8 @@ button and tap Jump at the same time.
 Its fault switch is `GAME_FAULT=true`, which makes every page request fail
 while the health probes keep answering; the acceptance test uses it to prove
 automatic rollback.
+
+The image is the load-harness base digest with Debian security updates applied
+and pip, setuptools and wheel removed, since the server needs only the standard
+library. `trivy image --severity HIGH,CRITICAL --ignore-unfixed` reports no
+findings for it.
