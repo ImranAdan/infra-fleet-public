@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.11.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.10.2...v1.11.0) (2026-10-12)
+
+
+### Features
+
+* **load-harness:** vendor HTMX, drop unused Chart.js, script-src self ([5aef4a4](https://github.com/ImranAdan/infra-fleet-public/commit/5aef4a41d16650d29507b42e82ecdc77b59b95b9))
+* **load-harness:** vendor HTMX, drop unused Chart.js, script-src self ([2d4160c](https://github.com/ImranAdan/infra-fleet-public/commit/2d4160c1803e90d7db6770c7b2fd11e7d125ff74))
+
+
+### Bug Fixes
+
+* **load-harness:** stop favicon requests with an inline icon ([5194757](https://github.com/ImranAdan/infra-fleet-public/commit/51947571dc0370a17c4810a1338d89b92338fed5))
+* **load-harness:** stop favicon requests with an inline icon ([d848527](https://github.com/ImranAdan/infra-fleet-public/commit/d848527da4217768cda7ee12fe3d73ad13a3ffdf))
+
 ## [1.10.2](https://github.com/ImranAdan/infra-fleet-public/compare/v1.10.1...v1.10.2) (2026-10-10)
 
 
