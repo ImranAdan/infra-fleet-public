@@ -9,6 +9,7 @@ on:
       - 'applications/load-harness/Dockerfile'
       - 'applications/load-harness/.dockerignore'
       - 'applications/load-harness/requirements.txt'
+      - 'applications/load-harness/requirements-dev.txt'
       - 'applications/load-harness/package.json'
       - 'applications/load-harness/package-lock.json'
       - 'applications/load-harness/tailwind.config.js'
