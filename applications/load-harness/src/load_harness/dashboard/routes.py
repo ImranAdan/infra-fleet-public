@@ -47,10 +47,10 @@ dashboard = Blueprint(
 # shared API key, so an unbounded guess rate is the whole attack.
 #
 # ponytail: per-process dict, so the real ceiling is LOGIN_MAX_ATTEMPTS x
-# gunicorn workers x pods - measured at 10 attempts before lockout with the
-# shipped 2-worker container, not 5. That is a bound, which is the point; it is
-# not a precise one. Move it to the ingress or a shared store if an exact
-# per-address limit matters.
+# gunicorn workers x pods. The image runs one worker with threads, so this is
+# LOGIN_MAX_ATTEMPTS per pod: measured as 5 failures, then 429 from the sixth.
+# That is a bound, which is the point; it is not a precise one. Move it to the
+# ingress or a shared store if an exact per-address limit matters.
 _login_failures = {}
 _login_lock = threading.Lock()
 
