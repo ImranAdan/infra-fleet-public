@@ -15,7 +15,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-FROM python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b AS runtime
+# Test tooling for docker-compose's `test` service only; the runtime stage never
+# copies from here, so pytest stays out of the production image.
+FROM builder AS test-builder
+COPY requirements-dev.txt .
+RUN pip install --no-cache-dir --user -r requirements-dev.txt
+
+FROM python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b AS runtime-base
 
 # Apply security patches for CVE-2025-15467 and CVE-2025-69419 (openssl)
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
@@ -48,18 +54,26 @@ RUN useradd --create-home --shell /bin/bash app
 
 WORKDIR /app
 
-# Copy Python packages from builder stage
-COPY --from=builder /root/.local /home/app/.local
-
 # Copy application code
 COPY src/ ./src/
-
-# Switch to non-root user
-USER app
 
 # Add local Python packages to PATH and set PYTHONPATH
 ENV PATH=/home/app/.local/bin:$PATH
 ENV PYTHONPATH=/app/src
+
+# `docker build --target test`: the runtime image plus pytest.
+FROM runtime-base AS test
+COPY --from=test-builder /root/.local /home/app/.local
+USER app
+
+# Production image; last, so it stays the default build target.
+FROM runtime-base AS runtime
+
+# Copy Python packages from builder stage
+COPY --from=builder /root/.local /home/app/.local
+
+# Switch to non-root user
+USER app
 
 # Application version - injected at build time from release tag
 ARG APP_VERSION=dev

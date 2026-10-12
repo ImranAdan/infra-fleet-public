@@ -27,11 +27,14 @@ services:
 
   # Test service - runs tests in same environment as app
   test:
-    build: ..
+    build:
+      context: ..
+      target: test
     volumes:
       - ../src:/app/src
       - ../tests:/app/tests
       - ../package.json:/app/package.json:ro
+      - ../requirements.txt:/app/requirements.txt:ro
     env_file:
       - ../.env
     environment:

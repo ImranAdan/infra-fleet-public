@@ -526,7 +526,7 @@ applications/load-harness/
 ├── tailwind.config.js            # Tailwind theme and content paths
 ├── requirements.txt              # Runtime dependencies (the image)
 ├── requirements-dev.txt          # Runtime plus test tooling (#176)
-└── Dockerfile                    # Production image
+└── Dockerfile                    # Production image (`--target test` adds pytest)
 ```
 
 ### Building Production Image
