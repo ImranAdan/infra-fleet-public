@@ -29,7 +29,7 @@ services:
   test:
     build:
       context: ..
-      target: test
+      dockerfile: Dockerfile.test
     volumes:
       - ../src:/app/src
       - ../tests:/app/tests

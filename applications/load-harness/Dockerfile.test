@@ -1,0 +1,11 @@
+# Test image for docker-compose's `test` service: the production base image plus
+# requirements-dev.txt (pytest). The production Dockerfile installs only
+# requirements.txt, so test tooling never ships. Keep the digest in step with it.
+FROM python:3.13-slim@sha256:7c61056e61ac89e852de05f3dc6fa51a6dd2181797bceed46aa725dd7cb2cd3b
+
+WORKDIR /app
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt \
+    && useradd --create-home --shell /bin/bash app
+USER app
+ENV PYTHONPATH=/app/src
