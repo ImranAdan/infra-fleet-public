@@ -352,15 +352,17 @@ Response:
 
 ## Local vs Cluster Mode
 
-The application automatically detects its environment and adapts behavior.
+The application adapts to `ENVIRONMENT`. The metrics source follows it unless
+`METRICS_BACKEND` (`local` or `kubernetes`) is set; the Kubernetes deployment
+sets `METRICS_BACKEND=kubernetes` explicitly.
 
 | Feature | Local (docker-compose) | Cluster (Kubernetes) |
 |---------|------------------------|----------------------|
 | Environment variable | `ENVIRONMENT=local` | `ENVIRONMENT=kind` or `staging` |
-| Metrics source | psutil (process) | Prometheus (container) |
+| Metrics source (`METRICS_BACKEND`) | `local`: psutil (process) | `kubernetes`: Prometheus (container) |
 | CPU/Memory display | Single percentage | avg % \| max % |
-| Memory slider max | ~2GB (system limit) | 800MB (pod safety) |
-| Pod count | Always 1 | 1-8 (HPA controlled) |
+| Memory slider max | 2048 MB (`MEMORY_MAX_SIZE_MB`) with no container memory limit | 60% of the container limit (`MEMORY_LIMIT_HEADROOM`): 614 MB under the 1Gi limit |
+| Pod count | Always 1 | HPA: 1–3 on the local kind profile, 1–8 on AWS staging |
 | Cluster Load tab | Warning banner | Distributed to all pods |
 | Pod Monitor | Disabled | Per-pod breakdown |
 
