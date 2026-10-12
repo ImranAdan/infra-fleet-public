@@ -5,8 +5,8 @@ These headers address findings from ZAP baseline security scans.
 
 CSP:
 ----
-Scripts are external only: page scripts live in static/js/ and the CDN
-libraries (HTMX on unpkg.com, Chart.js on cdn.jsdelivr.net) carry SRI hashes.
+Scripts are same-origin only: page scripts live in static/js/ and HTMX is
+vendored into static/vendor/ (`npm run build:vendor`).
 Tailwind is built ahead of time into static/css/app.css (`npm run build:css`),
 so no inline script runs and script-src does not allow 'unsafe-inline'.
 
@@ -19,7 +19,7 @@ carries instead. Chart.js sizes its canvas through the CSSOM, which CSP allows.
 # Content Security Policy configuration
 CSP_POLICY = (
     "default-src 'self'; "
-    "script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; "
+    "script-src 'self'; "
     "style-src 'self'; "
     "img-src 'self' data:; "
     "font-src 'self'; "

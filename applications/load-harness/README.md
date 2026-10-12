@@ -437,7 +437,7 @@ docker compose --profile test run --rm test
 docker compose run --rm test pytest tests/test_app.py -v -k "test_cpu"
 ```
 
-### Dashboard CSS (Tailwind)
+### Dashboard CSS (Tailwind) and HTMX
 
 The dashboard's CSS is built ahead of time from the templates and
 `static/js/`, and `static/css/app.css` is committed, so the image needs no
@@ -445,9 +445,17 @@ Node. Rebuild it whenever you add or change Tailwind classes:
 
 ```bash
 cd applications/load-harness
-npm ci --ignore-scripts   # tailwindcss pinned in package-lock.json
+npm ci --ignore-scripts   # tailwindcss and htmx.org pinned in package-lock.json
 npm run build:css         # writes src/load_harness/static/css/app.css
+npm run build:vendor      # copies HTMX into src/load_harness/static/vendor/
 ```
+
+HTMX is served from the app, not a CDN, so the page makes no third-party
+requests. `static/vendor/` holds `htmx.min.js` from the locked `htmx.org`
+package (1.9.10, BSD 2-Clause, licence beside it as `htmx.LICENSE`). After
+bumping `htmx.org`, run `npm run build:vendor` and commit the result:
+`tests/test_security_headers.py` fails while the committed file's version
+differs from `package.json`.
 
 `package.json` overrides `postcss-selector-parser` to 7.x: Tailwind 3 asks for
 6.x, which has a CPU-exhaustion advisory, and the built CSS is byte-identical
@@ -457,8 +465,8 @@ Load Harness CI rebuilds the CSS and fails if `app.css` differs from the
 committed file, so a missed rebuild (including after a Dependabot
 `tailwindcss` bump) cannot merge.
 
-Pages run no inline scripts or styles: the CSP `script-src` is `'self'` plus
-the SRI-pinned HTMX and Chart.js CDNs, and `style-src` is `'self'`. Put new
+Pages run no inline scripts or styles: the CSP `script-src` and `style-src`
+are both `'self'`. Put new
 page scripts in `static/js/` and CSS in `tailwind.input.css`. For a dynamic
 width use the `w-pct-0`…`w-pct-100` classes (e.g.
 `w-pct-{{ (value|round|int) }}`), not a `style` attribute.
@@ -490,6 +498,7 @@ applications/load-harness/
 │   │   └── routes.py             # Dashboard endpoints
 │   ├── static/
 │   │   ├── css/app.css           # Built Tailwind CSS (npm run build:css)
+│   │   ├── vendor/htmx.min.js    # Vendored HTMX (npm run build:vendor)
 │   │   └── js/
 │   │       ├── dashboard.js      # Dashboard interactivity
 │   │       ├── theme-init.js     # Sets dark mode before first paint
@@ -513,7 +522,7 @@ applications/load-harness/
 ├── local-dev/
 │   ├── docker-compose.yml        # Local dev setup
 │   └── prometheus.yml            # Local Prometheus config
-├── package.json                  # Tailwind build (build-time only)
+├── package.json                  # Tailwind and HTMX builds (build-time only)
 ├── tailwind.config.js            # Tailwind theme and content paths
 └── Dockerfile                    # Production image
 ```
