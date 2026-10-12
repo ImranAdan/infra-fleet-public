@@ -81,11 +81,15 @@ open. Dependabot PRs that only move versions need neither the marker nor a
 Verification section: the worker considers them and the gate accepts their
 exact-head checks as evidence (see `.claude/skills/merge-gate/SKILL.md`). An agent must say what merged and why. It never adds the `owner-approved`
 label and never posts or imitates a merge-judge comment. An owner approval is
-the repository owner adding `owner-approved` after every check run on the
-current head started: GitHub records both with server time, so a push after the
-approval starts new checks and unbinds it. No `pull_request_target` workflow is
-involved; GitHub blocks that trigger on public repositories by default from
-2026-11-02. `PARK` means stop and tell the owner. `JUDGE` means wait
+the repository owner replying `/approve <full-head-sha>` after every check run
+on that head started, or adding `owner-approved` under the same timing rule.
+GitHub records both with server time, and the command names the head, so a push
+unbinds either form. The trusted worker labels a PARKed PR `needs-decision`,
+posts one head-bound explanation, and wakes immediately for the comment form.
+A small trusted approval handoff uses GitHub's default-branch
+[`issue_comment`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#issue_comment)
+event to dispatch the worker; no `pull_request_target` workflow is involved. GitHub blocks that trigger
+on public repositories by default from 2026-11-02. `PARK` means stop and tell the owner. `JUDGE` means wait
 for the independent base-branch judge. `BLOCKED` means fix the reported defect
 and run the gate again.
 
@@ -100,7 +104,8 @@ decider. No model decision can override declared intent; the advisor is the
 first authority.
 
 The autonomous worker runs after the universal intent gate, after the slowest
-applicable check classes, and when an external status or review completes. A
+applicable check classes, when an external status completes, and when the owner
+posts the head-bound approval command. A
 six-hour schedule is a recovery backstop. It considers only non-draft PRs whose head branch belongs to
 this repository and whose body contains the opt-in marker. `READY` merges;
 `PARK`, `JUDGE`, failed evidence and unresolved review stay open. Advisor
