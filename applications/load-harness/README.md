@@ -511,7 +511,6 @@ applications/load-harness/
 │       └── partials/
 │           ├── live_metrics.html # Metrics panel
 │           ├── pod_metrics.html  # Pod monitor panel
-│           ├── active_jobs.html  # Jobs panel (legacy)
 │           └── result.html       # Test result display
 ├── tests/
 │   ├── conftest.py               # Shared pytest fixtures
