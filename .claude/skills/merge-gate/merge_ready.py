@@ -30,7 +30,7 @@ PATH_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "merge-authority",
         re.compile(
             r"^(?:\.claude/skills/merge-gate/|"
-            r"\.github/workflows/(?:advisor-remediation(?:-validation)?|autonomous-merge|merge-judge|intent-gate(?:-run|-retarget)?)\.ya?ml$|"
+            r"\.github/workflows/(?:advisor-remediation(?:-validation)?|autonomous-merge|owner-approval|merge-judge|intent-gate(?:-run|-retarget)?)\.ya?ml$|"
             r"\.github/scripts/(?:autonomous_merge|validate_advisor_remediation)\.py$|"
             r"(?:AGENTS|CLAUDE)\.md$)"
         ),
@@ -1091,6 +1091,7 @@ def self_test() -> int:
         ".github/workflows/advisor-remediation.yml",
         ".github/workflows/advisor-remediation-validation.yml",
         ".github/workflows/autonomous-merge.yml",
+        ".github/workflows/owner-approval.yml",
         ".github/scripts/autonomous_merge.py",
         ".github/scripts/validate_advisor_remediation.py",
     ):
