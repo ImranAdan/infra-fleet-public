@@ -249,6 +249,9 @@ pull requests.
 This App token is required for the autonomous worker. GitHub deliberately does
 not start ordinary workflows for pushes made with `GITHUB_TOKEN`; an App merge
 therefore ensures Release Please and every other `push` workflow see the merge.
+The owner-approval handoff wakes the worker with a typed
+`repository_dispatch` event. GitHub binds that event to the default branch, so
+the App credentials are never exposed through a caller-selected workflow ref.
 Release Please can still fall back to `GITHUB_TOKEN` when run manually, but its
 generated pull-request and tag events will then need manual workflow dispatch.
 After first enabling the App-backed worker, send its default-branch recovery

@@ -127,14 +127,35 @@ autonomous_merge_workflow=.github/workflows/autonomous-merge.yml
 for required_contract in \
   'id: merge-token' \
   'permission-contents: write' \
+  '  repository_dispatch:' \
+  '    types: [autonomous-merge-recovery]' \
   'MERGE_GH_TOKEN: ${{ steps.merge-token.outputs.token }}'; do
   if ! grep -Fq "$required_contract" "$autonomous_merge_workflow"; then
     echo "The autonomous worker is missing its App-token contract: $required_contract" >&2
     failed=true
   fi
 done
+if grep -Fq '  workflow_dispatch:' "$autonomous_merge_workflow"; then
+  echo "The autonomous worker must not expose App credentials to a selectable workflow_dispatch ref." >&2
+  failed=true
+fi
 if grep -Fq 'permission-pull-requests:' "$autonomous_merge_workflow"; then
   echo "The autonomous merge App token must not request Pull requests write." >&2
+  failed=true
+fi
+
+owner_approval_workflow=.github/workflows/owner-approval.yml
+for required_contract in \
+  '  contents: write' \
+  'event_type: "autonomous-merge-recovery"' \
+  'priority_pr: $pr'; do
+  if ! grep -Fq "$required_contract" "$owner_approval_workflow"; then
+    echo "The owner-approval handoff is missing its trusted dispatch contract: $required_contract" >&2
+    failed=true
+  fi
+done
+if grep -Fq 'gh workflow run autonomous-merge.yml' "$owner_approval_workflow"; then
+  echo "The owner-approval handoff must not select a ref for the credential-using worker." >&2
   failed=true
 fi
 
