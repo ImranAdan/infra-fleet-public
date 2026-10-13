@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tomllib
 import urllib.parse
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -209,6 +210,67 @@ def _changed_paths(diff: str) -> set[str]:
     }
 
 
+def _is_merge_authority_path(path: str) -> bool:
+    """Return whether path is itself part of the merge authority."""
+    return any(
+        category == "merge-authority" and pattern.search(path)
+        for category, pattern, _description in PATH_RULES
+    )
+
+
+def _remote_action_pin(text: str) -> tuple[str, str] | None:
+    """Parse one immutable remote-action uses line as (action, commit)."""
+    match = re.fullmatch(r"(?:-\s*)?uses:\s+(\S+)(?:\s+#.*)?", text.strip())
+    if not match:
+        return None
+    target = match.group(1).strip("'\"")
+    if target.startswith(("./", "/", "$/", "docker://")):
+        return None
+    action, separator, revision = target.rpartition("@")
+    if not separator or not action or not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+        return None
+    return action, revision.casefold()
+
+
+def _pin_only_authority_workflows(diff: str) -> set[str]:
+    """Find authority workflows whose diff only moves same-action SHA pins.
+
+    Every changed line must be a full-SHA remote-action reference, and the
+    action identities removed and added must match exactly. Any input, trigger,
+    permission, action identity or other workflow edit therefore fails closed.
+    """
+    paths: set[str] = set()
+    path = ""
+    changed: list[tuple[str, str]] = []
+
+    def finish() -> None:
+        if not path or not WORKFLOW.search(path) or not _is_merge_authority_path(path):
+            return
+        removed: Counter[str] = Counter()
+        added: Counter[str] = Counter()
+        for prefix, text in changed:
+            parsed = _remote_action_pin(text)
+            if parsed is None:
+                return
+            (added if prefix == "+" else removed)[parsed[0]] += 1
+        if removed and added and removed == added:
+            paths.add(path)
+
+    for line in diff.splitlines():
+        header = re.match(r"^diff --git a/(.*) b/(.*)$", line)
+        if header:
+            finish()
+            path = header.group(2)
+            changed = []
+            continue
+        if line.startswith(("+++", "---")):
+            continue
+        if line.startswith(("+", "-")):
+            changed.append((line[0], line[1:].strip()))
+    finish()
+    return paths
+
+
 def evidence_policy_failures(
     diff: str, stage_references: dict[str, set[str]] | None = None
 ) -> list[str]:
@@ -371,6 +433,7 @@ def _line_findings(path: str, line: str) -> list[Finding]:
 def scope_findings(diff: str) -> list[Finding]:
     """Return structured decision findings from a unified diff."""
     findings: list[Finding] = []
+    pin_only_authority = _pin_only_authority_workflows(diff)
     path = ""
     in_hunk = False
     rbac_indent: int | None = None
@@ -385,7 +448,11 @@ def scope_findings(diff: str) -> list[Finding]:
             rbac_key = ""
             old, path = header.group(1), header.group(2)
             for changed in dict.fromkeys((old, path)):
-                findings.extend(_path_findings(changed))
+                findings.extend(
+                    finding
+                    for finding in _path_findings(changed)
+                    if not (finding[0] == "merge-authority" and changed in pin_only_authority)
+                )
             continue
         if not in_hunk:
             if line.startswith("rename from "):
@@ -1211,6 +1278,40 @@ def self_test() -> int:
                 "\n".join(_file(merge_path, "+trusted merge code"))
             )
         )
+    old_pin = "a" * 40
+    new_pin = "b" * 40
+    authority_pin_path = ".github/workflows/intent-gate-run.yml"
+    pin_only = scope_findings(
+        "\n".join(
+            _file(
+                authority_pin_path,
+                f"-        uses: actions/checkout@{old_pin} # v6",
+                f"+        uses: actions/checkout@{new_pin} # v7",
+            )
+        )
+    )
+    assert any(category == "workflow" for category, _description in pin_only), pin_only
+    assert any(category == "dependency" for category, _description in pin_only), pin_only
+    assert not any(category == "merge-authority" for category, _description in pin_only), pin_only
+    for unsafe_pin_diff in (
+        _file(
+            authority_pin_path,
+            f"-        uses: actions/checkout@{old_pin}",
+            f"+        uses: actions/setup-python@{new_pin}",
+        ),
+        _file(
+            authority_pin_path,
+            f"-        uses: actions/checkout@{old_pin}",
+            f"+        uses: actions/checkout@{new_pin}",
+            "-          persist-credentials: false",
+            "+          persist-credentials: true",
+        ),
+        _file(authority_pin_path, f"+        uses: actions/checkout@{new_pin}"),
+    ):
+        unsafe_findings = scope_findings("\n".join(unsafe_pin_diff))
+        assert any(
+            category == "merge-authority" for category, _description in unsafe_findings
+        ), unsafe_findings
     assert _adds_privileged_trigger("pull_request_target:")
     assert _adds_privileged_trigger("on: pull_request_target")
     assert _adds_privileged_trigger("on: [push, pull_request_target]")
@@ -1618,7 +1719,7 @@ def self_test() -> int:
         "\n".join(_file("infrastructure/permanent/main.tf", '-  version = "~> 6.66"', '+  version = "~> 6.68"'))
     )
     assert decide(dependabot_scope(permanent_tf), rules, set(), None)[0] == "PARK"
-    gate_file = scope_findings(
+    gate_pin_only = scope_findings(
         "\n".join(
             _file(
                 ".github/workflows/autonomous-merge.yml",
@@ -1627,7 +1728,7 @@ def self_test() -> int:
             )
         )
     )
-    assert decide(dependabot_scope(gate_file), rules, set(), None)[0] == "PARK"
+    assert decide(dependabot_scope(gate_pin_only), rules, set(), None)[0] == "READY"
 
     calls: list[tuple[str, ...]] = []
     original_gh = globals()["gh"]

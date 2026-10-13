@@ -59,6 +59,34 @@ if [ -n "$unpinned_actions" ]; then
   failed=true
 fi
 
+action_pin_conflicts=$(
+  python3 - <<'PY'
+from collections import defaultdict
+from pathlib import Path
+import re
+
+reference_pattern = re.compile(
+    r"^\s*(?:-\s*)?uses:\s*[\"']?([^@\s\"']+)@([0-9a-fA-F]{40})"
+)
+pins = defaultdict(set)
+for directory in (Path(".github/workflows"), Path(".github/actions")):
+    for path in sorted((*directory.rglob("*.yml"), *directory.rglob("*.yaml"))):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = reference_pattern.match(line)
+            if match:
+                pins[match.group(1)].add(match.group(2).casefold())
+
+for action, revisions in sorted(pins.items()):
+    if len(revisions) > 1:
+        print(f"{action}: {', '.join(sorted(revisions))}")
+PY
+)
+if [ -n "$action_pin_conflicts" ]; then
+  printf '%s\n' "$action_pin_conflicts"
+  echo "Each GitHub Action must use one commit SHA across workflows and composite actions." >&2
+  failed=true
+fi
+
 # Code and manifests must be pinned. One line is exempt: the Fleet Application
 # dashboard reads the advisor's latest approved report as data, where following
 # main is the point and nothing fetched is executed. Only that exact URL, as a

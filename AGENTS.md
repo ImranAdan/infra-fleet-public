@@ -78,9 +78,14 @@ reports `READY`, or by leaving the template's `<!-- autonomous-merge -->`
 marker for the trusted default-branch worker to run that exact command. Both
 paths squash the checked head and bind the merge to its SHA. If two workers
 race, a failed command counts as success only when GitHub proves that exact
-head was merged. Remove the marker to hold a PR open. Dependabot PRs that only move versions need neither the marker nor a
-Verification section: the worker considers them and the gate accepts their
-exact-head checks as evidence (see `.claude/skills/merge-gate/SKILL.md`). An agent must say what merged and why. It never adds the `owner-approved`
+head was merged. Remove the marker to hold a PR open. Dependabot PRs that only
+move versions need neither the marker nor a Verification section: the worker
+considers them and the gate accepts their exact-head checks as evidence. The
+same evidence path applies when an immutable remote-action change inside an
+authority workflow only replaces a full commit SHA for the same action. An
+action identity, input, permission, trigger or any other workflow edit remains
+owner-only (see `.claude/skills/merge-gate/SKILL.md`). An agent must say what
+merged and why. It never adds the `owner-approved`
 label and never posts or imitates a merge-judge comment. An owner approval is
 the repository owner replying `/approve <full-head-sha>` after every check run
 on that head started, or adding `owner-approved` under the same timing rule.

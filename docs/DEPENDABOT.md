@@ -44,8 +44,13 @@ update every reference to a given action together. Major versions remain
 eligible because the immutable pin and normal template, workflow and intent
 gates make the runtime change explicit and reviewable. Different actions may
 need separate PRs; the one-open-PR limit serializes them so action upgrades
-cannot create a CI queue. Container bases use a readable tag plus a digest so
-an update is reviewable and the build remains immutable between updates.
+cannot create a CI queue. The template contract also rejects split commit pins
+for the same action across workflows and composite actions. A full-SHA update
+that changes only the same action reference is dependency evidence even inside
+a merge-authority workflow; changing the action identity, inputs, permissions,
+triggers or other logic still requires owner review. Container bases use a
+readable tag plus a digest so an update is reviewable and the build remains
+immutable between updates.
 
 ## Terraform lock files
 

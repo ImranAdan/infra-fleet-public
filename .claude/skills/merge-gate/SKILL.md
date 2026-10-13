@@ -66,12 +66,17 @@ push starts normal post-merge workflows. Remove the marker to hold the PR open.
   then counts as a dependency manifest, not permanent infrastructure. The
   autonomous worker considers such PRs without the marker. Everything else
   still applies, and gate files still park.
+- **Authority-workflow action pins:** a diff in an authority workflow counts
+  as dependency and workflow evidence when every changed line replaces a full
+  commit SHA with another full commit SHA for the same remote action. Any
+  action identity, input, permission, trigger, added or removed action, or
+  other workflow edit remains merge authority and parks.
 - **Scope:** changes the policy assigns to evidence or the owner, found in the diff: a workflow
   permission or `write` scope, a new `secrets.` reference, a remote action, a
   base image, a chart or dependency version, a dependency manifest, IAM,
   permanent infrastructure, migration, intent, policy, a decision record or
-  product requirements. Gate-producing files are merge authority and always
-  park for the owner.
+  product requirements. Gate-producing files are merge authority and park for
+  the owner except for the same-action immutable-pin case above.
 
 ## What it cannot check
 
