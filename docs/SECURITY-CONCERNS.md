@@ -35,6 +35,7 @@ Completed: December 2025
 spec:
   template:
     spec:
+      automountServiceAccountToken: false  # no Kubernetes API calls
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
