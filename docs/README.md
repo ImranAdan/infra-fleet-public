@@ -52,8 +52,8 @@ progressive delivery, request paths, observability and guardrails.
 | Nodes | t3.large spot, 1–3 via cluster-autoscaler | Released outside the weekday usage window |
 | Flux | v2.7.5 local / v2.7.3 AWS | GitOps operator |
 | Flagger | 1.45.0 | Progressive delivery |
-| Envoy Gateway | 1.9.1 | Gateway API routing (HTTPS only) + canary traffic, both profiles |
-| cert-manager | v1.21.1 | TLS certificates (local CA locally, Let's Encrypt on AWS) |
+| Envoy Gateway | 1.9.2 | Gateway API routing (HTTPS only) + canary traffic, both profiles |
+| cert-manager | v1.21.2 | TLS certificates (local CA locally, Let's Encrypt on AWS) |
 | Prometheus | kube-prometheus-stack | Metrics collection |
 | Grafana | kube-prometheus-stack | Dashboards |
 
