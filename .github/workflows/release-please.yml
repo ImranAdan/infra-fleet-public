@@ -3,6 +3,8 @@ name: Release Please
 on:
   push:
     branches: [main]
+  # Recovery and one-time bootstrap after the App-backed merge worker lands.
+  workflow_dispatch:
 
 permissions:
   contents: write

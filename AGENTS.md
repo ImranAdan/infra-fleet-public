@@ -76,8 +76,9 @@ merge a pull request it raised only by rerunning
 `python3 .claude/skills/merge-gate/merge_ready.py <PR> --merge` after the gate
 reports `READY`, or by leaving the template's `<!-- autonomous-merge -->`
 marker for the trusted default-branch worker to run that exact command. Both
-paths bind the merge to the checked head SHA. Remove the marker to hold a PR
-open. Dependabot PRs that only move versions need neither the marker nor a
+paths squash the checked head and bind the merge to its SHA. If two workers
+race, a failed command counts as success only when GitHub proves that exact
+head was merged. Remove the marker to hold a PR open. Dependabot PRs that only move versions need neither the marker nor a
 Verification section: the worker considers them and the gate accepts their
 exact-head checks as evidence (see `.claude/skills/merge-gate/SKILL.md`). An agent must say what merged and why. It never adds the `owner-approved`
 label and never posts or imitates a merge-judge comment. An owner approval is
@@ -93,8 +94,8 @@ on public repositories by default from 2026-11-02. `PARK` means stop and tell th
 for the independent base-branch judge. `BLOCKED` means fix the reported defect
 and run the gate again.
 
-The default path is key-free. Reversible categories marked `evidence` in the
-decision policy can reach `READY` only after every head check passes and the
+The default decision path uses no paid model. Reversible categories marked
+`evidence` in the decision policy can reach `READY` only after every head check passes and the
 successful declared-intent check—standard or retargeted—is traced to its
 configured GitHub Actions workflow on that exact head. Added authority,
 credentials, IAM, permanent infrastructure, migrations, declared intent and
@@ -113,6 +114,12 @@ mechanical remediation uses a read-only planning job and opens an opted-in Fleet
 PR. Because token-authored PRs suppress ordinary pull-request events, trusted
 Fleet code explicitly dispatches read-only validation on the exact generated
 branch; it receives no path around this gate.
+
+The worker reads evidence with the job's restricted `GITHUB_TOKEN`, then uses
+a short-lived, repository-scoped GitHub App token only for the exact-head
+merge. That App-authored push starts the ordinary post-merge workflows,
+including Release Please. The same App credentials let Release Please start
+pull-request and tag workflows. See `CONFIGURATION.md` for the one-time setup.
 
 ## Autonomy
 

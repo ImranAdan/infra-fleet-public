@@ -200,9 +200,11 @@ Three independent checks stand between a bad change and a running cluster.
 flowchart LR
     PR["Pull request"] --> CI["CI: render, schema,<br/>tests, scans"]
     PR --> Gate["Intent Gate:<br/>declared positions"]
-    CI --> Merge["Exact-head merge gate"]
+    CI --> Merge["Exact-head squash gate"]
     Gate --> Merge
-    Merge --> Flux["Flux applies"]
+    Merge --> App["Repository-scoped<br/>GitHub App merge"]
+    App --> Post["Normal push workflows:<br/>Release Please and deploy"]
+    Post --> Flux["Flux applies"]
     Flux --> Kyverno["Kyverno admission<br/>rejects unsafe objects"]
 ```
 
@@ -211,3 +213,8 @@ revision nightly, merges a changed report only after `Advisor Quality`, the
 isolated `Advisor Gates` evidence job and the merge gate pass, and turns
 eligible findings into issues here. Registered mechanical findings can continue
 through an opted-in Fleet PR and the same gates above.
+
+The gate uses the workflow token for read-only evidence and decision handoffs.
+Only its exact-head merge receives the short-lived App token. This separation
+preserves the gate's checks while ensuring GitHub emits the normal `push`
+events that it suppresses for repository-token writes.

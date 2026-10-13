@@ -22,7 +22,9 @@ python3 .claude/skills/merge-gate/merge_ready.py <PR_NUMBER> --merge
 Same-repository PRs containing `<!-- autonomous-merge -->` may leave this step
 to `.github/workflows/autonomous-merge.yml`. The trusted default-branch worker
 runs the same command; it cannot convert `PARK`, `JUDGE` or `BLOCKED` into a
-merge. Remove the marker to hold the PR open.
+merge. It reads evidence with `GITHUB_TOKEN` and supplies a separately minted,
+repository-scoped GitHub App token only to the merge mutation, so the resulting
+push starts normal post-merge workflows. Remove the marker to hold the PR open.
 
 | Verdict | Exit | Meaning | What to do |
 |---|---|---|---|
@@ -46,9 +48,9 @@ merge. Remove the marker to hold the PR open.
   requirements need exact pins, and changed
   manifests need their sibling lockfiles.
 - **Mergeable:** GitHub reports the branch `CLEAN`: no conflicts, not behind.
-- **Exact head:** `--merge` passes the checked SHA to GitHub's
-  `--match-head-commit`; a concurrent push makes the merge fail and requires a
-  new gate run.
+- **Exact head:** `--merge` squash-merges with GitHub's
+  `--match-head-commit`. A concurrent push fails. A concurrent merge is
+  accepted only when a second query proves GitHub merged the same checked head.
 - **Review:** no unresolved thread. A thread resolved without a reply saying
   what changed or why a finding was declined surfaces.
 - **Evidence:** the body has a `## Verification` section with at least one

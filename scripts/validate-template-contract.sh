@@ -123,6 +123,27 @@ if ! jq -e '
   failed=true
 fi
 
+autonomous_merge_workflow=.github/workflows/autonomous-merge.yml
+for required_contract in \
+  'id: merge-token' \
+  'permission-contents: write' \
+  'MERGE_GH_TOKEN: ${{ steps.merge-token.outputs.token }}'; do
+  if ! grep -Fq "$required_contract" "$autonomous_merge_workflow"; then
+    echo "The autonomous worker is missing its App-token contract: $required_contract" >&2
+    failed=true
+  fi
+done
+if grep -Fq 'permission-pull-requests:' "$autonomous_merge_workflow"; then
+  echo "The autonomous merge App token must not request Pull requests write." >&2
+  failed=true
+fi
+
+release_workflow=.github/workflows/release-please.yml
+if ! grep -Fq '  workflow_dispatch:' "$release_workflow"; then
+  echo "Release Please must retain an on-demand recovery trigger." >&2
+  failed=true
+fi
+
 # release-please advances the release manifest before the image is published;
 # Flux advances the deployment only after ECR contains the release. These tags
 # legitimately differ while a release is being built or deployed.

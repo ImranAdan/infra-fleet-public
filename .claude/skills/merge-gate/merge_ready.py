@@ -783,18 +783,69 @@ def gh(*args: str) -> str:
     return result.stdout
 
 
-def merge_pull_request(number: str, repo: str, sha: str) -> None:
-    """Merge only if GitHub still reports the exact head evaluated by this gate."""
-    gh(
-        "pr",
-        "merge",
-        number,
-        "-R",
-        repo,
-        "--merge",
-        "--match-head-commit",
-        sha,
+class MergeError(RuntimeError):
+    """The exact-head merge failed and no concurrent success could be proved."""
+
+
+def _command_error(exc: subprocess.CalledProcessError) -> str:
+    return str(exc.stderr or exc.stdout or exc).strip()
+
+
+def merge_gh(*args: str) -> str:
+    """Run only the merge mutation with its optional short-lived App token."""
+    token = os.environ.get("MERGE_GH_TOKEN", "")
+    if not token:
+        return gh(*args)
+    env = os.environ.copy()
+    env["GH_TOKEN"] = token
+    result = subprocess.run(  # noqa: S603, S607 - fixed gh argv
+        ["gh", *args], check=True, capture_output=True, text=True, env=env
     )
+    return result.stdout
+
+
+def merge_pull_request(number: str, repo: str, sha: str) -> str:
+    """Squash the checked head, accepting a concurrent merge of that same head."""
+    try:
+        merge_gh(
+            "pr",
+            "merge",
+            number,
+            "-R",
+            repo,
+            "--squash",
+            "--match-head-commit",
+            sha,
+        )
+    except subprocess.CalledProcessError as exc:
+        try:
+            observed = json.loads(
+                gh(
+                    "pr",
+                    "view",
+                    number,
+                    "-R",
+                    repo,
+                    "--json",
+                    "state,headRefOid",
+                )
+            )
+        except (json.JSONDecodeError, subprocess.CalledProcessError) as verify_exc:
+            detail = (
+                _command_error(verify_exc)
+                if isinstance(verify_exc, subprocess.CalledProcessError)
+                else str(verify_exc)
+            )
+            raise MergeError(
+                f"merge command failed: {_command_error(exc)}; final state check failed: {detail}"
+            ) from verify_exc
+        if observed.get("state") == "MERGED" and observed.get("headRefOid") == sha:
+            return "already merged concurrently"
+        raise MergeError(
+            f"merge command failed: {_command_error(exc)}; "
+            f"observed state={observed.get('state')} head={observed.get('headRefOid')}"
+        ) from exc
+    return "merged"
 
 
 def gh_json_lines(*args: str) -> list[dict[str, Any]]:
@@ -1003,8 +1054,12 @@ def main(argv: list[str]) -> int:
     print(f"verdict: {verdict}")
     if verdict == "READY":
         if "--merge" in argv:
-            merge_pull_request(number, repo, sha)
-            print(f"merged {repo}#{number} at {sha}")
+            try:
+                result = merge_pull_request(number, repo, sha)
+            except MergeError as exc:
+                print(f"merge failed: {exc}", file=sys.stderr)
+                return 2
+            print(f"{result} {repo}#{number} at {sha}")
         else:
             print(
                 f"merge: rerun this gate with --merge; GitHub will require the checked head {sha}"
@@ -1576,16 +1631,17 @@ def self_test() -> int:
 
     calls: list[tuple[str, ...]] = []
     original_gh = globals()["gh"]
+    original_merge_gh = globals()["merge_gh"]
 
     def fake_gh(*args: str) -> str:
         calls.append(args)
         return ""
 
-    globals()["gh"] = fake_gh
+    globals()["merge_gh"] = fake_gh
     try:
-        merge_pull_request("7", "owner/repo", sha)
+        assert merge_pull_request("7", "owner/repo", sha) == "merged"
     finally:
-        globals()["gh"] = original_gh
+        globals()["merge_gh"] = original_merge_gh
     assert calls == [
         (
             "pr",
@@ -1593,11 +1649,65 @@ def self_test() -> int:
             "7",
             "-R",
             "owner/repo",
-            "--merge",
+            "--squash",
             "--match-head-commit",
             sha,
         )
     ]
+    calls.clear()
+
+    def concurrent_merge_gh(*args: str) -> str:
+        raise subprocess.CalledProcessError(1, args, stderr="already merged")
+
+    def concurrent_gh(*args: str) -> str:
+        calls.append(args)
+        return json.dumps({"state": "MERGED", "headRefOid": sha})
+
+    globals()["merge_gh"] = concurrent_merge_gh
+    globals()["gh"] = concurrent_gh
+    try:
+        assert merge_pull_request("7", "owner/repo", sha) == "already merged concurrently"
+    finally:
+        globals()["merge_gh"] = original_merge_gh
+        globals()["gh"] = original_gh
+    assert calls[-1][-1] == "state,headRefOid"
+
+    def stale_gh(*_args: str) -> str:
+        return json.dumps({"state": "OPEN", "headRefOid": "b" * 40})
+
+    globals()["merge_gh"] = concurrent_merge_gh
+    globals()["gh"] = stale_gh
+    try:
+        try:
+            merge_pull_request("7", "owner/repo", sha)
+        except MergeError as exc:
+            assert "state=OPEN" in str(exc)
+            assert f"head={'b' * 40}" in str(exc)
+        else:
+            raise AssertionError("a failed merge of a different head was accepted")
+    finally:
+        globals()["merge_gh"] = original_merge_gh
+        globals()["gh"] = original_gh
+
+    merge_runs: list[dict[str, Any]] = []
+    original_run = subprocess.run
+    original_token = os.environ.get("MERGE_GH_TOKEN")
+
+    def fake_run(_command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        merge_runs.append(kwargs)
+        return subprocess.CompletedProcess(_command, 0, "", "")
+
+    subprocess.run = fake_run  # type: ignore[assignment]
+    os.environ["MERGE_GH_TOKEN"] = "test-app-token"
+    try:
+        merge_gh("pr", "merge", "7")
+    finally:
+        subprocess.run = original_run  # type: ignore[assignment]
+        if original_token is None:
+            os.environ.pop("MERGE_GH_TOKEN", None)
+        else:
+            os.environ["MERGE_GH_TOKEN"] = original_token
+    assert merge_runs[0]["env"]["GH_TOKEN"] == "test-app-token"
     print("self-test passed")
     return 0
 
