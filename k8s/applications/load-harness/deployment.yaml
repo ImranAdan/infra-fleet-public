@@ -31,6 +31,8 @@ spec:
         # in existing processes.
         infra-fleet.io/runtime-config-revision: "${RUNTIME_CONFIG_REVISION}"
     spec:
+      # The app reads metrics from Prometheus and never calls the Kubernetes API.
+      automountServiceAccountToken: false
       # Defense in depth: Dockerfile already runs as non-root (USER app),
       # but K8s securityContext enforces it and adds additional controls
       securityContext:
