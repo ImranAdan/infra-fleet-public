@@ -70,8 +70,10 @@ updates:
       prefix: "ci"
     groups:
       github-actions:
-        patterns:
-          - "*"
+        # Move one action atomically across workflows and composite actions.
+        # Different actions may produce separate PRs, but the limit below
+        # serializes them so CI never receives a dependency-update burst.
+        group-by: dependency-name
     open-pull-requests-limit: 1
 
   # Terraform providers - monthly, grouped

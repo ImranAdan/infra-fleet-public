@@ -7,7 +7,7 @@
 | Python | `/applications/load-harness` | grouped |
 | Python | `/` (development tools) | grouped |
 | Docker | each `/applications/<app>` and `/platform/local/git-server` | one update stream per directory |
-| GitHub Actions | workflows and `.github/actions/*` | one grouped PR, including major versions |
+| GitHub Actions | workflows and `.github/actions/*` | grouped by action across directories, including major versions |
 | Terraform | `/infrastructure/staging` and `/infrastructure/permanent` | grouped per stack |
 
 Reviewers, labels, and assignees can be configured for your deployment
@@ -30,11 +30,12 @@ credentials.
 
 GitHub Actions references are pinned to full commit SHAs with readable version
 comments. Dependabot scans workflows and repository composite actions, and can
-update both together. Major versions remain eligible because the immutable pin
-and normal template, workflow and intent gates make the runtime change explicit
-and reviewable. The one-open-PR limit prevents action upgrades from creating a
-CI queue. Container bases use a readable tag plus a digest so an update is
-reviewable and the build remains immutable between updates.
+update every reference to a given action together. Major versions remain
+eligible because the immutable pin and normal template, workflow and intent
+gates make the runtime change explicit and reviewable. Different actions may
+need separate PRs; the one-open-PR limit serializes them so action upgrades
+cannot create a CI queue. Container bases use a readable tag plus a digest so
+an update is reviewable and the build remains immutable between updates.
 
 ## Terraform lock files
 
