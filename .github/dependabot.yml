@@ -57,20 +57,24 @@ updates:
       - dependency-name: "python"
         versions: [">=3.14"]
 
-  # GitHub Actions - monthly, grouped, no major bumps
+  # GitHub Actions - monthly and grouped across workflows and composite actions.
+  # Major updates are included: immutable SHA pins and the ordinary Fleet gates
+  # make them reviewable without leaving old action runtimes in the template.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "monthly"
     commit-message:
       prefix: "ci"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
     groups:
       github-actions:
-        patterns:
-          - "*"
+        # Move one action atomically across workflows and composite actions.
+        # Different actions may produce separate PRs, but the limit below
+        # serializes them so CI never receives a dependency-update burst.
+        group-by: dependency-name
+    open-pull-requests-limit: 1
 
   # Terraform providers - monthly, grouped
   - package-ecosystem: "terraform"
