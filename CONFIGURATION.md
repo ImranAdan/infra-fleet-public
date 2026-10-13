@@ -251,9 +251,18 @@ not start ordinary workflows for pushes made with `GITHUB_TOKEN`; an App merge
 therefore ensures Release Please and every other `push` workflow see the merge.
 Release Please can still fall back to `GITHUB_TOKEN` when run manually, but its
 generated pull-request and tag events will then need manual workflow dispatch.
-After first enabling the App-backed worker, run `gh workflow run
-release-please.yml` once: the bootstrap merge was made by the old worker and
-therefore could not emit its own `push` workflow event.
+After first enabling the App-backed worker, send its default-branch recovery
+event once:
+
+```bash
+gh api --method POST repos/OWNER/REPOSITORY/dispatches \
+  -f event_type=release-please-recovery
+```
+
+The bootstrap merge was made by the old worker and therefore could not emit its
+own `push` workflow event. Recovery uses `repository_dispatch`, whose workflow
+and ref come from the default branch; it does not expose App credentials to a
+selectable manual-workflow ref.
 
 Also enable **Settings → Actions → General → Allow GitHub Actions to create and
 approve pull requests** if you want the release workflow to open PRs.

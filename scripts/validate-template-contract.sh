@@ -139,8 +139,16 @@ if grep -Fq 'permission-pull-requests:' "$autonomous_merge_workflow"; then
 fi
 
 release_workflow=.github/workflows/release-please.yml
-if ! grep -Fq '  workflow_dispatch:' "$release_workflow"; then
-  echo "Release Please must retain an on-demand recovery trigger." >&2
+for required_contract in \
+  '  repository_dispatch:' \
+  '    types: [release-please-recovery]'; do
+  if ! grep -Fq "$required_contract" "$release_workflow"; then
+    echo "Release Please is missing its default-branch recovery trigger: $required_contract" >&2
+    failed=true
+  fi
+done
+if grep -Fq '  workflow_dispatch:' "$release_workflow"; then
+  echo "Release Please must not expose App credentials to a selectable workflow_dispatch ref." >&2
   failed=true
 fi
 
