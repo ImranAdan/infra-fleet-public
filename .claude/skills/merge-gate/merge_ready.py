@@ -17,7 +17,6 @@ import subprocess
 import sys
 import tomllib
 import urllib.parse
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -235,39 +234,53 @@ def _remote_action_pin(text: str) -> tuple[str, str] | None:
 def _pin_only_authority_workflows(diff: str) -> set[str]:
     """Find authority workflows whose diff only moves same-action SHA pins.
 
-    Every changed line must be a full-SHA remote-action reference, and the
-    action identities removed and added must match exactly. Any input, trigger,
-    permission, action identity or other workflow edit therefore fails closed.
+    Every contiguous changed block must replace full-SHA remote-action
+    references with the same action identities in the same order. Unchanged
+    step or job context splits blocks, so moving an action across that context
+    fails closed along with input, trigger, permission and identity changes.
     """
     paths: set[str] = set()
     path = ""
-    changed: list[tuple[str, str]] = []
+    blocks: list[list[tuple[str, str]]] = []
+    block: list[tuple[str, str]] = []
 
-    def finish() -> None:
+    def finish_block() -> None:
+        nonlocal block
+        if block:
+            blocks.append(block)
+            block = []
+
+    def finish_file() -> None:
+        finish_block()
         if not path or not WORKFLOW.search(path) or not _is_merge_authority_path(path):
             return
-        removed: Counter[str] = Counter()
-        added: Counter[str] = Counter()
-        for prefix, text in changed:
-            parsed = _remote_action_pin(text)
-            if parsed is None:
+        for changed in blocks:
+            removed: list[str] = []
+            added: list[str] = []
+            for prefix, text in changed:
+                parsed = _remote_action_pin(text)
+                if parsed is None:
+                    return
+                (added if prefix == "+" else removed).append(parsed[0])
+            if not removed or not added or removed != added:
                 return
-            (added if prefix == "+" else removed)[parsed[0]] += 1
-        if removed and added and removed == added:
+        if blocks:
             paths.add(path)
 
     for line in diff.splitlines():
         header = re.match(r"^diff --git a/(.*) b/(.*)$", line)
         if header:
-            finish()
+            finish_file()
             path = header.group(2)
-            changed = []
+            blocks = []
             continue
         if line.startswith(("+++", "---")):
             continue
         if line.startswith(("+", "-")):
-            changed.append((line[0], line[1:].strip()))
-    finish()
+            block.append((line[0], line[1:].strip()))
+        else:
+            finish_block()
+    finish_file()
     return paths
 
 
@@ -1307,6 +1320,12 @@ def self_test() -> int:
             "+          persist-credentials: true",
         ),
         _file(authority_pin_path, f"+        uses: actions/checkout@{new_pin}"),
+        _file(
+            authority_pin_path,
+            f"-        uses: actions/checkout@{old_pin}",
+            "         - name: Next step",
+            f"+        uses: actions/checkout@{new_pin}",
+        ),
     ):
         unsafe_findings = scope_findings("\n".join(unsafe_pin_diff))
         assert any(
