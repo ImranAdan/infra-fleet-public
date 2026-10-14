@@ -1,6 +1,7 @@
 """Infrastructure profiles do not select the metrics or authentication mode,
 and the runtime image carries no test tooling but shares its base with tests."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,16 @@ def test_runtime_requirements_exclude_test_tooling():
     names = {line.split("==")[0].strip().lower() for line in runtime.splitlines() if line.strip()}
     assert "pytest" not in names
     assert "flask" in names  # parsed the real file
+
+
+def test_runtime_requirements_pin_every_package():
+    """The image installs with --no-deps, so each line must be an exact pin."""
+    runtime = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text()
+    pins = [line.split("#")[0].strip() for line in runtime.splitlines()]
+    pins = [pin for pin in pins if pin]
+    loose = [pin for pin in pins if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*==[^=<>~!,\s]+", pin)]
+    assert loose == []
+    assert any(pin.startswith("werkzeug==") for pin in pins)  # transitives included
 
 
 def _from_lines(dockerfile):
