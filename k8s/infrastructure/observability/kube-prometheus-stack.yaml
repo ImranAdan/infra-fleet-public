@@ -94,13 +94,15 @@ spec:
       persistence:
         enabled: false
 
-      # Resource limits for t3.medium node (plenty of capacity)
+      # Grafana 13 registers its built-in plugins at start-up. At a 200m limit
+      # it was throttled in 98% of CPU periods, took over the liveness window
+      # and restarted in a loop; idle it uses about 35m and 130Mi.
       resources:
         requests:
           cpu: 50m
           memory: 128Mi
         limits:
-          cpu: 200m
+          cpu: "1"
           memory: 256Mi
 
       # Admin credentials are created by rebuild-stack.yml and never stored in Git.
