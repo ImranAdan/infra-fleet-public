@@ -454,7 +454,7 @@ npm run build:vendor      # copies HTMX into src/load_harness/static/vendor/
 
 HTMX is served from the app, not a CDN, so the page makes no third-party
 requests. `static/vendor/` holds `htmx.min.js` from the locked `htmx.org`
-package (1.9.10, BSD 2-Clause, licence beside it as `htmx.LICENSE`). After
+package (2.0.11, Zero-Clause BSD, licence beside it as `htmx.LICENSE`). After
 bumping `htmx.org`, run `npm run build:vendor` and commit the result:
 `tests/test_security_headers.py` fails while the committed file's version
 differs from `package.json`, and a second test pins the file's sha384 (update
