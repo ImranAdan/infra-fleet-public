@@ -125,3 +125,68 @@ def test_splitter_aggregator_combines_every_part(api):
 )
 def test_rejects_invalid_input(api, path, body):
     assert api.post(path, json=body).status_code == 400
+
+
+def test_apply_payment_records_and_adds_in_one_step():
+    from load_harness.messaging import apply_payment
+
+    empty = {"total": 0, "applied": []}
+    once = apply_payment(empty, {"payment_id": "p1", "amount": 10})
+    assert once == {"total": 10, "applied": ["p1"]}
+    assert apply_payment(once, {"payment_id": "p1", "amount": 10}) == once
+    assert empty == {"total": 0, "applied": []}  # the input is never mutated
+
+
+class _Redelivered:
+    """The same stored message delivered again, as after a lost acknowledgement."""
+
+    def __init__(self, data, sequence):
+        from types import SimpleNamespace
+
+        self.data = data
+        self.subject = "eip.orders.in"
+        self.metadata = SimpleNamespace(stream="EIP_ORDERS", sequence=SimpleNamespace(stream=sequence))
+
+    async def ack(self):
+        pass
+
+
+def test_router_redelivery_forwards_once(api, broker):
+    messaging = api.application.extensions["eip"]
+    order = b'{"id": "o1", "priority": "high"}'
+    for _ in range(3):
+        messaging.call(messaging._route(_Redelivered(order, sequence=42)))
+    status = api.get("/api/eip/status").get_json()
+    assert status["content_based_router"] == {"priority": 1, "standard": 0}
+
+
+def test_recovers_when_jetstream_arrives_late(tmp_path):
+    """Setup fails on a broker without JetStream; the app keeps answering 503
+    quickly and retries until a JetStream broker takes the port."""
+    port = _free_port()
+    plain = subprocess.Popen(
+        [SERVER, "-a", "127.0.0.1", "-p", str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    time.sleep(0.5)
+    app = create_app({"TESTING": True, "NATS_URL": f"nats://127.0.0.1:{port}"})
+    client = app.test_client()
+    jetstream = None
+    try:
+        started = time.monotonic()
+        assert client.get("/api/eip/status").status_code == 503
+        assert time.monotonic() - started < 5
+        plain.terminate()
+        plain.wait(timeout=10)
+        jetstream = subprocess.Popen(
+            [SERVER, "-js", "-a", "127.0.0.1", "-p", str(port), "-sd", str(tmp_path)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        assert app.extensions["eip"].ready.wait(30)
+        assert client.get("/api/eip/status").status_code == 200
+    finally:
+        app.extensions["eip"].close()
+        for process in (plain, jetstream):
+            if process and process.poll() is None:
+                process.terminate()
+                process.wait(timeout=10)

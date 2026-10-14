@@ -6,7 +6,7 @@ unchanged on a platform without one.
 
 from flask import Blueprint, current_app, jsonify, request
 
-from load_harness.messaging import valid_id
+from load_harness.messaging import MessagingUnavailable, valid_id
 
 eip = Blueprint("eip", __name__, url_prefix="/api/eip")
 MAX_MESSAGES = 100
@@ -22,6 +22,11 @@ def _require_broker():
     if _messaging() is None:
         return jsonify(error="messaging is not configured (set NATS_URL)"), 503
     return None
+
+
+@eip.errorhandler(MessagingUnavailable)
+def _unavailable(error):
+    return jsonify(error=str(error)), 503
 
 
 def _bad(message):

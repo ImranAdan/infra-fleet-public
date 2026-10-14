@@ -353,9 +353,17 @@ state back, so it is the broker's own account of what happened.
 |---|---|---|
 | Work queue + Dead Letter Channel | `POST /api/eip/work` `{"count": 5, "poison": 2}` | Work-queue stream `EIP_WORK` with competing consumers. A poison job is retried, and on its 3rd delivery it is copied to `eip.dlq` and terminated. |
 | Publish-Subscribe Channel | `POST /api/eip/events` `{"type": "created"}` | Each durable subscriber (`audit`, `notify`) receives every event on `eip.events.>`. |
-| Idempotent Receiver | `POST /api/eip/payments` `{"payment_id": "p1", "amount": 10}` | The broker drops a repeated `Nats-Msg-Id` within 2 minutes (`broker_duplicate: true`). The ledger records each payment id with KV `create()`, so a message with a new id for the same payment is still applied once (`ledger_total`). |
+| Idempotent Receiver | `POST /api/eip/payments` `{"payment_id": "p1", "amount": 10}` | The broker drops a repeated `Nats-Msg-Id` within 10 minutes (`broker_duplicate: true`). The ledger records the payment id and adds its amount in one KV compare-and-set, so a message with a new id for the same payment is still applied once (`ledger_total`), and a failure part-way leaves neither change. |
 | Content-Based Router | `POST /api/eip/orders` `{"orders": [{"id": "o1", "priority": "high"}]}` | Orders on `eip.orders.in` move to `eip.orders.priority` or `eip.orders.standard`. |
 | Splitter / Aggregator | `POST /api/eip/batch` `{"items": [1, 2, 3, 4]}`, then `GET /api/eip/batch/<correlation_id>` | The batch is split into items and each is squared. Parts are aggregated by correlation id with KV compare-and-set, so aggregators on several pods never lose a part. On completion, one result is published to `eip.batch.result.<id>` (`published_result`). |
+
+Every forwarding step (DLQ copy, router, splitter, item processor) publishes
+with a message id taken from the stream sequence of the message it consumed.
+A redelivery after a lost acknowledgement is therefore dropped by the broker
+instead of being forwarded twice; the 10-minute duplicate window is far beyond
+the 2-second acknowledgement wait. If the broker is unreachable or lacks
+JetStream, the routes answer `503` within 2 seconds while the app retries in
+the background, so they never hold gunicorn's threads.
 
 Inputs are validated: ids are 1–64 of `[A-Za-z0-9_-]`, at most 100 messages
 per call, and integers within ±1,000,000. `eip_messages_total{pattern,outcome}`

@@ -11,13 +11,17 @@ what happened.
 - Publish-Subscribe Channel: every event on eip.events.> reaches each durable
   subscriber (audit and notify) independently.
 - Idempotent Receiver: the broker drops a republished Nats-Msg-Id inside the
-  duplicate window, and the ledger consumer records each payment id in a KV
-  bucket with create(), so a second message for the same payment is skipped.
+  duplicate window, and the ledger records the payment id and adds its amount
+  in one compare-and-set, so a second message for the same payment is skipped
+  and a failure part-way loses nothing.
 - Content-Based Router: orders on eip.orders.in move to eip.orders.priority or
   eip.orders.standard by their priority field.
 - Splitter / Aggregator: a batch on eip.batch.in is split into items, each item
   is processed, and the results are aggregated by correlation id in KV until
   the batch is complete.
+
+Every forwarding step publishes with a message id taken from the message it
+consumed, so a redelivery cannot forward the same message twice.
 """
 
 import asyncio
@@ -37,18 +41,21 @@ log = logging.getLogger(__name__)
 
 MAX_DELIVER = 3
 ACK_WAIT_SECONDS = 2
-DUPLICATE_WINDOW_SECONDS = 120
+# Forwarding steps publish with a message id from the source message, so a
+# redelivery (after ACK_WAIT_SECONDS) is dropped by the broker. ponytail: an
+# unacknowledged message redelivered after this window would forward twice;
+# raise it if consumers can stall for longer.
+DUPLICATE_WINDOW_SECONDS = 600
+RETRY_SECONDS = 2
 SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 STREAMS = (
     StreamConfig(name="EIP_WORK", subjects=["eip.work"], retention=RetentionPolicy.WORK_QUEUE),
-    StreamConfig(name="EIP_DLQ", subjects=["eip.dlq"]),
+    StreamConfig(name="EIP_DLQ", subjects=["eip.dlq"], duplicate_window=DUPLICATE_WINDOW_SECONDS),
     StreamConfig(name="EIP_EVENTS", subjects=["eip.events.>"]),
-    StreamConfig(name="EIP_ORDERS", subjects=["eip.orders.>"]),
-    StreamConfig(name="EIP_BATCH", subjects=["eip.batch.>"]),
-    StreamConfig(
-        name="EIP_PAYMENTS", subjects=["eip.payments"], duplicate_window=DUPLICATE_WINDOW_SECONDS
-    ),
+    StreamConfig(name="EIP_ORDERS", subjects=["eip.orders.>"], duplicate_window=DUPLICATE_WINDOW_SECONDS),
+    StreamConfig(name="EIP_BATCH", subjects=["eip.batch.>"], duplicate_window=DUPLICATE_WINDOW_SECONDS),
+    StreamConfig(name="EIP_PAYMENTS", subjects=["eip.payments"], duplicate_window=DUPLICATE_WINDOW_SECONDS),
 )
 SUBSCRIBERS = ("audit", "notify")
 
@@ -61,6 +68,26 @@ def _payload(msg):
     return json.loads(msg.data or b"{}")
 
 
+def _from(msg, step):
+    """A message id for what `step` publishes from msg: the same on redelivery."""
+    return {"Nats-Msg-Id": f"{step}-{msg.metadata.stream}-{msg.metadata.sequence.stream}"}
+
+
+def apply_payment(ledger, payment):
+    """Record the payment and add its amount in one state change, or not at all.
+
+    ponytail: `applied` grows by one id per payment; fine for a demo ledger,
+    use a per-payment key with an expiring guard for unbounded volume.
+    """
+    if payment["payment_id"] in ledger["applied"]:
+        return ledger
+    return {"total": ledger["total"] + payment["amount"], "applied": [*ledger["applied"], payment["payment_id"]]}
+
+
+class MessagingUnavailable(RuntimeError):
+    """The broker is not reachable yet; the routes answer 503."""
+
+
 class Messaging:
     """Owns one NATS connection on a private event loop thread."""
 
@@ -71,10 +98,14 @@ class Messaging:
         self.error = None
         threading.Thread(target=self._run, name="eip-loop", daemon=True).start()
 
-    # Flask calls these from request threads.
+    # Flask calls these from request threads. While the broker is unreachable
+    # this fails within READY_WAIT, so requests never hold gunicorn's threads.
+    READY_WAIT = 2
+
     def call(self, coroutine, timeout=10):
-        if not self.ready.wait(timeout):
-            raise RuntimeError(f"messaging not ready: {self.error or 'connecting'}")
+        if not self.ready.wait(self.READY_WAIT):
+            coroutine.close()
+            raise MessagingUnavailable(f"messaging not ready: {self.error or 'connecting'}")
         return asyncio.run_coroutine_threadsafe(coroutine, self.loop).result(timeout)
 
     def close(self):
@@ -96,19 +127,25 @@ class Messaging:
         self.loop.run_forever()
 
     async def _start(self):
-        try:
-            self.nc = await nats.connect(self.url, name="load-harness", max_reconnect_attempts=-1)
-            self.js = self.nc.jetstream()
-            for config in STREAMS:
-                await self._ensure_stream(config)
-            self.processed = await self.js.create_key_value(bucket="eip_processed")
-            self.aggregates = await self.js.create_key_value(bucket="eip_aggregates")
-            self.ledger = await self.js.create_key_value(bucket="eip_ledger")
-            await self._start_consumers()
-        except Exception as error:  # surface through call(); keep the app serving
-            self.error = error
-            log.exception("messaging failed to start")
-            return
+        """Connect and declare everything, retrying until the broker is there."""
+        while True:
+            try:
+                self.nc = await nats.connect(self.url, name="load-harness", max_reconnect_attempts=-1)
+                self.js = self.nc.jetstream()
+                for config in STREAMS:
+                    await self._ensure_stream(config)
+                self.aggregates = await self.js.create_key_value(bucket="eip_aggregates")
+                self.ledger = await self.js.create_key_value(bucket="eip_ledger")
+                await self._start_consumers()
+                break
+            except Exception as error:  # surfaced by call(); the app keeps serving
+                self.error = error
+                log.warning("messaging not started (%s); retrying in %ss", error, RETRY_SECONDS)
+                if getattr(self, "nc", None) is not None:
+                    await self.nc.close()
+                    self.nc = None
+                await asyncio.sleep(RETRY_SECONDS)
+        self.error = None
         self.ready.set()
 
     async def _ensure_stream(self, config):
@@ -162,7 +199,7 @@ class Messaging:
             await msg.nak()
             MESSAGES.labels("work-queue", "retried").inc()
             return
-        headers = {"Eip-Original-Subject": msg.subject, "Eip-Deliveries": str(MAX_DELIVER)}
+        headers = {"Eip-Original-Subject": msg.subject, "Eip-Deliveries": str(MAX_DELIVER), **_from(msg, "dlq")}
         await self.js.publish("eip.dlq", msg.data, headers=headers)
         await msg.term()
         MESSAGES.labels("dead-letter", "dead-lettered").inc()
@@ -178,21 +215,20 @@ class Messaging:
     # Idempotent Receiver
     async def _ledger(self, msg):
         payment = _payload(msg)
-        try:
-            await self.processed.create(payment["payment_id"], msg.data)
-        except KeyWrongLastSequenceError:
-            await msg.ack()
-            MESSAGES.labels("idempotent-receiver", "duplicate-skipped").inc()
-            return
-        await self._cas(self.ledger, "total", lambda total: total + payment["amount"], lambda: 0)
+        # The guard and the total change together, so a failure part-way leaves
+        # neither, and the redelivery applies the payment.
+        old, new = await self._cas(
+            self.ledger, "ledger", lambda state: apply_payment(state, payment), lambda: {"total": 0, "applied": []}
+        )
         await msg.ack()
-        MESSAGES.labels("idempotent-receiver", "processed").inc()
+        applied = old is None or payment["payment_id"] not in old["applied"]
+        MESSAGES.labels("idempotent-receiver", "processed" if applied else "duplicate-skipped").inc()
 
     # Content-Based Router
     async def _route(self, msg):
         order = _payload(msg)
         lane = "priority" if order.get("priority") == "high" else "standard"
-        await self.js.publish(f"eip.orders.{lane}", msg.data)
+        await self.js.publish(f"eip.orders.{lane}", msg.data, headers=_from(msg, "route"))
         await msg.ack()
         MESSAGES.labels("content-based-router", lane).inc()
 
@@ -202,14 +238,15 @@ class Messaging:
         items = batch["items"]
         for index, value in enumerate(items):
             item = {"correlation_id": batch["correlation_id"], "index": index, "total": len(items), "value": value}
-            await self.js.publish("eip.batch.item", json.dumps(item).encode())
+            headers = {"Nats-Msg-Id": f"{_from(msg, 'split')['Nats-Msg-Id']}-{index}"}
+            await self.js.publish("eip.batch.item", json.dumps(item).encode(), headers=headers)
         await msg.ack()
         MESSAGES.labels("splitter", "split").inc()
 
     async def _process_item(self, msg):
         item = _payload(msg)
         item["result"] = item["value"] * item["value"]
-        await self.js.publish("eip.batch.done", json.dumps(item).encode())
+        await self.js.publish("eip.batch.done", json.dumps(item).encode(), headers=_from(msg, "process"))
         await msg.ack()
 
     async def _aggregate(self, msg):
@@ -286,11 +323,11 @@ class Messaging:
         except NotFoundError:
             return state, None
 
-    async def ledger_total(self):
+    async def ledger_state(self):
         try:
-            return json.loads((await self.ledger.get("total")).value)
+            return json.loads((await self.ledger.get("ledger")).value)
         except NotFoundError:
-            return 0
+            return {"total": 0, "applied": []}
 
     async def status(self):
         """What the broker holds: the ground truth for every pattern."""
@@ -310,9 +347,8 @@ class Messaging:
             "publish_subscribe": {name: await acked("EIP_EVENTS", name) for name in SUBSCRIBERS},
             "idempotent_receiver": {
                 "stored": (await stream("EIP_PAYMENTS")).messages,
-                # one create() per payment id, never updated
-                "processed_payments": (await stream("KV_eip_processed")).messages,
-                "ledger_total": await self.ledger_total(),
+                "processed_payments": len((ledger := await self.ledger_state())["applied"]),
+                "ledger_total": ledger["total"],
             },
             "content_based_router": {
                 lane: orders.get(f"eip.orders.{lane}", 0) for lane in ("priority", "standard")
