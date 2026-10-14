@@ -464,12 +464,26 @@ it with the bump).
 6.x, which has a CPU-exhaustion advisory, and the built CSS is byte-identical
 either way. Drop the override when moving to Tailwind 4.
 
-`npm audit` reports `braces` ≤3.0.3 (GHSA-vfj7-8cjw-p6xm, stack exhaustion on
-deeply nested patterns), pulled in by Tailwind 3 through `chokidar` and
-`micromatch`. No patched release exists, and nothing overrides it. It is
-accepted because it is unreachable: it runs only in the dev-time Tailwind CLI,
-on glob patterns from this repository's `tailwind.config.js`, and the image
-contains no Node. Tailwind 4 drops it; revisit then.
+`npm audit` reports `braces` ≤3.0.3
+([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm):
+stack exhaustion on deeply nested patterns). Tailwind 3 pulls it in through
+`chokidar` and `micromatch`. The advisory lists no patched version, and
+[3.0.3 is the latest `braces`](https://www.npmjs.com/package/braces?activeTab=versions),
+so no override fixes it. It is accepted because nobody gains anything new from
+it:
+
+- The image contains no Node, so production never runs it.
+- It parses only the glob patterns in `tailwind.config.js`. That file is
+  JavaScript the Tailwind CLI executes, so anyone who can change those
+  patterns, locally or in a pull request's `Load Harness CI` run
+  (`contents: read`), can already run arbitrary code there. A pattern that
+  exhausts the stack only fails that same job.
+
+Tailwind 4 does not remove it:
+[`@tailwindcss/cli` 4.3.3](https://github.com/tailwindlabs/tailwindcss/blob/v4.3.3/packages/%40tailwindcss-cli/package.json)
+depends on `@parcel/watcher` 2.5.1, which needs `micromatch` and so `braces`.
+Revisit when the chosen Tailwind version's lockfile no longer contains
+`braces` (`npm ls braces` prints nothing).
 
 Load Harness CI rebuilds the CSS and fails if `app.css` differs from the
 committed file, so a missed rebuild (including after a Dependabot
