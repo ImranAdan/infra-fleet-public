@@ -10,6 +10,16 @@
 | GitHub Actions | workflows and `.github/actions/*` | grouped by action across directories, including major versions |
 | Terraform | `/infrastructure/staging` and `/infrastructure/permanent` | grouped per stack |
 
+Dependabot cannot read Flux `HelmRelease` chart versions or the generated Flux
+manifest (`k8s/flux-system/flux-system/gotk-components.yaml`). The **Chart
+Freshness** workflow is their monthly check instead:
+`scripts/check-chart-versions.py` compares each chart with its `HelmRepository`
+(HTTP `index.yaml` or OCI tags) and Flux with its latest release, writes a table
+to the run summary, and fails when anything is behind. Bump the chart in its
+`HelmRelease`, or, when a version is deliberately kept, add it to the script's
+`HELD` table with the issue that holds it. A hold names the exact pinned version,
+so it lapses as soon as that pin changes.
+
 Reviewers, labels, and assignees can be configured for your deployment
 repository. Dependency updates arrive as ordinary pull requests for review.
 
