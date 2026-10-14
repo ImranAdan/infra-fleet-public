@@ -337,6 +337,43 @@ Response:
 
 ---
 
+### Integration Pattern Endpoints (NATS JetStream)
+
+When `NATS_URL` points at a JetStream-enabled NATS server, load-harness runs
+five Enterprise Integration Patterns. Without it, every `/api/eip/*` route
+answers `503`, and the rest of the app is unchanged. The routes need the API
+key like other `/api` routes.
+
+All pattern state lives in the broker: streams, durable consumers and KV
+buckets, never process memory. The HPA runs several pods, and any pod may
+consume a given message. `GET /api/eip/status` reads stream, consumer and KV
+state back, so it is the broker's own account of what happened.
+
+| Pattern | Endpoint | How it works |
+|---|---|---|
+| Work queue + Dead Letter Channel | `POST /api/eip/work` `{"count": 5, "poison": 2}` | Work-queue stream `EIP_WORK` with competing consumers. A poison job is retried, and on its 3rd delivery it is copied to `eip.dlq` and terminated. |
+| Publish-Subscribe Channel | `POST /api/eip/events` `{"type": "created"}` | Each durable subscriber (`audit`, `notify`) receives every event on `eip.events.>`. |
+| Idempotent Receiver | `POST /api/eip/payments` `{"payment_id": "p1", "amount": 10}` | The broker drops a repeated `Nats-Msg-Id` within 2 minutes (`broker_duplicate: true`). The ledger records each payment id with KV `create()`, so a message with a new id for the same payment is still applied once (`ledger_total`). |
+| Content-Based Router | `POST /api/eip/orders` `{"orders": [{"id": "o1", "priority": "high"}]}` | Orders on `eip.orders.in` move to `eip.orders.priority` or `eip.orders.standard`. |
+| Splitter / Aggregator | `POST /api/eip/batch` `{"items": [1, 2, 3, 4]}`, then `GET /api/eip/batch/<correlation_id>` | The batch is split into items and each is squared. Parts are aggregated by correlation id with KV compare-and-set, so aggregators on several pods never lose a part. On completion, one result is published to `eip.batch.result.<id>` (`published_result`). |
+
+Inputs are validated: ids are 1–64 of `[A-Za-z0-9_-]`, at most 100 messages
+per call, and integers within ±1,000,000. `eip_messages_total{pattern,outcome}`
+counts what each pattern did.
+
+Try it locally:
+
+```bash
+nats-server -js &                                  # https://github.com/nats-io/nats-server/releases
+NATS_URL=nats://127.0.0.1:4222 PYTHONPATH=src flask --app load_harness.app:create_app run
+curl -s -X POST localhost:5000/api/eip/work -H 'Content-Type: application/json' -d '{"count": 5, "poison": 2}'
+curl -s localhost:5000/api/eip/status
+```
+
+`tests/test_messaging.py` drives each pattern through this API against a
+real `nats-server -js`, which CI pins. Set `NATS_SERVER` to run it locally;
+without it the module skips, unless `REQUIRE_NATS=1`.
+
 ## Parameter Limits
 
 | Parameter | Min | Max | Default |
@@ -506,6 +543,8 @@ applications/load-harness/
 │   ├── wsgi.py                   # WSGI entrypoint (Gunicorn)
 │   ├── constants.py              # Centralized configuration & limits
 │   ├── load_harness_service.py   # API route handlers
+│   ├── messaging.py              # Integration patterns on NATS JetStream
+│   ├── eip_routes.py             # /api/eip/* drivers for those patterns
 │   ├── services/                 # Service layer
 │   │   ├── job_manager.py        # Thread-safe job lifecycle management
 │   │   ├── memory_budget.py      # Pod-wide memory reservations
@@ -539,6 +578,8 @@ applications/load-harness/
 │   ├── conftest.py               # Shared pytest fixtures
 │   ├── test_app.py               # API endpoint tests
 │   ├── test_deployment_config.py # Profile-independent config tests
+│   ├── test_eip_unconfigured.py  # /api/eip/* without a broker
+│   ├── test_messaging.py         # Integration patterns on a real nats-server
 │   ├── test_regressions.py       # Regression tests
 │   ├── test_security_headers.py  # Security header tests
 │   └── test_services.py          # Service layer tests
