@@ -333,7 +333,7 @@ def test_vendored_htmx_matches_package_json(client):
 
 
 def test_vendored_htmx_is_the_published_file(client):
-    """Bytes equal htmx.org 1.9.10's dist/htmx.min.js (the CDN's former SRI hash)."""
+    """Bytes equal htmx.org 2.0.11's dist/htmx.min.js, as served by jsdelivr."""
     body = client.get("/static/vendor/htmx.min.js").get_data()
     digest = base64.b64encode(hashlib.sha384(body).digest()).decode()
-    assert digest == "D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"
+    assert digest == "2OatzQy1H+Zd/IIrjr1TcuDGqLXeHhbooAyJY1KdQMKnr4LZ22k31GBLdYKHmVjg"
