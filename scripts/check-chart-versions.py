@@ -50,6 +50,11 @@ def status(pinned, latest):
     return "behind " + ("major" if have[0] < want[0] else "minor" if have[1] < want[1] else "patch")
 
 
+def fails(state, held):
+    """A hold excuses being behind, never a failed lookup."""
+    return state != "current" and not (held and state.startswith("behind"))
+
+
 def fetch(url, headers=None):
     request = urllib.request.Request(url, headers={**HEADERS, **(headers or {})})
     with urllib.request.urlopen(request, timeout=60) as response:
@@ -131,9 +136,9 @@ def main():
     for name, path, pinned, latest in rows():
         state = status(pinned, latest)
         held = HELD.get((name, pinned))
+        stale += fails(state, held)
         if held and state.startswith("behind"):
             state = f"{state}, held ({held})"
-        stale += state not in ("current",) and not held
         table.append(f"| {name} | {pinned} | {latest} | {state} | `{path}` |")
     print("### Helm chart and Flux versions\n")
     print("\n".join(table))
@@ -151,6 +156,8 @@ def self_test():
     assert status("3.13.0", "3.14.0") == "behind minor"
     assert status("1.45.0", "1.45.0") == "current"
     assert status("1.0.0", "lookup failed: HTTP Error 403") == "unknown"
+    assert not fails("current", None) and fails("behind patch", None)
+    assert not fails("behind major", "#197") and fails("unknown", "#197")
     print("self-test passed")
     return 0
 
