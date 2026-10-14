@@ -21,7 +21,9 @@ from prometheus_flask_exporter.multiprocess import GunicornInternalPrometheusMet
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from load_harness.dashboard import dashboard
+from load_harness.eip_routes import eip
 from load_harness.load_harness_service import LoadHarnessService
+from load_harness.messaging import Messaging
 from load_harness.middleware import init_auth, init_chaos, init_security_headers
 from load_harness.swagger_config import init_swagger
 
@@ -135,6 +137,12 @@ def create_app(config_override: dict | None = None):
 
     # Register dashboard blueprint
     app.register_blueprint(dashboard)
+
+    # Integration patterns run only when the platform provides a broker.
+    nats_url = (config_override or {}).get("NATS_URL") or os.getenv("NATS_URL")
+    if nats_url:
+        app.extensions["eip"] = Messaging(nats_url)
+    app.register_blueprint(eip)
 
     return app
 
