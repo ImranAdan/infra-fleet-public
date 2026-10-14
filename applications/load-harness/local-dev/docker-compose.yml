@@ -63,9 +63,9 @@ services:
   # Grafana - visualization dashboards
   # Access at: http://localhost:3000 (login: admin/admin)
   # Dashboard auto-imported via setup script
-  # Note: Pinned to 11.4.0 to match cluster version
+  # Note: Pinned to 13.2.3 to match the cluster (kube-prometheus-stack 92.3.0)
   grafana:
-    image: grafana/grafana:11.4.0@sha256:d8ea37798ccc41061a62ab080f2676dda6bf7815558499f901bdb0f533a456fb
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
     ports:
       - "3000:3000"
     environment:

@@ -8,7 +8,7 @@ describes whichever application the fleet runs (see the
 
 ## Overview
 
-**kube-prometheus-stack** (chart 67.4.0) provides Prometheus, Grafana,
+**kube-prometheus-stack** (chart 92.3.0: Grafana 13.2.3, Prometheus Operator v0.94.1) provides Prometheus, Grafana,
 kube-state-metrics and node-exporter. On top of it the platform adds:
 
 | Signal | Source | Needs anything from the app? |
@@ -67,7 +67,7 @@ so their JSON must not contain `${...}`.
 | Prometheus | 2 days retention, 1 GB cap, 15 s scrape, 100m/256Mi requests, 500m/512Mi limits |
 | Grafana | No persistence, 50m/128Mi requests, 200m/256Mi limits |
 | Discovery | Every `PodMonitor` and `ServiceMonitor` in every namespace |
-| Advisor data source | Infinity plugin 3.7.1 (pinned; the newest supporting Grafana 11.4), allowed to call only `https://raw.githubusercontent.com` |
+| Advisor data source | Infinity plugin 4.1.1 (pinned; supports Grafana 13.2.3), allowed to call only `https://raw.githubusercontent.com` |
 | Disabled | Alertmanager (nothing pages on an ephemeral stack), operator admission webhooks (known timeouts) |
 
 ## Declared intent next to live signals

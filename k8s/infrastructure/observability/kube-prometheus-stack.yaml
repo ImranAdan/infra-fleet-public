@@ -37,7 +37,7 @@ spec:
   chart:
     spec:
       chart: kube-prometheus-stack
-      version: 67.4.0
+      version: 92.3.0
       sourceRef:
         kind: HelmRepository
         name: prometheus-community
@@ -107,9 +107,9 @@ spec:
 
       # The Fleet Application dashboard shows declared-intent coverage from the
       # advisor's latest approved report, read as JSON by the Infinity data
-      # source. Pinned; 3.7.1 is the newest release supporting Grafana 11.4.
+      # source. Pinned; 4.1.1 supports the chart's Grafana 13.2.3 (>=12.2.5).
       plugins:
-        - yesoreyeram-infinity-datasource 3.7.1
+        - yesoreyeram-infinity-datasource 4.1.1
       additionalDataSources:
         - name: Infra Fleet Advisor
           uid: fleet-advisor
