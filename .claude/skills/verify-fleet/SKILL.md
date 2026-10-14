@@ -49,6 +49,14 @@ failure met in practice:
   pods churn under you. Wait for `Initialized`, `Succeeded` or `Failed`.
 - Node CPU over 70%: latency results will mislead. Once, Kyverno's reports
   controller looped and added hundreds of milliseconds to every request.
+- CPU pressure on the node at 50% or more, or the Mac on battery or in Low
+  Power Mode. `kubectl top` reads the node against its own capacity, so it
+  showed 9% while a throttled host made probes time out: the application
+  control plane, metrics-server and the cert-manager webhook restarted
+  together, and `./fleet test` failed in a way unrelated to the change.
+- A stopped kind node (after `docker stop` or Docker Desktop quitting):
+  `./fleet up` cannot revive it, so `docker start` it and the two helpers
+  first.
 
 ## Drive
 
