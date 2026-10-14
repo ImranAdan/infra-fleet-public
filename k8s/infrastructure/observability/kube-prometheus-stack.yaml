@@ -105,6 +105,16 @@ spec:
           cpu: "1"
           memory: 256Mi
 
+      # Grafana 13 migrates its storage on first start, which took over three
+      # minutes on a busy local node, past the liveness window (60s + 10 x 10s).
+      # Liveness starts only once this passes; up to 10 minutes to come up.
+      startupProbe:
+        httpGet:
+          path: /api/health
+          port: grafana
+        periodSeconds: 10
+        failureThreshold: 60
+
       # Admin credentials are created by rebuild-stack.yml and never stored in Git.
 
       # The Fleet Application dashboard shows declared-intent coverage from the
