@@ -1,0 +1,85 @@
+---
+# NATS JetStream - the platform's message broker
+#
+# Applications reach it at nats://nats.messaging.svc:4222 (see
+# docs/MESSAGING.md). One server with JetStream file storage on an emptyDir:
+# streams survive a broker container restart but not a pod reschedule, the
+# same ephemeral stance as Prometheus here. Apps declare their own streams and
+# consumers at runtime, so the platform names no application.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nats
+  namespace: messaging
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: nats
+      version: 2.15.1
+      sourceRef:
+        kind: HelmRepository
+        name: nats
+        namespace: flux-system
+      interval: 1h
+  # The PodMonitor needs the Prometheus Operator CRDs.
+  dependsOn:
+    - name: kube-prometheus-stack
+      namespace: observability
+  values:
+    config:
+      cluster:
+        enabled: false
+      jetstream:
+        enabled: true
+        fileStore:
+          enabled: true
+          dir: /data
+          maxSize: 256Mi
+          pvc:
+            enabled: false
+        memoryStore:
+          enabled: false
+    container:
+      patch:
+        - {op: add, path: /volumeMounts/-, value: {name: jetstream, mountPath: /data}}
+      image:
+        digest: sha256:2ae57dfba3063d5e25fecb75256118c0882a1a2d2cf7d0fba17a7c701df956f6
+      merge:
+        resources:
+          requests: {cpu: 20m, memory: 32Mi}
+          limits: {cpu: 500m, memory: 256Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+    podTemplate:
+      patch:
+        - {op: add, path: /spec/volumes/-, value: {name: jetstream, emptyDir: {sizeLimit: 512Mi}}}
+      merge:
+        spec:
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: {type: RuntimeDefault}
+    reloader:
+      enabled: false
+    natsBox:
+      enabled: false
+    promExporter:
+      enabled: true
+      image:
+        digest: sha256:c623b608e148e31e1c1c878673a197f1828e58ce90de4f01d22f1baa84c8fee9
+      merge:
+        resources:
+          requests: {cpu: 5m, memory: 16Mi}
+          limits: {cpu: 100m, memory: 64Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+      podMonitor:
+        enabled: true
