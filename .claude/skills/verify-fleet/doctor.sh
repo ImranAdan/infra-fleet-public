@@ -19,7 +19,7 @@ prom() {
 
 docker info >/dev/null 2>&1 || { bad 'Docker is not reachable'; exit 1; }
 docker ps --format '{{.Names}}' | grep -qx infra-fleet-local-control-plane ||
-  { bad 'kind node infra-fleet-local-control-plane is not running (./fleet up --profile local)'; exit 1; }
+  { bad 'kind node infra-fleet-local-control-plane is not running (if stopped: docker start it and the two helpers, then ./fleet up --profile local)'; exit 1; }
 [ -s "$KUBECONFIG" ] || { bad "no fleet kubeconfig at $KUBECONFIG"; exit 1; }
 k get nodes >/dev/null 2>&1 || { bad 'API server unreachable with the fleet kubeconfig'; exit 1; }
 ok "cluster reachable through $KUBECONFIG (never the default kubeconfig)"
@@ -73,6 +73,22 @@ cpu=$(k top node --no-headers 2>/dev/null | awk '{ gsub("%", "", $3); print $3 }
 if [ -z "$cpu" ]; then warn 'node CPU unknown (metrics-server not ready)'
 elif [ "$cpu" -ge 70 ]; then warn "node CPU at ${cpu}%: latency tests will mislead (kubectl top pods -A --sort-by=cpu)"
 else ok "node CPU at ${cpu}%"; fi
+
+# kubectl top measures the node against its own capacity, so it reads low while
+# the host starves the whole VM. Pressure counts time runnable tasks wait.
+pressure=$(docker exec infra-fleet-local-control-plane cat /proc/pressure/cpu 2>/dev/null |
+  awk '$1 == "some" { split($3, a, "="); print int(a[2]) }')
+if [ -z "$pressure" ]; then warn 'node CPU pressure unknown (/proc/pressure/cpu unreadable)'
+elif [ "$pressure" -ge 50 ]; then warn "node CPU pressure at ${pressure}% (avg60): tasks wait for CPU, so probes time out and tests will mislead"
+else ok "node CPU pressure at ${pressure}%"; fi
+
+if command -v pmset >/dev/null 2>&1; then
+  if pmset -g | awk '$1 == "lowpowermode" && $2 == 1 { on = 1 } END { exit !on }'; then
+    warn 'macOS Low Power Mode is on: the host throttles the cluster, so probes time out and canaries miss their windows'
+  elif pmset -g batt | grep -q "'Battery Power'"; then
+    warn 'host on battery: a sleep or a flat battery interrupts long drives'
+  else ok 'host on AC power with Low Power Mode off'; fi
+fi
 
 if prom 'up' >/dev/null 2>&1; then
   targets=$(prom 'count(up==1)' | sed -n 's/.*"value":\[[^,]*,"\([0-9]*\)"\].*/\1/p')
