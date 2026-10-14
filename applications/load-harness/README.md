@@ -464,6 +464,13 @@ it with the bump).
 6.x, which has a CPU-exhaustion advisory, and the built CSS is byte-identical
 either way. Drop the override when moving to Tailwind 4.
 
+`npm audit` reports `braces` ≤3.0.3 (GHSA-vfj7-8cjw-p6xm, stack exhaustion on
+deeply nested patterns), pulled in by Tailwind 3 through `chokidar` and
+`micromatch`. No patched release exists, and nothing overrides it. It is
+accepted because it is unreachable: it runs only in the dev-time Tailwind CLI,
+on glob patterns from this repository's `tailwind.config.js`, and the image
+contains no Node. Tailwind 4 drops it; revisit then.
+
 Load Harness CI rebuilds the CSS and fails if `app.css` differs from the
 committed file, so a missed rebuild (including after a Dependabot
 `tailwindcss` bump) cannot merge.
