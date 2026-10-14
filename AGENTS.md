@@ -197,9 +197,24 @@ post `D1:`-style answers yourself: only the owner's count.
 
 ## Shared cluster
 
-The local cluster is shared by everyone working in this checkout. Run
-`.claude/skills/verify-fleet/doctor.sh` before driving it, and do not deploy
-to it, test on it or tear it down while another agent is using it.
+The local cluster is a shared mutable resource with two lock records. Fleet
+issue [`#175`](https://github.com/ImranAdan/infra-fleet-public/issues/175) is
+the global record across terminals, sessions and machines. The atomic local
+mutex is `<git-common-dir>/fleet/locks/cluster.lock`, where the common directory
+comes from `git rev-parse --path-format=absolute --git-common-dir`. Every Fleet
+worktree resolves the same file.
+
+Create the parent directory and acquire the file with shell `noclobber`; record
+`owner`, UTC `since`, `purpose` and the #175 URL. Post `LOCKED cluster` with the
+same details on #175, re-read the issue for an earlier unreleased contender,
+and drive the cluster only when both records name you. Missing, stale or
+conflicting state fails closed. On completion, post `released cluster`, confirm
+the file still names you, and remove it. Advisor work must resolve this Fleet
+lock rather than create a separate Advisor-local mutex.
+
+After acquiring both records, run `.claude/skills/verify-fleet/doctor.sh`
+before driving the cluster. Never deploy to it, test on it or tear it down while
+another agent owns either record.
 
 ## Conventions
 
