@@ -46,7 +46,7 @@ local_prerequisites() {
 # an unsupported client halfway through a cluster build.
 FLEET_MIN_KIND=0.31.0
 FLEET_MIN_KUBECTL=1.35.0
-FLEET_MIN_FLUX=2.7.5
+FLEET_MIN_FLUX=2.9.6
 
 # Dotted-version comparison. sort -V is absent from some userlands this runs in,
 # and these three tools only ever report MAJOR.MINOR.PATCH.
@@ -576,7 +576,7 @@ local_up() {
   local_start_services
   local_build_image
   local_configuration
-  fctl install --version=v2.7.5 --components=source-controller,kustomize-controller,helm-controller
+  fctl install --version=v2.9.6 --components=source-controller,kustomize-controller,helm-controller
   for controller in source-controller kustomize-controller helm-controller; do
     kctl rollout status deployment/"$controller" -n flux-system --timeout=5m
   done
