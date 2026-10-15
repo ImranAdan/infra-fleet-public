@@ -67,7 +67,7 @@ See [Local Kubernetes](docs/LOCAL-KUBERNETES.md) for the full operating guide.
 | GitOps | Flux reconciles a committed revision and repairs drift |
 | Applications | A contract supplies the name, image, port, routes, health/load paths, runtime values, and optional secrets; Load Harness, podinfo, and Fleet Runner are included |
 | Delivery | Envoy Gateway and Flagger provide HTTPS routing, metric-gated canaries, promotion, and rollback |
-| Guardrails | Kyverno admission, namespace isolation, app-specific NetworkPolicy, workload hardening, and exact-head intent and merge gates |
+| Guardrails | Kyverno admission, Pod Security `restricted` on `applications`, namespace isolation, app-specific NetworkPolicy, workload hardening, and exact-head intent and merge gates |
 | Messaging | NATS JetStream supplies a shared application broker, with ingress restricted to the application and monitoring namespaces |
 | Observability | Prometheus, Grafana, gateway and workload signals, delivery events, and Git-provisioned dashboards |
 | Advice | Infra Fleet Advisor evaluates merged revisions against declared intent and turns eligible recommendations into traceable Fleet work |
