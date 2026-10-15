@@ -155,8 +155,14 @@ spec:
 pods over the cluster Service using HTTP. NetworkPolicy limits the permitted
 paths but does not encrypt traffic.
 
+The platform message broker has the same gap and a wider one: NATS on 4222
+is plaintext and has no client authentication, so its effective boundary is
+namespace ingress (`k8s/infrastructure/messaging/networkpolicy.yaml`). Every
+pod in `applications` can read and write every subject, stream and bucket;
+subject prefixes are a convention, not tenant isolation (`docs/MESSAGING.md`).
+
 **Status:** Open architecture gap. Closing it requires authenticated service
-TLS or a mesh workload identity. Until then, the template must not describe
+TLS or a mesh workload identity, and NATS accounts with TLS for the broker. Until then, the template must not describe
 east-west requests as confidential merely because a NetworkPolicy is present.
 
 ---
