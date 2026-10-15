@@ -69,6 +69,9 @@ flowchart LR
 
 Locally, Flux reads a committed revision from a read-only local Git server, so
 uncommitted edits never deploy. On AWS it reads GitHub. Flux repairs drift back to what Git declares.
+Every platform HelmRelease sets a timeout and retries a failed install or
+upgrade, rolling an upgrade back first, so a bad chart version recovers without
+an operator.
 See [GitOps setup](GITOPS-SETUP.md).
 
 ## Application contract
