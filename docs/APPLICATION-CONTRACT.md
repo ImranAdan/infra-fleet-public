@@ -70,6 +70,9 @@ The contract values:
   kube-state-metrics, and request rate, errors and latency from the gateway.
 - **Admission.** Kyverno enforces images from the profile's registry, no
   `latest` tags and rollout capacity.
+- **Messaging.** A NATS JetStream broker at `nats://nats.messaging.svc:4222`,
+  for apps that set `NATS_URL` ([MESSAGING.md](MESSAGING.md)). Apps declare
+  their own streams; none is required.
 - **Variables.** Flux substitutes `${APP_*}`, `${ENVIRONMENT}` (`kind` or
   `staging`), `${PUBLIC_SCHEME}` (`http` or `https`), `${APP_HOSTNAME}` and
   `${RUNTIME_CONFIG_REVISION}` into the app's manifests. Kustomize drops the

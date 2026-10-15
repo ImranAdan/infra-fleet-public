@@ -5,4 +5,5 @@ resources:
   - eks-charts.yaml
   - flagger
   - jetstack
+  - nats
   - prometheus-community

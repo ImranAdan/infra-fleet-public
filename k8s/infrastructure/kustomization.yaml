@@ -12,3 +12,4 @@ resources:
   - flagger
   - flagger-loadtester
   - flux-image-automation
+  - messaging

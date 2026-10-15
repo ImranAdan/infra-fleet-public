@@ -70,6 +70,9 @@ spec:
         # http or https; the app marks session cookies secure only for https.
         - name: PUBLIC_SCHEME
           value: "${PUBLIC_SCHEME}"
+        # The platform broker (docs/MESSAGING.md); enables /api/eip/*.
+        - name: NATS_URL
+          value: "nats://nats.messaging.svc:4222"
         # APP_VERSION is baked into the Docker image at build time (--build-arg)
         - name: PORT
           value: "5000"

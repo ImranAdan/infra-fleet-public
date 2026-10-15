@@ -53,6 +53,7 @@ progressive delivery, request paths, observability and guardrails.
 | Flux | v2.9.6 local and AWS | GitOps operator |
 | Flagger | 1.45.0 | Progressive delivery |
 | Envoy Gateway | 1.9.2 | Gateway API routing (HTTPS only) + canary traffic, both profiles |
+| NATS JetStream | 2.15.1 | Message broker for apps ([Messaging](MESSAGING.md)) |
 | cert-manager | v1.21.2 | TLS certificates (local CA locally, Let's Encrypt on AWS) |
 | Prometheus | kube-prometheus-stack | Metrics collection |
 | Grafana | kube-prometheus-stack | Dashboards |
@@ -86,6 +87,7 @@ the stack itself is destroyed only manually. Review current AWS pricing first.
 | Document | Description |
 |----------|-------------|
 | [Monitoring Setup](MONITORING-SETUP.md) | Gateway and container signals, dashboards provisioned from Git |
+| [Messaging](MESSAGING.md) | NATS JetStream broker and the integration patterns load-harness demonstrates |
 | [Application Contract](APPLICATION-CONTRACT.md) | What an app brings, what the platform provides, and how to swap it |
 | [Application Control Plane](APPLICATION-CONTROL-PLANE.md) | Launch and stop contracted apps locally; trust and failure boundaries |
 | [DORA Metrics](DORA-METRICS.md) | Engineering metrics collection |
