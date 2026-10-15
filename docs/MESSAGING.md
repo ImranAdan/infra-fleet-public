@@ -52,8 +52,11 @@ twice.
 
 Set `NATS_URL=nats://nats.messaging.svc:4222` in the app's Deployment. Egress
 from `applications` is already open (`k8s/applications/platform/networkpolicy.yaml`).
-Use any NATS client with JetStream, and keep subject and stream names prefixed
-by the app, so two contracted apps never share a stream by accident.
+Use any NATS client with JetStream. Declare `APP_MESSAGING_PREFIX` in the app's
+`fleet-app.yaml` and start every subject, stream and bucket name with it, so two
+contracted apps never share a stream by accident. load-harness declares `eip`
+(`eip.work`, `EIP_DLQ`, `eip_ledger`). The advisor's R-004 checks that every app
+setting `NATS_URL` declares one.
 
 **The prefix is a naming convention, not isolation.** The broker has no client
 authentication or accounts, and port 4222 is plaintext inside the cluster. Its
