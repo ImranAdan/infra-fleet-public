@@ -4,8 +4,23 @@ metadata:
   name: fleet-test-bad-registry-sidecar
   namespace: applications
 spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: app
       image: fleet-local-registry:5000/load-harness:git-fixture
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+        readOnlyRootFilesystem: true
     - name: unapproved-sidecar
       image: ghcr.io/example/unapproved:v1.0.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+        readOnlyRootFilesystem: true

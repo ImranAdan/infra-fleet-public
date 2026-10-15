@@ -285,17 +285,37 @@ test_local() {
   fctl reconcile kustomization applications --timeout=5m
   [ "$(kctl get deployment "$APP_NAME" -n applications -o jsonpath='{.metadata.labels.managed-by}')" = flux ]
 
+  local fixture marker
   echo 'Checking Kyverno rejects unsafe rollout and registry requests.'
   for fixture in bad-rollout bad-registry bad-registry-sidecar bad-latest-sidecar; do
     if kctl apply --dry-run=server -f "$fleet_root/tests/profiles/admission/$fixture.yaml" > "$FLEET_STATE/admission.log" 2>&1; then
       fail "Kyverno accepted $fixture."; return 1
     fi
     case "$fixture" in
-      bad-rollout) grep -q require-rollout-capacity "$FLEET_STATE/admission.log" ;;
-      bad-registry|bad-registry-sidecar) grep -q require-local-images "$FLEET_STATE/admission.log" ;;
-      bad-latest-sidecar) grep -q block-latest-tag "$FLEET_STATE/admission.log" ;;
+      bad-rollout) marker=require-rollout-capacity ;;
+      bad-registry|bad-registry-sidecar) marker=require-local-images ;;
+      bad-latest-sidecar) marker=block-latest-tag ;;
     esac
+    if ! grep -q "$marker" "$FLEET_STATE/admission.log"; then
+      cat "$FLEET_STATE/admission.log" >&2
+      fail "Admission rejected $fixture without naming $marker."; return 1
+    fi
   done
+
+  local psa_level
+  psa_level=$(kctl get namespace applications -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}')
+  if [ "$psa_level" = restricted ]; then
+    echo 'Checking Pod Security rejects an application that violates restricted.'
+    if kctl apply --dry-run=server \
+      -f "$fleet_root/tests/profiles/admission/bad-pod-security.yaml" \
+      > "$FLEET_STATE/admission.log" 2>&1; then
+      fail 'Pod Security accepted bad-pod-security.'; return 1
+    fi
+    if ! grep -q 'violates PodSecurity "restricted' "$FLEET_STATE/admission.log"; then
+      cat "$FLEET_STATE/admission.log" >&2
+      fail 'Admission rejected bad-pod-security without naming PodSecurity restricted.'; return 1
+    fi
+  fi
 
   echo 'Checking application monitoring and network isolation.'
   # shellcheck disable=SC2119

@@ -4,6 +4,16 @@ metadata:
   name: fleet-test-bad-registry
   namespace: applications
 spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: app
       image: ghcr.io/example/unapproved:v1.0.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+        readOnlyRootFilesystem: true
