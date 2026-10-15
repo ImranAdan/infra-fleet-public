@@ -93,7 +93,7 @@ jobs:
           echo "head=$head" >> "$GITHUB_OUTPUT"
 
       - name: Compare declared intent
-        uses: ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@631c718263e38e07a64b9202411bce04b79b2cae
+        uses: ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@770a258a423c17ec4c3ca0cacb25b4c842eec6d0
         with:
           base-sha: ${{ steps.commits.outputs.base }}
           head-sha: ${{ steps.commits.outputs.head }}
