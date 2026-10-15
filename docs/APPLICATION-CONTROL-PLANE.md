@@ -97,6 +97,12 @@ launch objects was created, Stop removes the partial stack. `./fleet test
 --profile local` exercises the admission boundary, launch, Gateway access,
 removal, API isolation and the selected app's normal delivery tests.
 
+The control plane runs with a 100m CPU limit. Its probes allow 3 s per check,
+so a cold node under CPU pressure slows it down rather than restarting it.
+If `kubectl exec` reports `container not found ("control-plane")` during a
+launch, run `.claude/skills/verify-fleet/doctor.sh` and check its CPU pressure
+and Low Power Mode warnings before trusting the result.
+
 For diagnosis:
 
 ```bash
