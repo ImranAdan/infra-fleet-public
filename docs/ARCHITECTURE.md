@@ -162,6 +162,17 @@ flowchart LR
 Cloudflare only resolves the name; application traffic goes straight to the NLB.
 See [TLS and DNS](TLS-SSL-SETUP.md).
 
+Inside the cluster, apps may also use the platform's NATS JetStream broker in
+`messaging`. Only `applications` reaches it, on 4222; Prometheus scrapes its
+exporter. The connection is plaintext and unauthenticated, so every app shares
+one trust boundary. See [messaging](MESSAGING.md).
+
+```mermaid
+flowchart LR
+    Apps["Apps in applications"] -->|"nats:// 4222<br/>plaintext, no auth"| NATS[("NATS JetStream<br/>messaging")]
+    Prometheus[("Prometheus")] -->|exporter :7777| NATS
+```
+
 ## Observability
 
 The gateway and the kubelet describe any app; an app may add its own metrics,

@@ -18,7 +18,7 @@ app adds a channel.
 |---|---|
 | Broker | `nats` Helm chart 2.15.1 (`k8s/infrastructure/messaging/nats.yaml`), server image pinned by digest |
 | Durability | JetStream file storage (256 MiB) on an `emptyDir`: streams survive a container restart, not a pod reschedule, the same ephemeral stance as Prometheus here |
-| Isolation | NetworkPolicy admits only the `applications` namespace on 4222, and `observability` on the exporter port 7777 |
+| Isolation | a namespace-wide ingress default deny, plus a NetworkPolicy that admits only the `applications` namespace on 4222 and `observability` on the exporter port 7777 |
 | Hardening | non-root (UID 1000), read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, no service account token |
 | Metrics | `prometheus-nats-exporter` sidecar with a PodMonitor |
 | Freshness | the monthly Chart Freshness check (`docs/DEPENDABOT.md`) covers the chart |
@@ -55,13 +55,23 @@ from `applications` is already open (`k8s/applications/platform/networkpolicy.ya
 Use any NATS client with JetStream, and keep subject and stream names prefixed
 by the app, so two contracted apps never share a stream by accident.
 
+**The prefix is a naming convention, not isolation.** The broker has no client
+authentication or accounts, and port 4222 is plaintext inside the cluster. Its
+only boundary is namespace ingress: every pod in `applications` can publish to,
+consume from or delete any subject, stream or bucket. Apps that must not trust
+each other need NATS accounts or separate brokers
+([SECURITY-CONCERNS.md](SECURITY-CONCERNS.md), "Internal Service Transport").
+
 ## Verify it
 
 ```bash
 kubectl get pods -n messaging
+# The key stays in a shell variable; empty when auth is disabled (dev mode).
+API_KEY=$(kubectl get secret -n applications load-harness-api-key \
+  -o jsonpath='{.data.api-key}' 2>/dev/null | base64 -d)
 kubectl exec -n flux-system deploy/flagger-loadtester -- \
-  hey -n 1 -m POST -T application/json -d '{"count":5,"poison":2}' \
-  http://load-harness.applications:5000/api/eip/work   # add the API key header
+  hey -n 1 -m POST -T application/json -H "X-API-Key: ${API_KEY}" \
+  -d '{"count":5,"poison":2}' http://load-harness.applications:5000/api/eip/work
 ```
 
 `GET /api/eip/status` on load-harness then reports `dead_letter.messages: 2`

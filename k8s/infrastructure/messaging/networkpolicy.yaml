@@ -1,5 +1,16 @@
-# Only applications reach the broker; Prometheus scrapes the exporter.
+# Nothing in the namespace accepts ingress unless a policy below admits it,
+# so a new pod or a chart label change can never expose the broker.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-messaging
+  namespace: messaging
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
 ---
+# Only applications reach the broker; Prometheus scrapes the exporter.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
