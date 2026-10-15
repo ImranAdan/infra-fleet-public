@@ -110,6 +110,19 @@ updates:
         patterns:
           - "*"
 
+  # The shared Mandate decision engine. It has no runtime dependencies today;
+  # this entry keeps its build requirements under the same update policy.
+  - package-ecosystem: "pip"
+    directory: "/mandate"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+    groups:
+      mandate:
+        patterns:
+          - "*"
+
   # The local Git server image is pinned by digest; Dependabot refreshes the
   # base image. Its apk package pins track that base and must be bumped in the
   # same PR; the Template Contract workflow builds the image to catch a miss.
