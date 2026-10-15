@@ -1,43 +1,26 @@
 # Infra Fleet
 
-Infra Fleet is a Kubernetes platform template for running contract-defined applications
-through a consistent local or AWS staging lifecycle. It combines Flux GitOps, policy
-enforcement, progressive delivery, and observable workloads behind the `./fleet`
-command.
+Infra Fleet is a reusable Kubernetes platform template with one operating
+interface for local kind and AWS EKS staging environments. Applications plug
+into a small contract; the platform supplies GitOps reconciliation, routing,
+progressive delivery, policy enforcement, messaging, and observability.
 
 [Use this template](https://github.com/ImranAdan/infra-fleet-public/generate) ·
 [Documentation](docs/README.md) · [Configuration](CONFIGURATION.md) ·
 [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
 > [!IMPORTANT]
-> The AWS profile is a staging preview. Both profiles share one Envoy Gateway request
-> path that serves the app over HTTPS only; it is live-tested on the local profile but
-> has not completed an AWS apply, certificate issue and teardown cycle. Do not expose
-> the AWS profile as production infrastructure until it has.
+> The local profile is exercised end to end. The AWS profile is a staging
+> preview and has not completed a full account apply, certificate issuance,
+> canary, and teardown cycle. Treat it as an inspectable starting point until
+> that acceptance run is complete.
 
-## Scope
+## Start locally
 
-The repository provides:
-
-- a common lifecycle for local kind and AWS EKS environments;
-- Flux reconciliation from a committed Git revision;
-- a swappable application contract, with Load Harness, podinfo and a browser
-  platform game (Fleet Runner) as working examples;
-- Kyverno admission policies, network isolation, autoscaling, and Flagger canary
-  delivery;
-- Prometheus metrics and Grafana dashboards provisioned from Git; and
-- an integration contract for [Infra Fleet
-  Advisor](https://github.com/ImranAdan/infra-fleet-advisor-public).
-
-This is an inspectable staging implementation and an engineering template. Adopters
-remain responsible for their production requirements, account controls, availability
-targets, and operating model.
-
-## Quick start: local Kubernetes
-
-The local profile runs the platform on kind and does not require an AWS account. It
-supports Linux and macOS on amd64 or arm64. Before starting, install Docker, Git, curl,
-and OpenSSL, and allocate at least 8 GiB of memory to Docker.
+The local profile requires Docker, Git, curl, and OpenSSL on Linux or macOS
+(`amd64` or `arm64`). Allocate at least 8 GiB of memory to Docker. Setup installs
+the pinned kind, kubectl, and Flux CLIs into checkout-owned state; it does not
+change system packages.
 
 ```bash
 git clone https://github.com/ImranAdan/infra-fleet-public.git
@@ -48,74 +31,101 @@ cd infra-fleet-public
 ./fleet access --profile local --service dashboard
 ```
 
-Open <http://localhost:9000/> to see the selected app and launch either of the
-other included apps. Every running app opens at
-`http://<app-name>.localhost:9000/`. The `access` command keeps the port forward
-open until it is stopped. Use separate terminals for direct access and other services:
+Open <http://localhost:9000/>. The dashboard shows the selected application and
+can launch the other included applications from the same committed revision.
+Each launched application is isolated behind its own platform controls and
+returns to sleep after its idle window.
+
+Use another terminal for direct service access:
 
 ```bash
-./fleet access --profile local --service app         # selected app at http://localhost:8080
+./fleet access --profile local --service app         # http://localhost:8080
 ./fleet access --profile local --service prometheus  # http://localhost:9090
 ./fleet access --profile local --service grafana     # http://localhost:3000
-./fleet credentials --profile local                  # application and Grafana credentials
+./fleet credentials --profile local                  # app and Grafana credentials
 ```
 
-The local profile deploys a committed snapshot. After changing the repository, commit
-the change and reconcile that revision:
+Commit changes before reconciling them. The local Git source serves an exact,
+read-only snapshot of the selected commit to Flux.
 
 ```bash
 ./fleet sync --profile local
 ./fleet status --profile local
 ./fleet test --profile local
-```
-
-`sync` promotes running applications one at a time and returns only after each
-requested revision reaches its primary. A failed canary keeps the previous
-primary serving and makes the command fail.
-
-`test` exercises Flux drift repair, Kyverno admission, network isolation, an
-on-demand app launch and removal, monitoring, healthy canary promotion, and
-forced-failure rollback. Remove the local cluster when finished:
-
-```bash
 ./fleet down --profile local
 ```
 
-`setup`, `up`, and `down` are safe to repeat. Setup installs pinned command-line tools
-into checkout-owned state under `.git/fleet`; it does not modify system packages. See
-[Local Kubernetes](docs/LOCAL-KUBERNETES.md) and [Deployment
-profiles](docs/DEPLOYMENT-PROFILES.md) for the complete operating procedure.
+`test` proves drift repair, admission policy, network isolation, monitoring,
+on-demand application lifecycle, healthy canary promotion, and forced rollback.
+See [Local Kubernetes](docs/LOCAL-KUBERNETES.md) for the full operating guide.
 
-Routine same-repository pull requests opt into exact-head autonomous merge through
-the pull-request template. Advisor reports and registered mechanical fixes also
-advance without a maintainer click: each generated branch receives explicit
-read-only validation, then the existing intent and merge gates decide it. Policy,
-credentials, IAM, permanent infrastructure, migrations, releases, and merge
-authority still stop for an owner decision. See [Advisor integration](docs/ADVISOR-INTEGRATION.md).
+## Platform capabilities
 
-For application-only development, use the Load Harness Docker Compose environment:
+| Area | Platform contract |
+|---|---|
+| Lifecycle | `./fleet setup`, `up`, and `down` use the same interface for `local` and `aws-staging`; local also supports `sync`, `status`, `access`, `credentials`, and `test` |
+| GitOps | Flux reconciles a committed revision and repairs drift |
+| Applications | A contract supplies the name, image, port, routes, health/load paths, runtime values, and optional secrets; Load Harness, podinfo, and Fleet Runner are included |
+| Delivery | Envoy Gateway and Flagger provide HTTPS routing, metric-gated canaries, promotion, and rollback |
+| Guardrails | Kyverno admission, namespace isolation, app-specific NetworkPolicy, workload hardening, and exact-head intent and merge gates |
+| Messaging | NATS JetStream supplies a shared application broker, with ingress restricted to the application and monitoring namespaces |
+| Observability | Prometheus, Grafana, gateway and workload signals, delivery events, and Git-provisioned dashboards |
+| Advice | Infra Fleet Advisor evaluates merged revisions against declared intent and turns eligible recommendations into traceable Fleet work |
 
-```bash
-cd applications/load-harness/local-dev
-./dev.sh up-full
+The template is an engineering baseline for development and staging. Adopters
+remain responsible for production availability targets, account controls,
+capacity, data durability, and incident operations.
+
+## Architecture
+
+```mermaid
+flowchart TB
+    Engineer([Platform engineer]) --> CLI["./fleet lifecycle facade"]
+    CLI --> Local["local profile<br/>kind + local registry"]
+    CLI --> AWS["aws-staging profile<br/>EKS + ECR"]
+
+    Git[(Fleet repository)] --> Flux["Flux<br/>exact committed revision"]
+    Local --> Flux
+    AWS --> Flux
+
+    Contracts["Application contracts<br/>selected + on demand"] --> Flux
+    Dashboard["Local application dashboard"] -->|bounded launch objects| Flux
+    Flux --> Apps["Contracted applications"]
+    Flux --> Platform["Shared platform layer"]
+
+    Platform --> Gateway["Envoy Gateway + Flagger"]
+    Platform --> Policy["Kyverno + network policy"]
+    Platform --> Signals["Prometheus + Grafana"]
+    Apps --> NATS[(NATS JetStream)]
+    Apps --> Gateway
+    NATS --> Signals
+    Gateway --> Signals
+
+    Advisor["Infra Fleet Advisor"] -.->|reviews merged revision| Git
+    Advisor -.->|approved report creates work| Issues["Fleet issues and gated PRs"]
+    Issues -.-> Git
 ```
 
-## Deployment profiles
+Git is the desired-state boundary. The profile decides how the cluster,
+registry, networking, and certificates are provided. The shared application
+and platform layers decide how a contracted workload is deployed, constrained,
+promoted, connected, and observed. The [architecture guide](docs/ARCHITECTURE.md)
+breaks these flows into smaller diagrams.
 
-Both profiles use the same application resources and delivery controls. Each profile
-owns its provisioning, routing, registry, and environment-specific policy.
+## Deployment profiles
 
 | Capability | `local` | `aws-staging` |
 |---|---|---|
 | Kubernetes | kind on the operator workstation | EKS in the configured AWS account |
-| Git source | read-only committed snapshot served locally | configured GitHub repository |
+| Git source | committed snapshot served on the local Docker network | configured GitHub repository |
 | Registry | loopback development registry | Amazon ECR |
-| Request path | Envoy Gateway over HTTPS in-cluster (local cert-manager CA); browser access over HTTP on loopback | Envoy Gateway over HTTPS behind an AWS NLB (Let's Encrypt) |
-| Observability | Prometheus and Grafana with ephemeral storage | Prometheus and Grafana in staging |
-| Intended use | development and platform acceptance | account-specific staging evaluation |
-| Lifecycle | direct local operations | reviewed GitHub Actions workflows |
+| Entry path | loopback access; Envoy HTTPS inside the cluster | Envoy HTTPS behind an AWS NLB |
+| Certificates | local cert-manager CA | Let's Encrypt |
+| Control plane | local multi-application dashboard | selected application only |
+| Lifecycle | direct `./fleet` operations | reviewed GitHub Actions workflows |
+| Evidence | live local acceptance | static validation until an adopter runs the AWS lifecycle |
 
-The facade exposes the same lifecycle for both targets:
+The common lifecycle is:
 
 ```bash
 ./fleet setup --profile PROFILE
@@ -123,61 +133,14 @@ The facade exposes the same lifecycle for both targets:
 ./fleet down --profile PROFILE
 ```
 
-AWS onboarding requires an AWS account, two HCP Terraform workspaces, GitHub repository
-administration access, and account-specific configuration. Start with [Configure a
-private fleet](CONFIGURATION.md). `setup --profile aws-staging` validates and plans;
-`setup --profile aws-staging --apply` creates the permanent foundation and configures
-the target repository.
+AWS onboarding requires an AWS account, two HCP Terraform workspaces, GitHub
+repository administration access, and account-specific configuration. Start
+with [Configure a private fleet](CONFIGURATION.md). AWS resources are billable;
+the staging stack is removed only by an explicit teardown.
 
-## Architecture
+## Applications and messaging
 
-```mermaid
-flowchart TB
-    Operator([Platform engineer]) --> CLI["Fleet lifecycle facade<br/>setup · up · sync · down"]
-    CLI --> Local["Local profile<br/>kind · local registry · Envoy Gateway"]
-    CLI --> AWS["AWS staging profile<br/>GitHub Actions · EKS · ECR"]
-
-    Repo[(Fleet Git repository)] --> FluxLocal[Flux]
-    Repo --> FluxAWS[Flux]
-    FluxLocal --> Local
-    FluxAWS --> AWS
-
-    Contract["Application contract<br/>name · image · port · paths"] --> Repo
-    Contract --> Control["Local application dashboard<br/>catalog · launch · stop"]
-    Control -->|bounded Flux objects| FluxLocal
-    Local --> Platform["Shared platform controls<br/>Kyverno · Flagger · HPA · network policy"]
-    AWS --> Platform
-    Platform --> App[Selected application]
-    App --> Signals["Prometheus · Grafana"]
-
-    Advisor[Infra Fleet Advisor] -. reads merged revision .-> Repo
-    Advisor -. evidence-gated report .-> Work[Reviewable Fleet issues]
-    Work -. registered patch or coding agent .-> Fix[Opted-in Fleet PR]
-    Fix --> Repo
-```
-
-Git is the desired-state boundary. Flux reconciles each cluster from the selected
-repository revision. The profile determines how the cluster is created and reached; the
-shared platform layer determines how the selected application is deployed, constrained,
-promoted, and observed.
-
-The advisor is separate from the runtime. It evaluates a merged Fleet revision against
-declared intent, opens an exact-head evidence-gated report, and publishes eligible
-findings after that report merges. Registered mechanical findings can become Fleet PRs;
-every fix still passes Fleet CI, the intent gate, and the merge gate. See [Advisor
-integration](docs/ADVISOR-INTEGRATION.md).
-
-The detailed architecture guide separates the profile, onboarding, GitOps, delivery,
-request, observability, and guardrail flows: [Architecture](docs/ARCHITECTURE.md).
-
-## Application contract
-
-The platform reads the selected application from `k8s/fleet-app/fleet-app.yaml`.
-Platform resources take the application name, image, port, health path, load path,
-runtime values, and optional fault switch from that contract.
-
-Load Harness is selected by default. To prove the platform boundary with the second
-included application:
+The selected contract is `k8s/fleet-app/fleet-app.yaml`. Change it with:
 
 ```bash
 scripts/select-app.sh podinfo
@@ -185,110 +148,88 @@ git diff
 git add k8s/fleet-app k8s/applications/kustomization.yaml
 git commit -m "chore: select podinfo"
 ./fleet sync --profile local
-./fleet test --profile local
 ```
 
-Each application supplies its source, contract, Deployment, Service, and any
-application-specific metrics or dashboards. The platform supplies routing, canary
-analysis, autoscaling, network policy, admission policy, and common workload signals.
-See [Application contract](docs/APPLICATION-CONTRACT.md) before adding an application.
-The local [application control plane](docs/APPLICATION-CONTROL-PLANE.md) can run
-other contracted apps beside the selected one without changing Git.
+An application supplies its source, contract, Deployment, Service, and optional
+metrics or dashboards. The platform derives its canary, autoscaling, routing,
+and network controls from the contract. Read the [application
+contract](docs/APPLICATION-CONTRACT.md) before adding an app, and the
+[application control plane](docs/APPLICATION-CONTROL-PLANE.md) before launching
+several locally.
+
+Applications can use the NATS JetStream service at
+`nats://nats.messaging.svc:4222`. The included Load Harness demonstrates work
+queues, dead-letter handling, publish-subscribe, idempotent consumption,
+content-based routing, and splitter/aggregator flows. The template uses one
+ephemeral, non-clustered broker and a shared application trust boundary; read
+[Messaging](docs/MESSAGING.md) before depending on it.
 
 ## Delivery and verification
 
-Verification is divided by cost and evidence level.
+Checks are split by cost so ordinary pull requests stay fast:
 
-| Layer | Trigger | Evidence |
+| Layer | Trigger | What it establishes |
 |---|---|---|
-| Pull request CI | path-scoped, with commit and intent checks on every PR | only the relevant application, workflow, Terraform, manifest, profile, schema and policy checks; no cluster provisioning |
-| Local Kubernetes deployment | on demand and weekly against `main` | real Flux reconciliation, admission, isolation, on-demand app lifecycle, monitoring, canary promotion, rollback, and teardown for every app |
-| AWS staging deployment | manual in a configured private copy | account-specific provisioning, image publication, EKS bootstrap, Flux reconciliation, rollout, and teardown |
+| Pull request CI | path-scoped | rendering, schemas, policy, application tests, workflows, Terraform, security scans, and declared intent for the affected paths |
+| Local Kubernetes acceptance | weekly or manual | real reconciliation, drift repair, admission, isolation, app launch/stop, signals, promotion, rollback, and teardown for every included app |
+| AWS staging | manual in a configured copy | account-specific provisioning, image publication, EKS bootstrap, reconciliation, rollout, and teardown |
 
-The Local Kubernetes workflow is the slower deployment proof, run weekly or on
-demand outside the pull-request feedback loop. It records the exact tested
-revision in the `local` GitHub Environment, creates one ephemeral cluster per
-application, runs the acceptance cycle, and tears each cluster down. To run it
-on any branch:
+Run the slower local proof on a branch when a change needs it:
 
 ```bash
 gh workflow run local-kubernetes.yml --ref YOUR_BRANCH
 ```
 
-See [GitHub Environments](docs/GITHUB-ENVIRONMENTS.md) for the deployment evidence model.
+Routine reversible PRs may merge through exact-head evidence. Policy, IAM,
+credentials, permanent infrastructure, migrations, releases, and merge
+authority remain explicit owner decisions. [Advisor
+integration](docs/ADVISOR-INTEGRATION.md) describes the full report, issue, and
+remediation path.
 
-Flagger evaluates canary traffic at the gateway. A healthy revision is promoted; a
-revision that breaches the configured success-rate or latency thresholds is rolled back.
-See [Progressive delivery](docs/PROGRESSIVE-DELIVERY.md) for the analysis sequence and
-[Canary deployments](docs/CANARY-DEPLOYMENTS.md) for configuration.
-
-## Repository layout
+## Repository map
 
 ```text
-applications/                  Application source, tests, images, and dashboards
-infrastructure/
-  permanent/                  AWS OIDC and ECR foundation
-  staging/                    Ephemeral EKS staging infrastructure
-k8s/
-  clusters/                   Flux roots for local and AWS staging
-  fleet-app/                  Selected application contract
-  applications/               Application manifests and shared platform controls
-  infrastructure/             Controllers, observability, and namespaces
-  profiles/                   Local and AWS staging composition
-  routing/                    Shared Envoy Gateway, HTTPS redirect and certificate
-  control-plane/              Local application dashboard and its launch policy
-platform/local/               kind cluster and read-only Git server for the local profile
-policies/                     Shared and profile-specific Kyverno policies
-scripts/                      Rendering, validation, selection, and onboarding tools
-ops/                          Operational verification scripts
-tests/profiles/               Profile and application-contract tests
-docs/                         Architecture and operating guides
-.github/workflows/             Validation, release, deployment, and teardown automation
+applications/           Contracted application source, tests and dashboards
+infrastructure/         Permanent and ephemeral AWS Terraform
+k8s/fleet-app/          Selected application contract
+k8s/applications/       Application manifests and shared platform controls
+k8s/infrastructure/     Flux-managed controllers, messaging and observability
+k8s/profiles/           Local and AWS staging composition
+k8s/routing/            Shared Envoy Gateway and certificates
+k8s/control-plane/      Local multi-application dashboard and launch policy
+platform/local/         kind cluster and local read-only Git source
+policies/               Shared and profile-specific Kyverno policies
+scripts/                Lifecycle, rendering, validation and onboarding tools
+ops/                    Operational verification
+tests/profiles/         Profile and application-contract tests
+docs/                   Operating guides and design records
+.github/workflows/      Validation, release and deployment automation
 ```
 
-## Cost optimization
-
-The local profile uses workstation resources. The AWS profile creates billable EKS,
-compute, networking, storage, load-balancing, and public IPv4 resources. Review current
-AWS pricing and configure an account budget before applying it.
-
-The staging stack is ephemeral and teardown is manual by design:
-
-```bash
-./fleet down --profile aws-staging
-```
-
-Teardown removes staging resources after an explicit target confirmation. It retains the
-permanent OIDC and ECR foundation. Spot workers, cluster-autoscaler and a weekday usage
-window that releases every worker overnight reduce cost, but do not make the AWS profile
-free. See [Cost
-optimization](docs/COST-OPTIMIZATION-GUIDE.md) for the resource model and controls.
-
-## Documentation
+## Guides
 
 | Task | Guide |
 |---|---|
-| Adopt the template for AWS staging | [Configuration](CONFIGURATION.md) |
-| Run and compare deployment targets | [Deployment profiles](docs/DEPLOYMENT-PROFILES.md) |
-| Understand system boundaries and flows | [Architecture](docs/ARCHITECTURE.md) |
+| Run locally or compare deployment targets | [Deployment profiles](docs/DEPLOYMENT-PROFILES.md) |
+| Configure an AWS staging copy | [Configuration](CONFIGURATION.md) |
+| Understand system boundaries | [Architecture](docs/ARCHITECTURE.md) |
 | Add or select an application | [Application contract](docs/APPLICATION-CONTRACT.md) |
-| Launch several local applications | [Application control plane](docs/APPLICATION-CONTROL-PLANE.md) |
-| Operate Flux reconciliation | [GitOps setup](docs/GITOPS-SETUP.md) |
+| Launch applications on demand | [Application control plane](docs/APPLICATION-CONTROL-PLANE.md) |
+| Use the shared broker | [Messaging](docs/MESSAGING.md) |
+| Operate GitOps reconciliation | [GitOps setup](docs/GITOPS-SETUP.md) |
 | Inspect metrics and dashboards | [Monitoring](docs/MONITORING-SETUP.md) |
-| Review delivery and rollback behavior | [Progressive delivery](docs/PROGRESSIVE-DELIVERY.md) |
+| Understand promotion and rollback | [Progressive delivery](docs/PROGRESSIVE-DELIVERY.md) |
 | Connect the recommendation workflow | [Advisor integration](docs/ADVISOR-INTEGRATION.md) |
-| Understand repository security policy | [Security](SECURITY.md) |
-| Prepare a contribution | [Contributing](CONTRIBUTING.md) |
 
-The [documentation index](docs/README.md) contains the complete set of operating guides
-and design decision records.
+The [documentation index](docs/README.md) lists every guide and design record.
+Security policy and disclosure instructions are in [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Changes should make the template easier to adopt, safer to operate, or clearer to
-verify. Pull requests must use Conventional Commits and include concrete verification
-evidence. See [Contributing](CONTRIBUTING.md).
+Changes should make the template easier to adopt, safer to operate, or easier
+to verify. Pull requests use Conventional Commits and include the commands and
+observed results that support their claims. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Infra Fleet is available under the [MIT License](LICENSE).
+[MIT](LICENSE)
