@@ -166,7 +166,8 @@ evidence that AWS resources were created or destroyed successfully.
 - `k8s/routing/`: the shared Gateway, HTTPS redirect and certificate.
 - `k8s/control-plane/`: the local application dashboard, its RBAC, launch
   admission policy and NetworkPolicy.
-- `k8s/profiles/aws-staging/`: AWS configuration adapter, networking and ECR policy.
+- `k8s/profiles/aws-staging/`: AWS configuration adapter, networking, ECR policy, and app
+  availability (HPA minimum of 2 plus a PodDisruptionBudget on the Flagger primary).
 - `k8s/clusters/`: distinct Flux roots; local cannot reconcile the AWS root.
 - `policies/`: common policies; `policies/aws/` supplies ECR restrictions.
 

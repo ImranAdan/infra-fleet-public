@@ -1,0 +1,18 @@
+# Keep one ${APP_NAME} pod through cluster-autoscaler scale-down and node
+# upgrades (advisor R-005). Flagger serves traffic from the generated
+# ${APP_NAME}-primary Deployment, whose pods carry app: ${APP_NAME}-primary,
+# so the budget selects those. With the HPA minimum of 2 below, a drain evicts
+# one pod at a time instead of the only one.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ${APP_NAME}-primary
+  namespace: applications
+  labels:
+    app: ${APP_NAME}
+    managed-by: flux
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ${APP_NAME}-primary
