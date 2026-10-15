@@ -4,8 +4,23 @@ metadata:
   name: fleet-test-bad-latest-sidecar
   namespace: applications
 spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: app
       image: fleet-local-registry:5000/load-harness:git-fixture
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+        readOnlyRootFilesystem: true
     - name: mutable-sidecar
       image: fleet-local-registry:5000/load-harness:latest
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+        readOnlyRootFilesystem: true

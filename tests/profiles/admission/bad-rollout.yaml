@@ -13,8 +13,18 @@ spec:
     metadata:
       labels: {app: fleet-test-bad-rollout}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: fleet-local-registry:5000/load-harness:git-fixture
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
           readinessProbe:
             httpGet: {path: /ready, port: 5000}
