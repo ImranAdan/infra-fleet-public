@@ -148,7 +148,7 @@ flux bootstrap github \
   --path=k8s/flux-system \
   --components=source-controller,kustomize-controller,helm-controller \
   --components-extra=image-reflector-controller,image-automation-controller \
-  --version=v2.7.3 \
+  --version=v2.9.6 \
   --token-auth
 ```
 

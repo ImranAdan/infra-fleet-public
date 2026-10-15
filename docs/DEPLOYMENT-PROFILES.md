@@ -15,7 +15,7 @@ are explicit profile resources under `k8s/profiles/` and `k8s/clusters/`.
 
 Requires Docker, Git, curl, OpenSSL and a supported Linux or macOS amd64/arm64
 workstation. `setup` installs checksum-verified kind 0.31.0, kubectl 1.35.0 and
-Flux CLI 2.7.5 into checkout-owned state under `.git/fleet/local/bin`; it does
+Flux CLI 2.9.6 into checkout-owned state under `.git/fleet/local/bin`; it does
 not change system packages. The pinned cluster is Kubernetes 1.35.0; allow
 Docker at least 8 GiB of memory. No AWS or GitHub write credentials are needed.
 Initial startup downloads controller images and Helm charts. The monitoring

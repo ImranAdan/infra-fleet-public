@@ -22,19 +22,19 @@ case "$operating_system/$architecture" in
   linux/amd64)
     kubectl_checksum=a2e984a18a0c063279d692533031c1eff93a262afcc0afdc517375432d060989
     kind_checksum=eb244cbafcc157dff60cf68693c14c9a75c4e6e6fedaf9cd71c58117cb93e3fa
-    flux_checksum=1e92141e8498289e4b27411385aeb18396053176cf297b0cb99abd6ca8293e75 ;;
+    flux_checksum=b4d22673e9246cbd628881f1a9ef3b090085dced291e42d804555cee8e8d42c5 ;;
   linux/arm64)
     kubectl_checksum=58f82f9fe796c375c5c4b8439850b0f3f4d401a52434052f2df46035a8789e25
     kind_checksum=8e1014e87c34901cc422a1445866835d1e666f2a61301c27e722bdeab5a1f7e4
-    flux_checksum=89d3ebb47ee5f7a0def33217e8dcb885e0bec41d01d0e23fc84e9aba0416c24e ;;
+    flux_checksum=6663c154755b732f43dc993d72321f71c2fc1ff0bcb94b2696e0a8638fa562b4 ;;
   darwin/amd64)
     kubectl_checksum=2447cb78911b10a667202b078eeb30541ec78d1280c3682921dc81607e148d96
     kind_checksum=a8b3cf77b2ad77aec5bf710d1a2589d9117576132af812885cad41e9dede4d4e
-    flux_checksum=2058b49ef38b5773b9aa87b3db83d68cbaf5082ecf908cbd8952a17f6af0e2e8 ;;
+    flux_checksum=c3c3532c8c6cf689ef7b93125b33dc170df84a9d5d036f578568bfdf88a2d7e6 ;;
   darwin/arm64)
     kubectl_checksum=cf699c56340dc775230fde4ef84237d27563ea6ef52164c7d078072b586c3918
     kind_checksum=88bf554fe9da6311c9f8c2d082613c002911a476f6b5090e9420b35d84e70c5c
-    flux_checksum=79faae964badc0b08f61ef6228f636bea99c6750537634855fa8b84f75b006d8 ;;
+    flux_checksum=7008a758da4b8d57c5845aad6552f256d4d23630c2b2de2ca8da362f9a48c126 ;;
 esac
 
 verify_checksum() {
@@ -78,9 +78,9 @@ if [ "$mode" = --local ]; then
   download_verified \
     "https://github.com/kubernetes-sigs/kind/releases/download/v0.31.0/kind-$operating_system-$architecture" \
     "$kind_checksum" "$tool_directory/kind"
-  flux_archive="$tool_directory/.flux_2.7.5_${operating_system}_${architecture}.tar.gz"
+  flux_archive="$tool_directory/.flux_2.9.6_${operating_system}_${architecture}.tar.gz"
   download_verified \
-    "https://github.com/fluxcd/flux2/releases/download/v2.7.5/flux_2.7.5_${operating_system}_${architecture}.tar.gz" \
+    "https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_${operating_system}_${architecture}.tar.gz" \
     "$flux_checksum" "$flux_archive"
   flux_extract=$(mktemp -d "$tool_directory/.flux.XXXXXX")
   trap 'rm -rf "$flux_extract"' EXIT

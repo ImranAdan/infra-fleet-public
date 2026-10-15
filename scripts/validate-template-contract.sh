@@ -77,6 +77,34 @@ if git grep -n -E "^[[:space:]]+version:[[:space:]]+['\"]?v?[0-9]+\\.x['\"]?" \
   failed=true
 fi
 
+# The generated AWS control plane is the canonical Flux version. Local setup,
+# the rebuild path and adopter-facing docs must move with it so profiles do not
+# silently install different controller APIs.
+flux_version=$(awk '/^# Flux Version: v/ {sub(/^v/, "", $4); print $4; exit}' \
+  k8s/flux-system/flux-system/gotk-components.yaml)
+if [ -z "$flux_version" ]; then
+  echo "The generated Flux manifest does not declare its version." >&2
+  failed=true
+else
+  while IFS='|' read -r file expected; do
+    if ! grep -Fq -- "$expected" "$file"; then
+      echo "$file is not aligned with Flux v$flux_version: missing $expected" >&2
+      failed=true
+    fi
+  done <<EOF
+scripts/fleet-profiles/local.sh|FLEET_MIN_FLUX=$flux_version
+scripts/fleet-profiles/local.sh|fctl install --version=v$flux_version
+scripts/install-profile-tools.sh|.flux_${flux_version}_
+scripts/install-profile-tools.sh|/download/v$flux_version/flux_${flux_version}_
+.github/workflows/rebuild-stack.yml|version: $flux_version
+.github/workflows/rebuild-stack.yml|--version=v$flux_version
+docs/DEPLOYMENT-PROFILES.md|Flux CLI $flux_version
+docs/README.md|Flux | v$flux_version local and AWS
+docs/TERRAFORM-CLOUD-EKS-DDR.md|--version=v$flux_version
+docs/SECURITY-CONCERNS.md|# v$flux_version
+EOF
+fi
+
 if ! jq -e 'length > 0 and all(.[]; test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' .release-please-manifest.json >/dev/null; then
   echo "Every released application needs a semantic version in the release manifest." >&2
   failed=true
