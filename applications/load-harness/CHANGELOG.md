@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.12.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.11.0...v1.12.0) (2026-10-15)
+
+
+### Features
+
+* **load-harness:** integration patterns on NATS JetStream ([0ae25c2](https://github.com/ImranAdan/infra-fleet-public/commit/0ae25c225b9c03055e36aa7bedfce8ba140b4609))
+* **load-harness:** integration patterns on NATS JetStream ([32062f9](https://github.com/ImranAdan/infra-fleet-public/commit/32062f998d333c4320648f138770955f5dc253fb)), closes [#211](https://github.com/ImranAdan/infra-fleet-public/issues/211)
+
+
+### Bug Fixes
+
+* **load-harness:** make pattern forwarding and ledger redelivery-safe ([9c8d236](https://github.com/ImranAdan/infra-fleet-public/commit/9c8d236e59d3df6d59f4544c9efeafc5c148fce5)), closes [#211](https://github.com/ImranAdan/infra-fleet-public/issues/211)
+* **load-harness:** pin transitive dependencies for reproducible images ([4eddb44](https://github.com/ImranAdan/infra-fleet-public/commit/4eddb44e4635eadb219d0cee271311df22cd19ba))
+* **load-harness:** pin transitive dependencies for reproducible images ([35b5771](https://github.com/ImranAdan/infra-fleet-public/commit/35b5771a4feb5fdcc16d32bfc6f98b1a03ae8abe)), closes [#206](https://github.com/ImranAdan/infra-fleet-public/issues/206)
+
 ## [1.11.0](https://github.com/ImranAdan/infra-fleet-public/compare/v1.10.2...v1.11.0) (2026-10-12)
 
 
