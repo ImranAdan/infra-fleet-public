@@ -13,6 +13,15 @@ metadata:
   namespace: messaging
 spec:
   interval: 10m
+  # Recover without an operator: a slow chart gets 5m, and a failed
+  # install or upgrade is retried, an upgrade rolling back first.
+  timeout: 5m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: nats
