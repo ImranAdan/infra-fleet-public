@@ -69,7 +69,17 @@ merge. Remove the marker to hold the PR open.
   base image, a chart or dependency version, a dependency manifest, IAM,
   permanent infrastructure, migration, intent, policy, a decision record or
   product requirements. Gate-producing files are merge authority and always
-  park for the owner.
+  park for the owner. Which paths are merge authority, and whether verified
+  Dependabot bumps are allowed, are set per repository in
+  `decision-policy.toml` (`[scope] merge_authority`, `[dependabot] version_only`).
+
+## Where the logic lives
+
+The decision logic is the shared Mandate engine in
+[`mandate/src/mandate/gate.py`](../../../mandate/README.md), one implementation
+for every governed repository. `merge_ready.py` is this repository's entry
+point: it binds the engine to this policy and holds this repository's
+self-test fixtures. Everything under `mandate/` is merge authority.
 
 ## What it cannot check
 
@@ -80,8 +90,8 @@ Judge these yourself. Any one means `PARK`, whatever the script says:
 - it is a security finding where merging means judging your own work;
 - a check failed and the fix was not obvious.
 
-Encode a recurring judgment as a new rule in `merge_ready.py` with a case in
-its self-test (`python3 .claude/skills/merge-gate/merge_ready.py --self-test`), not as more prose here.
+Encode a recurring judgment as a new rule in the engine
+(`mandate/src/mandate/gate.py`) with a case in this repository's self-test (`python3 .claude/skills/merge-gate/merge_ready.py --self-test`), not as more prose here.
 
 An agent never adds `owner-approved` and never posts or imitates a
 `github-actions[bot]` judge comment. On `PARK`, the trusted default-branch
