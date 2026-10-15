@@ -1,0 +1,16 @@
+name: G0 push observer
+
+# E-2 evidence: a run exists on the merge SHA when the App merged (expected)
+# and is absent when GITHUB_TOKEN merged (documented suppression).
+on:
+  push:
+    branches: ["mandate-g0/**"]
+
+permissions: {}
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo "push observed sha=$GITHUB_SHA actor=$GITHUB_ACTOR triggering_actor=$GITHUB_TRIGGERING_ACTOR"

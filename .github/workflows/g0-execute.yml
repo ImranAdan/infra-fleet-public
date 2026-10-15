@@ -1,0 +1,77 @@
+name: G0 execute
+
+# KAN-20 / KAN-30 drill only. Label `g0-merge` merges the exact head with an
+# App installation token and writes the three Mandate trailers (D-15).
+# Label `g0-merge-ghtoken` is the control: the same merge with GITHUB_TOKEN,
+# which GitHub documents will not start the push-triggered observer.
+on:
+  pull_request:
+    types: [labeled]
+    branches: ["mandate-g0/**"]
+
+permissions: {}
+
+jobs:
+  app-merge:
+    if: github.event.label.name == 'g0-merge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mint a contents-only App token (merge authority, D-14)
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Build the receipt and trailers
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          decision=$(printf '%s|%s|%s|%s|g0-policy' "$GITHUB_REPOSITORY" "$PR" "$HEAD" "$BASE" | sha256sum | cut -d' ' -f1)
+          printf '{"receipt":1,"decision_id":"sha256:%s","repo":"%s","pr":%s,"head_sha":"%s","base_sha":"%s","outcome":"AUTHORIZE","seq":1,"prev":"genesis"}\n' \
+            "$decision" "$GITHUB_REPOSITORY" "$PR" "$HEAD" "$BASE" > receipt.json
+          digest=$(sha256sum receipt.json | cut -d' ' -f1)
+          head=$(printf 'genesis|%s' "$digest" | sha256sum | cut -d' ' -f1)
+          {
+            echo "MSG<<EOF"
+            echo "G0 drill merge of #$PR at $HEAD"
+            echo
+            echo "Mandate-Decision: sha256:$decision"
+            echo "Mandate-Receipt-Digest: sha256:$digest"
+            echo "Mandate-Chain-Head: sha256:$head"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: g0-receipt-${{ github.event.pull_request.number }}
+          path: receipt.json
+
+      - name: Exact-head merge as the App
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/pulls/$PR/merge" \
+            -f sha="$HEAD" -f merge_method=merge -f commit_message="$MSG"
+
+  token-merge-control:
+    if: github.event.label.name == 'g0-merge-ghtoken'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Exact-head merge with GITHUB_TOKEN (control)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/pulls/$PR/merge" \
+            -f sha="$HEAD" -f merge_method=merge

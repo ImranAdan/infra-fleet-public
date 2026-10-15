@@ -1,0 +1,43 @@
+name: G0 decision
+
+# KAN-20 drill only. Posts the `mandate/decision` check AS THE APP, so the
+# drill ruleset can bind the required check to the App's integration ID.
+# The label `g0-authorize` stands in for a real Mandate AUTHORIZE.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches: ["mandate-g0/**"]
+
+permissions: {}
+
+concurrency:
+  group: g0-decision-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mint a checks-only App token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          permission-checks: write
+
+      - name: Post mandate/decision on the exact head
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          AUTHORIZE: ${{ contains(github.event.pull_request.labels.*.name, 'g0-authorize') }}
+        run: |
+          conclusion=failure
+          [ "$AUTHORIZE" = true ] && conclusion=success
+          gh api "repos/$GITHUB_REPOSITORY/check-runs" \
+            -f name=mandate/decision -f head_sha="$SHA" \
+            -f status=completed -f conclusion="$conclusion" \
+            -f "output[title]=G0 drill decision: $conclusion" \
+            -f "output[summary]=Simulated Mandate decision for the KAN-20 G0 drill (label g0-authorize)."
+          echo "posted mandate/decision=$conclusion on $SHA"
