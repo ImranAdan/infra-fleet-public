@@ -32,6 +32,9 @@ spec:
       namespace: envoy-gateway-system
   targetNamespace: cert-manager
   interval: 1h
+  # Recover without an operator: a slow chart gets 5m, and a failed
+  # install or upgrade is retried, an upgrade rolling back first.
+  timeout: 5m
   chart:
     spec:
       chart: cert-manager
@@ -42,9 +45,13 @@ spec:
         namespace: flux-system
       interval: 1h
   install:
+    remediation:
+      retries: 3
     crds: CreateReplace
     createNamespace: true
   upgrade:
+    remediation:
+      retries: 3
     crds: CreateReplace
   values:
     # Install CRDs with Helm (required for ClusterIssuer)

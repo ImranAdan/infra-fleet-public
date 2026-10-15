@@ -21,6 +21,9 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1h
+  # Recover without an operator: a slow chart gets 5m, and a failed
+  # install or upgrade is retried, an upgrade rolling back first.
+  timeout: 5m
   chart:
     spec:
       chart: flagger
@@ -31,8 +34,12 @@ spec:
         namespace: flux-system
       interval: 1h
   install:
+    remediation:
+      retries: 3
     crds: CreateReplace
   upgrade:
+    remediation:
+      retries: 3
     crds: CreateReplace
   values:
     # Prometheus for metrics analysis

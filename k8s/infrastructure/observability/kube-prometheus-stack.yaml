@@ -34,6 +34,9 @@ metadata:
   namespace: observability
 spec:
   interval: 10m
+  # Recover without an operator: a slow chart gets 10m, and a failed
+  # install or upgrade is retried, an upgrade rolling back first.
+  timeout: 10m
   chart:
     spec:
       chart: kube-prometheus-stack
@@ -44,8 +47,12 @@ spec:
         namespace: flux-system
       interval: 1h
   install:
+    remediation:
+      retries: 3
     crds: CreateReplace
   upgrade:
+    remediation:
+      retries: 3
     crds: CreateReplace
   values:
     # ============================================================================
