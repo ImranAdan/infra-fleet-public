@@ -20,8 +20,9 @@ in that policy are:
 The engine fails closed: until a repository's policy is loaded, every changed
 path counts as merge authority, and an invalid policy parks the pull request.
 
-Everything under `mandate/` is merge authority in every repository that uses
-it, so an agent cannot edit the code that judges its own changes.
+Everything under `mandate/` is always merge authority: `configure()` adds
+`^mandate/` itself, whatever a repository's policy lists, so an agent cannot
+edit the code that judges its own changes.
 
 Test it through the entry point, the way the merge worker runs it:
 

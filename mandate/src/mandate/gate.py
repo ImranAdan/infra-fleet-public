@@ -1034,11 +1034,20 @@ def load_scope(path: Path) -> tuple[str, bool]:
     return "|".join(f"(?:{p})" for p in paths), version_only
 
 
+# The engine itself is always merge authority, whatever a repository's policy
+# lists, so an agent can never edit the code that judges its own changes.
+ENGINE_PATHS = r"^mandate/"
+
+
 def configure(merge_authority: str, dependabot_version_only: bool) -> None:
     """Install one repository's merge-authority pattern and Dependabot opt-in."""
     global PATH_RULES, DEPENDABOT_VERSION_ONLY
     PATH_RULES = (
-        ("merge-authority", re.compile(merge_authority), "merge authority changed"),
+        (
+            "merge-authority",
+            re.compile(f"(?:{ENGINE_PATHS})|{merge_authority}"),
+            "merge authority changed",
+        ),
         *COMMON_PATH_RULES,
     )
     DEPENDABOT_VERSION_ONLY = dependabot_version_only

@@ -644,10 +644,14 @@ def self_test() -> int:
             sha,
         )
     ]
-    # The shared engine is merge authority: an agent cannot edit what judges it.
-    assert ("merge-authority", "merge authority changed: mandate/src/mandate/gate.py") in (
-        scope_findings("\n".join(_file("mandate/src/mandate/gate.py", "+x = 1")))
-    )
+    # The shared engine is merge authority even when a policy omits it.
+    gate.configure(r"^nothing-else$", False)
+    try:
+        assert ("merge-authority", "merge authority changed: mandate/src/mandate/gate.py") in (
+            scope_findings("\n".join(_file("mandate/src/mandate/gate.py", "+x = 1")))
+        )
+    finally:
+        gate.configure(*gate.load_scope(POLICY_PATH))
     # Fail closed: a policy without scope parks, and an unconfigured engine
     # treats every path as merge authority.
     import tempfile
