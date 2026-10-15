@@ -44,7 +44,8 @@ The Deployment must:
   requests and limits;
 - use `RollingUpdate` with `maxUnavailable: 0` and `maxSurge` above zero;
 - run as a non-root numeric user with a read-only root filesystem and no
-  privilege escalation.
+  privilege escalation, and meet Pod Security `restricted`, which the
+  `applications` namespace enforces at admission.
 
 The contract values:
 
