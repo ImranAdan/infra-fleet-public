@@ -101,6 +101,7 @@ scripts/install-profile-tools.sh|/download/v$flux_version/flux_${flux_version}_
 docs/DEPLOYMENT-PROFILES.md|Flux CLI $flux_version
 docs/README.md|Flux | v$flux_version local and AWS
 docs/TERRAFORM-CLOUD-EKS-DDR.md|--version=v$flux_version
+docs/SECURITY-CONCERNS.md|# v$flux_version
 EOF
 fi
 
