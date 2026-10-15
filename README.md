@@ -122,6 +122,7 @@ breaks these flows into smaller diagrams.
 | Entry path | loopback access; Envoy HTTPS inside the cluster | Envoy HTTPS behind an AWS NLB |
 | Certificates | local cert-manager CA | Let's Encrypt |
 | Control plane | local multi-application dashboard | selected application only |
+| App availability | one replica | two replicas and a PodDisruptionBudget, so node drains never take the app offline |
 | Lifecycle | direct `./fleet` operations | reviewed GitHub Actions workflows |
 | Evidence | live local acceptance | static validation until an adopter runs the AWS lifecycle |
 
