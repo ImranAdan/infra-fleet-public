@@ -1,0 +1,60 @@
+# Delegation for ImranAdan/infra-fleet-public (lives in ImranAdan/mandate-delegation
+# at repositories/infra-fleet-public.toml). Version 1 mirrors the evidence deciders
+# in Fleet's decision policy; everything that policy sends to the owner escalates.
+version = 1
+repository = "ImranAdan/infra-fleet-public"
+mode = "shadow"      # decide and record only; nothing merges on this file's authority
+owner = "ImranAdan"  # the human principal; agents must use other identities
+agents = []          # filled in once agent identities are separated from the owner
+
+# Producers: check name + workflow path + event bind authenticity.
+[evidence.intent-gate]
+check = "Intent gate / Declared intent"
+workflow = ".github/workflows/intent-gate.yml"
+event = "pull_request"
+
+[evidence.intent-gate-retargeted]
+check = "Intent gate (retargeted) / Declared intent"
+workflow = ".github/workflows/intent-gate-retarget.yml"
+event = "pull_request"
+
+# First match wins per finding; an unmatched finding escalates.
+[[classes]]
+id = "dependency-pinned"
+match = { category = "dependency" }
+decide = "authorize"
+require = ["intent-gate"]
+recovery = "R0"
+
+[[classes]]
+id = "dependency-manifest"
+match = { category = "dependency-manifest", lockfile_sibling = true }
+decide = "authorize"
+require = ["intent-gate"]
+recovery = "R0"
+
+[[classes]]
+id = "workflow-routine"
+match = { category = "workflow", permission_delta = "none", secret_delta = "none", trigger_delta = "none" }
+decide = "authorize"
+require = ["intent-gate"]
+recovery = "R0"
+
+[[classes]]
+id = "permission-narrowing"
+match = { category = "permission-removed" }
+decide = "authorize"
+require = ["intent-gate"]
+recovery = "R0"
+
+[[classes]]
+id = "decision-prose"
+match = { category = ["decision-record", "product-requirements"] }
+decide = "authorize"
+require = ["intent-gate"]
+recovery = "R0"
+
+[[classes]]
+id = "reserved"  # never delegable in version 1
+match = { category = ["intent-policy", "credential", "permission-added", "iam", "permanent-infrastructure", "migration", "merge-authority", "delegation", "enforcement"] }
+decide = "escalate"
