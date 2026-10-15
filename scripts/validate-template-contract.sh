@@ -59,6 +59,34 @@ if [ -n "$unpinned_actions" ]; then
   failed=true
 fi
 
+action_pin_conflicts=$(
+  python3 - <<'PY'
+from collections import defaultdict
+from pathlib import Path
+import re
+
+reference_pattern = re.compile(
+    r"^\s*(?:-\s*)?uses:\s*[\"']?([^@\s\"']+)@([0-9a-fA-F]{40})"
+)
+pins = defaultdict(set)
+for directory in (Path(".github/workflows"), Path(".github/actions")):
+    for path in sorted((*directory.rglob("*.yml"), *directory.rglob("*.yaml"))):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = reference_pattern.match(line)
+            if match:
+                pins[match.group(1)].add(match.group(2).casefold())
+
+for action, revisions in sorted(pins.items()):
+    if len(revisions) > 1:
+        print(f"{action}: {', '.join(sorted(revisions))}")
+PY
+)
+if [ -n "$action_pin_conflicts" ]; then
+  printf '%s\n' "$action_pin_conflicts"
+  echo "Each GitHub Action must use one commit SHA across workflows and composite actions." >&2
+  failed=true
+fi
+
 # Code and manifests must be pinned. One line is exempt: the Fleet Application
 # dashboard reads the advisor's latest approved report as data, where following
 # main is the point and nothing fetched is executed. Only that exact URL, as a
@@ -120,6 +148,56 @@ if ! jq -e '
   )
 ' release-please-config.json >/dev/null; then
   echo "Release pull requests must opt into the evidence gate with verification." >&2
+  failed=true
+fi
+
+autonomous_merge_workflow=.github/workflows/autonomous-merge.yml
+for required_contract in \
+  'id: merge-token' \
+  'permission-contents: write' \
+  '  repository_dispatch:' \
+  '    types: [autonomous-merge-recovery]' \
+  'MERGE_GH_TOKEN: ${{ steps.merge-token.outputs.token }}'; do
+  if ! grep -Fq "$required_contract" "$autonomous_merge_workflow"; then
+    echo "The autonomous worker is missing its App-token contract: $required_contract" >&2
+    failed=true
+  fi
+done
+if grep -Fq '  workflow_dispatch:' "$autonomous_merge_workflow"; then
+  echo "The autonomous worker must not expose App credentials to a selectable workflow_dispatch ref." >&2
+  failed=true
+fi
+if grep -Fq 'permission-pull-requests:' "$autonomous_merge_workflow"; then
+  echo "The autonomous merge App token must not request Pull requests write." >&2
+  failed=true
+fi
+
+owner_approval_workflow=.github/workflows/owner-approval.yml
+for required_contract in \
+  '  contents: write' \
+  'event_type: "autonomous-merge-recovery"' \
+  'priority_pr: $pr'; do
+  if ! grep -Fq "$required_contract" "$owner_approval_workflow"; then
+    echo "The owner-approval handoff is missing its trusted dispatch contract: $required_contract" >&2
+    failed=true
+  fi
+done
+if grep -Fq 'gh workflow run autonomous-merge.yml' "$owner_approval_workflow"; then
+  echo "The owner-approval handoff must not select a ref for the credential-using worker." >&2
+  failed=true
+fi
+
+release_workflow=.github/workflows/release-please.yml
+for required_contract in \
+  '  repository_dispatch:' \
+  '    types: [release-please-recovery]'; do
+  if ! grep -Fq "$required_contract" "$release_workflow"; then
+    echo "Release Please is missing its default-branch recovery trigger: $required_contract" >&2
+    failed=true
+  fi
+done
+if grep -Fq '  workflow_dispatch:' "$release_workflow"; then
+  echo "Release Please must not expose App credentials to a selectable workflow_dispatch ref." >&2
   failed=true
 fi
 

@@ -21,17 +21,16 @@ on:
   schedule:
     # Recovery only; normal merges are event-driven.
     - cron: "7 */6 * * *"
-  workflow_dispatch:
-    inputs:
-      priority_pr:
-        description: Pull request to evaluate first
-        required: false
-        type: string
+  # Default-branch-only wake-up used by the owner-approval handoff. A
+  # workflow_dispatch ref is deliberately unavailable because this workflow
+  # consumes the merge App credentials.
+  repository_dispatch:
+    types: [autonomous-merge-recovery]
 
 permissions:
   actions: read
   checks: read
-  contents: write
+  contents: read
   issues: read
   pull-requests: write
   statuses: read
@@ -51,6 +50,19 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
+      # Only this short-lived, repository-scoped token performs the merge.
+      # Its push starts the ordinary post-merge workflows; GITHUB_TOKEN pushes
+      # are deliberately suppressed by GitHub.
+      - name: Mint merge token
+        id: merge-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
       - name: Test the candidate selector and merge gate
         run: |
           python3 .github/scripts/autonomous_merge.py --self-test
@@ -59,8 +71,9 @@ jobs:
       - name: Merge evidence-approved pull requests
         env:
           GH_TOKEN: ${{ github.token }}
+          MERGE_GH_TOKEN: ${{ steps.merge-token.outputs.token }}
           AUTONOMOUS_MERGE_MIN_AGE_SECONDS: "0"
           AUTONOMOUS_MERGE_RUN_ID: ${{ github.run_id }}
-          AUTONOMOUS_MERGE_PRIORITY_PR: ${{ inputs.priority_pr || github.event.workflow_run.pull_requests[0].number || '' }}
+          AUTONOMOUS_MERGE_PRIORITY_PR: ${{ github.event.client_payload.priority_pr || github.event.workflow_run.pull_requests[0].number || '' }}
           AUTONOMOUS_MERGE_PRIORITY_SHA: ${{ github.event_name == 'status' && github.event.sha || '' }}
         run: python3 .github/scripts/autonomous_merge.py

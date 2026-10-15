@@ -3,6 +3,11 @@ name: Release Please
 on:
   push:
     branches: [main]
+  # Default-branch-only recovery and one-time bootstrap after the App-backed
+  # merge worker lands. Unlike workflow_dispatch, this has no selectable ref
+  # whose workflow definition could receive the App credentials.
+  repository_dispatch:
+    types: [release-please-recovery]
 
 permissions:
   contents: write

@@ -49,8 +49,10 @@ Two properties are worth preserving if you fork this:
 **Keep privileged triggers confined to trusted code.** No workflow uses
 `pull_request_target`: owner approval is read by the merge gate from GitHub's
 comment, label and check-run records, so nothing privileged runs on a pull request.
-GitHub blocks that trigger on public repositories by default from 2026-11-02.
-`issue_comment` and `workflow_run` run only default-branch code and
+Starting November 2, 2026, GitHub will enforce its [default
+policy](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target#default-policy-for-pull_request_target)
+and block `pull_request_target` in affected public repositories; it does not
+block `issue_comment`. `issue_comment` and `workflow_run` run only default-branch code and
 treat pull-request content as data. Do not add a privileged trigger that runs
 pull-request code.
 

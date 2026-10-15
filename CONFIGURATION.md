@@ -158,8 +158,10 @@ Cloudflare secrets are also present, the rebuild workflow creates or updates
 the hostname's CNAME automatically. You may manage the same DNS record outside
 Cloudflare instead.
 
-Optional release automation App credentials remain a separate repository-owner
-choice; setup does not create or broaden a GitHub App.
+Merge and release automation App credentials remain a separate
+repository-owner step; setup does not create or broaden a GitHub App. Configure
+them under [Release automation](#release-automation) before relying on
+autonomous merges.
 
 ## 6. Build the fleet
 
@@ -234,12 +236,36 @@ old key is not left active.
 
 ## Release automation
 
-Release Please can open a release PR with the default `GITHUB_TOKEN`, but events
-created by that token do not trigger the normal pull-request or tag workflows.
-Run those checks manually, or, for an automated chain, create a
-repository-scoped GitHub App with **Contents: read/write** and **Pull requests:
-read/write**, then set
-`RELEASE_PLEASE_APP_CLIENT_ID` and `RELEASE_PLEASE_APP_PRIVATE_KEY`.
+Create a GitHub App installed only on this repository with **Contents:
+read/write** and **Pull requests: read/write**. Store its client ID and private
+key as `RELEASE_PLEASE_APP_CLIENT_ID` and
+`RELEASE_PLEASE_APP_PRIVATE_KEY`. The autonomous merge worker mints a
+short-lived token restricted to this repository and Contents write, then uses
+it only for the exact-head merge. The workflow token has Contents read and
+therefore cannot merge. Release Please uses another short-lived token from the
+same credentials and needs the App's Pull requests permission to manage release
+pull requests.
+
+This App token is required for the autonomous worker. GitHub deliberately does
+not start ordinary workflows for pushes made with `GITHUB_TOKEN`; an App merge
+therefore ensures Release Please and every other `push` workflow see the merge.
+The owner-approval handoff wakes the worker with a typed
+`repository_dispatch` event. GitHub binds that event to the default branch, so
+the App credentials are never exposed through a caller-selected workflow ref.
+Release Please can still fall back to `GITHUB_TOKEN` when run manually, but its
+generated pull-request and tag events will then need manual workflow dispatch.
+After first enabling the App-backed worker, send its default-branch recovery
+event once:
+
+```bash
+gh api --method POST repos/OWNER/REPOSITORY/dispatches \
+  -f event_type=release-please-recovery
+```
+
+The bootstrap merge was made by the old worker and therefore could not emit its
+own `push` workflow event. Recovery uses `repository_dispatch`, whose workflow
+and ref come from the default branch; it does not expose App credentials to a
+selectable manual-workflow ref.
 
 Also enable **Settings → Actions → General → Allow GitHub Actions to create and
 approve pull requests** if you want the release workflow to open PRs.

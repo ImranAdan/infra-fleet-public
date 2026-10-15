@@ -76,10 +76,16 @@ merge a pull request it raised only by rerunning
 `python3 .claude/skills/merge-gate/merge_ready.py <PR> --merge` after the gate
 reports `READY`, or by leaving the template's `<!-- autonomous-merge -->`
 marker for the trusted default-branch worker to run that exact command. Both
-paths bind the merge to the checked head SHA. Remove the marker to hold a PR
-open. Dependabot PRs that only move versions need neither the marker nor a
-Verification section: the worker considers them and the gate accepts their
-exact-head checks as evidence (see `.claude/skills/merge-gate/SKILL.md`). An agent must say what merged and why. It never adds the `owner-approved`
+paths squash the checked head and bind the merge to its SHA. If two workers
+race, a failed command counts as success only when GitHub proves that exact
+head was merged. Remove the marker to hold a PR open. Dependabot PRs that only
+move versions need neither the marker nor a Verification section: the worker
+considers them and the gate accepts their exact-head checks as evidence. The
+same evidence path applies when an immutable remote-action change inside an
+authority workflow only replaces a full commit SHA for the same action. An
+action identity, input, permission, trigger or any other workflow edit remains
+owner-only (see `.claude/skills/merge-gate/SKILL.md`). An agent must say what
+merged and why. It never adds the `owner-approved`
 label and never posts or imitates a merge-judge comment. An owner approval is
 the repository owner replying `/approve <full-head-sha>` after every check run
 on that head started, or adding `owner-approved` under the same timing rule.
@@ -88,13 +94,17 @@ unbinds either form. The trusted worker labels a PARKed PR `needs-decision`,
 posts one head-bound explanation, and wakes immediately for the comment form.
 A small trusted approval handoff uses GitHub's default-branch
 [`issue_comment`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#issue_comment)
-event to dispatch the worker; no `pull_request_target` workflow is involved. GitHub blocks that trigger
-on public repositories by default from 2026-11-02. `PARK` means stop and tell the owner. `JUDGE` means wait
+event to dispatch the worker; no `pull_request_target` workflow is involved.
+Starting November 2, 2026, GitHub will enforce its [default
+policy](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target#default-policy-for-pull_request_target)
+and block `pull_request_target` in affected public repositories; it does not
+block this `issue_comment` handoff. `PARK` means stop and tell the owner.
+`JUDGE` means wait
 for the independent base-branch judge. `BLOCKED` means fix the reported defect
 and run the gate again.
 
-The default path is key-free. Reversible categories marked `evidence` in the
-decision policy can reach `READY` only after every head check passes and the
+The default decision path uses no paid model. Reversible categories marked
+`evidence` in the decision policy can reach `READY` only after every head check passes and the
 successful declared-intent check—standard or retargeted—is traced to its
 configured GitHub Actions workflow on that exact head. Added authority,
 credentials, IAM, permanent infrastructure, migrations, declared intent and
@@ -113,6 +123,12 @@ mechanical remediation uses a read-only planning job and opens an opted-in Fleet
 PR. Because token-authored PRs suppress ordinary pull-request events, trusted
 Fleet code explicitly dispatches read-only validation on the exact generated
 branch; it receives no path around this gate.
+
+The worker reads evidence with the job's restricted `GITHUB_TOKEN`, then uses
+a short-lived, repository-scoped GitHub App token only for the exact-head
+merge. That App-authored push starts the ordinary post-merge workflows,
+including Release Please. The same App credentials let Release Please start
+pull-request and tag workflows. See `CONFIGURATION.md` for the one-time setup.
 
 ## Autonomy
 
@@ -181,9 +197,24 @@ post `D1:`-style answers yourself: only the owner's count.
 
 ## Shared cluster
 
-The local cluster is shared by everyone working in this checkout. Run
-`.claude/skills/verify-fleet/doctor.sh` before driving it, and do not deploy
-to it, test on it or tear it down while another agent is using it.
+The local cluster is a shared mutable resource with two lock records. Fleet
+issue [`#175`](https://github.com/ImranAdan/infra-fleet-public/issues/175) is
+the global record across terminals, sessions and machines. The atomic local
+mutex is `<git-common-dir>/fleet/locks/cluster.lock`, where the common directory
+comes from `git rev-parse --path-format=absolute --git-common-dir`. Every Fleet
+worktree resolves the same file.
+
+Create the parent directory and acquire the file with shell `noclobber`; record
+`owner`, UTC `since`, `purpose` and the #175 URL. Post `LOCKED cluster` with the
+same details on #175, re-read the issue for an earlier unreleased contender,
+and drive the cluster only when both records name you. Missing, stale or
+conflicting state fails closed. On completion, post `released cluster`, confirm
+the file still names you, and remove it. Advisor work must resolve this Fleet
+lock rather than create a separate Advisor-local mutex.
+
+After acquiring both records, run `.claude/skills/verify-fleet/doctor.sh`
+before driving the cluster. Never deploy to it, test on it or tear it down while
+another agent owns either record.
 
 ## Conventions
 

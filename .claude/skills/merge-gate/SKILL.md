@@ -22,7 +22,9 @@ python3 .claude/skills/merge-gate/merge_ready.py <PR_NUMBER> --merge
 Same-repository PRs containing `<!-- autonomous-merge -->` may leave this step
 to `.github/workflows/autonomous-merge.yml`. The trusted default-branch worker
 runs the same command; it cannot convert `PARK`, `JUDGE` or `BLOCKED` into a
-merge. Remove the marker to hold the PR open.
+merge. It reads evidence with `GITHUB_TOKEN` and supplies a separately minted,
+repository-scoped GitHub App token only to the merge mutation, so the resulting
+push starts normal post-merge workflows. Remove the marker to hold the PR open.
 
 | Verdict | Exit | Meaning | What to do |
 |---|---|---|---|
@@ -46,9 +48,9 @@ merge. Remove the marker to hold the PR open.
   requirements need exact pins, and changed
   manifests need their sibling lockfiles.
 - **Mergeable:** GitHub reports the branch `CLEAN`: no conflicts, not behind.
-- **Exact head:** `--merge` passes the checked SHA to GitHub's
-  `--match-head-commit`; a concurrent push makes the merge fail and requires a
-  new gate run.
+- **Exact head:** `--merge` squash-merges with GitHub's
+  `--match-head-commit`. A concurrent push fails. A concurrent merge is
+  accepted only when a second query proves GitHub merged the same checked head.
 - **Review:** no unresolved thread. A thread resolved without a reply saying
   what changed or why a finding was declined surfaces.
 - **Evidence:** the body has a `## Verification` section with at least one
@@ -64,12 +66,17 @@ merge. Remove the marker to hold the PR open.
   then counts as a dependency manifest, not permanent infrastructure. The
   autonomous worker considers such PRs without the marker. Everything else
   still applies, and gate files still park.
+- **Authority-workflow action pins:** a diff in an authority workflow counts
+  as dependency and workflow evidence when every changed line replaces a full
+  commit SHA with another full commit SHA for the same remote action. Any
+  action identity, input, permission, trigger, added or removed action, or
+  other workflow edit remains merge authority and parks.
 - **Scope:** changes the policy assigns to evidence or the owner, found in the diff: a workflow
   permission or `write` scope, a new `secrets.` reference, a remote action, a
   base image, a chart or dependency version, a dependency manifest, IAM,
   permanent infrastructure, migration, intent, policy, a decision record or
-  product requirements. Gate-producing files are merge authority and always
-  park for the owner.
+  product requirements. Gate-producing files are merge authority and park for
+  the owner except for the same-action immutable-pin case above.
 
 ## What it cannot check
 
