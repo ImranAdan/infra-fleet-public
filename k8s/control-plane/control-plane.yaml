@@ -194,17 +194,23 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+          # A cold node under CPU pressure throttles the 100m limit past the
+          # 1 s default probe timeout, and three missed liveness probes
+          # restarted the control plane mid-launch (#192). 3 s is margin, not
+          # a hang detector: three failures still restart within ~40 s.
           readinessProbe:
             httpGet:
               path: /readyz
               port: 8080
             periodSeconds: 10
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
           resources:
             requests:
               cpu: 10m
