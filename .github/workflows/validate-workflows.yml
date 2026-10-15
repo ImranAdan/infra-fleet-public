@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/**'
       - '.claude/skills/merge-gate/**'
+      - 'mandate/**'
 
 permissions:
   contents: read

@@ -94,6 +94,23 @@ category = "merge-authority"
 decider = "owner"
 guidance = "The gate, judge, policy and merge rules determine agent authority."
 
+[scope]
+# Paths whose change is merge authority in this repository (category
+# merge-authority, decided by the owner). The shared engine under mandate/ and
+# this entry point are merge authority too, so an agent cannot edit the code or
+# rules that judge it.
+merge_authority = [
+  '^\.claude/skills/merge-gate/',
+  '^mandate/',
+  '^\.github/workflows/(?:advisor-remediation(?:-validation)?|autonomous-merge|owner-approval|merge-judge|intent-gate(?:-run|-retarget)?)\.ya?ml$',
+  '^\.github/scripts/(?:autonomous_merge|validate_advisor_remediation)\.py$',
+  '^(?:AGENTS|CLAUDE)\.md$',
+]
+
+[dependabot]
+# Verified, signed, version-only Dependabot bumps may be decided by evidence.
+version_only = true
+
 [judge]
 trusted_author = "github-actions[bot]"
 model = "claude-opus-5-5"
