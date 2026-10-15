@@ -59,6 +59,7 @@ The contract values:
 | `APP_FAULT_ENV` | `NAME=value` that makes the app fail requests | `FAIL_RATE=1.0` | `PODINFO_RANDOM_ERROR=true` | `GAME_FAULT=true` |
 | `APP_TITLE` | Optional display name in the local application dashboard | `Load Harness` | `podinfo` | `Fleet Runner` |
 | `APP_DESCRIPTION` | Optional short dashboard description | load generator summary | podinfo summary | browser game summary |
+| `APP_MESSAGING_PREFIX` | Required when the app sets `NATS_URL`: prefix of every subject, stream and bucket it owns | `eip` | none | none |
 
 ## What the platform provides
 

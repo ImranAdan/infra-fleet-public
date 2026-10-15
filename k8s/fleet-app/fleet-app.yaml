@@ -25,3 +25,5 @@ data:
   APP_SECRETS: load-harness-api-key:api-key load-harness-secret-key:secret-key
   # NAME=value that makes the app fail requests; the rollback test sets it.
   APP_FAULT_ENV: FAIL_RATE=1.0
+  # Prefix of every NATS subject, stream and bucket the app owns (R-004).
+  APP_MESSAGING_PREFIX: eip
