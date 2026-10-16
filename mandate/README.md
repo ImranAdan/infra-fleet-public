@@ -36,7 +36,13 @@ fails closed with `DELEGATION_INVALID`: unknown keys, unknown categories,
 evidence a class requires but nobody declares, authorizing without evidence,
 and any class that authorizes a reserved category (credentials, widened
 permissions, IAM, permanent infrastructure, migrations, merge authority, the
-delegation itself, enforcement). An owner listed as an agent is refused in
+delegation itself, enforcement, declared intent, evidence producers, agent
+instructions). Operational `admission-policy` is delegable; constitutional
+`intent-policy` is not. `reserved_findings(delegation, paths)` reports the
+reserved surfaces by path alone (`intent/`, rulesets, `CODEOWNERS`, the engine
+under `mandate/`, this delegation's evidence-producer workflows, and any
+`AGENTS.md` or `CLAUDE.md`), so no owner class or class order can authorize
+them. An owner listed as an agent is refused in
 `enforce` mode (`IDENTITY_COLLISION`). `examples/infra-fleet-public.toml` is
 Fleet's delegation.
 
