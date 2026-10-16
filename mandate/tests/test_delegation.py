@@ -98,14 +98,26 @@ def main() -> int:
         SOURCE,
     )
     assert greedy.classes[0].id == "everything"
+    # Files at the trusted base: both producers call a shared workflow, which
+    # calls a local action. Everything they reach is reserved too.
+    base = {
+        ".github/workflows/intent-gate.yml": "jobs:\n  intent:\n    uses: ./.github/workflows/intent-gate-run.yml\n",
+        ".github/workflows/intent-gate-retarget.yml": "    uses: './.github/workflows/intent-gate-run.yml'\n",
+        ".github/workflows/intent-gate-run.yml": "      - uses: actions/checkout@v5\n      - uses: ./.github/actions/compare\n",
+        ".github/actions/compare/action.yml": "runs:\n  using: composite\n",
+    }
+    surfaces[".github/workflows/intent-gate-run.yml"] = "evidence-producer"
+    surfaces[".github/actions/compare/action.yml"] = "evidence-producer"
+    surfaces[".github/actions/compare/compare.sh"] = "evidence-producer"
     for path, category in surfaces.items():
-        found = d.reserved_findings(greedy, [path])
+        found = d.reserved_findings(greedy, [path], base.get)
         assert [c for c, _ in found] == [category], (path, found)
         assert category in d.RESERVED, category
         authorizing = [c.id for c in greedy.classes if category in c.categories and c.decide == "authorize"]
         assert authorizing == [], (path, authorizing)
     # Routine workflows and ordinary files are not reserved.
-    assert d.reserved_findings(greedy, [".github/workflows/ci.yml", "docs/README.md", "k8s/base/policies/x.yaml"]) == []
+    ordinary = [".github/workflows/ci.yml", ".github/actions/compare-other/action.yml", "docs/README.md", "k8s/base/policies/x.yaml"]
+    assert d.reserved_findings(greedy, ordinary, base.get) == []
 
     # Authorization needs declared evidence.
     rejects(MINIMAL.replace('require = ["ci"]', 'require = ["tests"]'), expect="declared evidence")

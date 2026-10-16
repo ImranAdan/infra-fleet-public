@@ -14,6 +14,7 @@ import re
 import subprocess
 import tomllib
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 DELEGATION_REPOSITORY = "ImranAdan/mandate-delegation"
@@ -287,12 +288,40 @@ def fetch(repository: str, commit: str, delegation_repository: str = DELEGATION_
     return parse(text, repository, f"{delegation_repository}@{commit}:{path}")
 
 
-def reserved_findings(delegation: Delegation, paths: list[str]) -> list[tuple[str, str]]:
+LOCAL_USES = re.compile(r"""uses:\s*['"]?\./([^\s'"@#]+)""")
+
+
+def _producer_paths(delegation: Delegation, read: Callable[[str], str | None]) -> set[str]:
+    """Each evidence workflow plus every local workflow or action it calls, transitively.
+
+    ``read`` returns a file's text at the trusted base revision, or None. A PR
+    that adds a new call must edit a producer already in this set, so reading
+    the base is enough. Local actions are reserved as whole directories.
+    """
+    found: set[str] = set()
+    pending = [spec.workflow for _, spec in delegation.evidence]
+    while pending:
+        path = pending.pop().rstrip("/")
+        if path in found:
+            continue
+        found.add(path)
+        texts = [read(path)] if path.endswith((".yml", ".yaml")) else [
+            read(f"{path}/action.yml"),
+            read(f"{path}/action.yaml"),
+        ]
+        for text in texts:
+            pending.extend(LOCAL_USES.findall(text or ""))
+    return found
+
+
+def reserved_findings(
+    delegation: Delegation, paths: list[str], read: Callable[[str], str | None]
+) -> list[tuple[str, str]]:
     """Reserved (category, description) findings for changed ``paths``; each escalates."""
-    producers = {spec.workflow for _, spec in delegation.evidence}
+    producers = _producer_paths(delegation, read)
     findings = []
     for path in paths:
-        if path in producers:
+        if any(path == p or path.startswith(f"{p}/") for p in producers):
             findings.append(("evidence-producer", f"evidence producer changed: {path}"))
         findings.extend(
             (category, f"{description}: {path}")
