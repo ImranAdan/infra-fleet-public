@@ -56,5 +56,5 @@ recovery = "R0"
 
 [[classes]]
 id = "reserved"  # never delegable in version 1
-match = { category = ["intent-policy", "credential", "permission-added", "iam", "permanent-infrastructure", "migration", "merge-authority", "delegation", "enforcement"] }
+match = { category = ["intent-policy", "credential", "permission-added", "iam", "permanent-infrastructure", "migration", "merge-authority", "delegation", "enforcement", "evidence-producer", "agent-instructions"] }
 decide = "escalate"
