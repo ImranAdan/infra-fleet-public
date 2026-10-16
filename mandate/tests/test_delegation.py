@@ -69,6 +69,44 @@ def main() -> int:
     # Escalating a reserved category is fine.
     d.parse(MINIMAL.replace('"decision-record"', '"credential"').replace('"authorize"', '"escalate"'), REPO, SOURCE)
 
+    # Reserved surfaces are found by path, whatever the owner's classes say:
+    # declared intent, enforcement material, this repository's evidence
+    # producers and agent instructions. Operational admission policy stays
+    # delegable; constitutional intent policy does not.
+    rejects(MINIMAL.replace('"decision-record"', '"intent-policy"'), expect="reserved: intent-policy")
+    d.parse(MINIMAL.replace('"decision-record"', '"admission-policy"'), REPO, SOURCE)
+    surfaces = {
+        "intent/security.md": "intent-policy",
+        ".github/rulesets/main.json": "enforcement",
+        ".github/owner-only-ruleset.json": "enforcement",
+        ".github/CODEOWNERS": "enforcement",
+        "mandate/src/mandate/gate.py": "enforcement",
+        ".github/workflows/intent-gate.yml": "evidence-producer",
+        ".github/workflows/intent-gate-retarget.yml": "evidence-producer",
+        "AGENTS.md": "agent-instructions",
+        "CLAUDE.md": "agent-instructions",
+        "apps/api/AGENTS.md": "agent-instructions",
+    }
+    # Owner classes listed first try to authorize every delegable category.
+    delegable = sorted(d.CATEGORIES - d.RESERVED)
+    greedy = d.parse(
+        (HERE.parent / "examples" / "infra-fleet-public.toml").read_text().replace(
+            "# First match wins per finding; an unmatched finding escalates.",
+            f'[[classes]]\nid = "everything"\nmatch = {{ category = {delegable!r} }}\ndecide = "authorize"\nrequire = ["intent-gate"]\n'.replace("'", '"'),
+        ),
+        REPO,
+        SOURCE,
+    )
+    assert greedy.classes[0].id == "everything"
+    for path, category in surfaces.items():
+        found = d.reserved_findings(greedy, [path])
+        assert [c for c, _ in found] == [category], (path, found)
+        assert category in d.RESERVED, category
+        authorizing = [c.id for c in greedy.classes if category in c.categories and c.decide == "authorize"]
+        assert authorizing == [], (path, authorizing)
+    # Routine workflows and ordinary files are not reserved.
+    assert d.reserved_findings(greedy, [".github/workflows/ci.yml", "docs/README.md", "k8s/base/policies/x.yaml"]) == []
+
     # Authorization needs declared evidence.
     rejects(MINIMAL.replace('require = ["ci"]', 'require = ["tests"]'), expect="declared evidence")
     rejects(MINIMAL.replace('require = ["ci"]\n', ""), expect="without requiring any evidence")
