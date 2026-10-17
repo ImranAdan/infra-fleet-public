@@ -71,6 +71,24 @@ A rerun supersedes earlier attempts of the same workflow run. Green checks the
 class does not require carry no weight, and PR prose is not an input. Outcome
 precedence and the public reason codes are the decision's (KAN-24).
 
+## Decision
+
+`mandate.decision.decide(DecisionInput)` is a pure function from one snapshot
+(delegation or its load error, subject, `(category, path)` findings, proven PR
+facts, evidence records, and the caller's mechanical refusals) to
+`AUTHORIZE | VERIFY | BLOCK | ESCALATE` with every reason. Precedence is
+BLOCK > ESCALATE > VERIFY > AUTHORIZE, and AUTHORIZE needs no reason at all:
+every finding matched to an authorizing class, with its required evidence
+accepted by `mandate.evidence`. Reasons come only from the versioned
+`REGISTRY` (code, outcome, who acts next); an unregistered mechanical code is a
+`CONTRACT_ERROR`. A path with no category is `UNCLASSIFIED`, and a class match
+key the caller has not proven never matches, so both escalate. No model text is
+an input. `Decision.to_dict()` is the DecisionRecord payload.
+
+Fleet's live gate still decides `READY`/`PARK`. `LEGACY` maps its verdicts
+(`PARK`/`JUDGE` → ESCALATE, `BLOCKED` → BLOCK, `READY` → recompute), and none
+maps to AUTHORIZE.
+
 Test it through the entry point, the way the merge worker runs it:
 
 ```bash
@@ -78,4 +96,5 @@ python3 .claude/skills/merge-gate/merge_ready.py --self-test
 python3 .claude/skills/merge-gate/judge.py --self-test
 python3 mandate/tests/test_delegation.py
 python3 mandate/tests/test_evidence.py
+python3 mandate/tests/test_decision.py
 ```

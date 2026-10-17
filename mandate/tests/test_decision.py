@@ -6,6 +6,7 @@ and at least one literal fixture per registered reason code.
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import json
 import sys
@@ -109,6 +110,10 @@ def main() -> int:
         POLICY,
     )
     assert outcome(delegation=escalating) == ("ESCALATE", ["ESCALATE_CLASS:decision-prose"])
+
+    # A delegation built around the loader (no declared producer) cannot authorize.
+    undeclared = dataclasses.replace(DELEGATION, evidence=())
+    assert outcome(delegation=undeclared) == ("BLOCK", ["EVIDENCE_UNDECLARED:intent-gate"])
 
     # Contract errors in the delegation fail closed with their own reasons.
     invalid = d.DelegationError("DELEGATION_INVALID", "reserved class set to authorize")
