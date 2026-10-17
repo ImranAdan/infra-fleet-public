@@ -69,6 +69,8 @@ class EvidenceRecord:
         names = {f.name for f in fields(cls)}
         if set(data) != names:
             raise ValueError(f"evidence record fields differ: {sorted(set(data) ^ names)}")
+        if type(data["version"]) is not int or data["version"] != VERSION:
+            raise ValueError(f"unsupported evidence record version {data['version']!r}")
         return cls(**data)
 
 
@@ -85,7 +87,11 @@ def normalize(check_run: dict, workflow_run: dict | None, subject: Subject) -> E
     missing or belongs to another suite, the producer is unknown.
     """
     suite = (check_run.get("check_suite") or {}).get("id")
-    run = workflow_run if workflow_run and workflow_run.get("check_suite_id") == suite else {}
+    run = (
+        workflow_run
+        if workflow_run and suite is not None and workflow_run.get("check_suite_id") == suite
+        else {}
+    )
     head = check_run["head_sha"]
     base = next(
         (pr["base"]["sha"] for pr in run.get("pull_requests") or [] if pr["head"]["sha"] == head),
@@ -172,8 +178,14 @@ def evaluate(
             failures.append((f"EVIDENCE_UNDECLARED:{name}", "the delegation declares no such producer"))
             continue
         named = [r for r in records if r.check == producer.check]
-        unknown = [r for r in named if r.run_id is None]
-        wrong = [r for r in named if r.run_id is not None and authenticity(r, producer)]
+        # Off-subject results, genuine or not, carry no weight either way. An
+        # unattributable result has no run to bind, so only its head can count.
+        unknown = [r for r in named if r.run_id is None and r.head_sha == subject.head_sha]
+        wrong = [
+            r
+            for r in named
+            if r.run_id is not None and authenticity(r, producer) and not applicability(r, subject)
+        ]
         for record in wrong:
             failures.append(
                 (
