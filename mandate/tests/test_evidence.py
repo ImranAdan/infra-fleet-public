@@ -92,6 +92,13 @@ def main() -> int:
         pass
     else:
         raise AssertionError("from_dict accepted an unknown field")
+    for version in (2, "1", True):
+        try:
+            e.EvidenceRecord.from_dict({**data, "version": version})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"from_dict accepted version {version!r}")
 
     # A-24 / A-5: the same check name from another workflow, event or App.
     for wrong in (
@@ -104,6 +111,14 @@ def main() -> int:
     forged = e.normalize(check(71, suite=80), run(8, path=".github/workflows/forged.yml"), SUBJECT)
     assert codes([good, forged]) == ["CHECK_WRONG_SOURCE"]
     assert e.evaluate(DELEGATION, ("intent-gate",), [good, forged], SUBJECT).accepted == ()
+    # A stale forged result (older head) does not block current genuine evidence.
+    stale_forged = e.normalize(check(77, suite=120, head=OTHER), run(12, path=".github/workflows/forged.yml", head=OTHER), SUBJECT)
+    assert codes([good, stale_forged]) == []
+    # An unattributable result on an older head is not a conflict either.
+    assert codes([good, e.normalize(check(78, suite=130, head=OTHER), None, SUBJECT)]) == []
+    # Without a suite ID on both sides there is no correlation.
+    no_suite = {k: v for k, v in check().items() if k != "check_suite"}
+    assert e.normalize(no_suite, {k: v for k, v in run().items() if k != "check_suite_id"}, SUBJECT).run_id is None
     # A check run that belongs to a different workflow run is not correlated to it.
     assert e.normalize(check(suite=999), run(), SUBJECT).workflow is None
 
