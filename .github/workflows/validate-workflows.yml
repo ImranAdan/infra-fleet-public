@@ -75,6 +75,7 @@ jobs:
           python3 .claude/skills/merge-gate/merge_ready.py --self-test
           python3 mandate/tests/test_delegation.py
           python3 mandate/tests/test_evidence.py
+          python3 mandate/tests/test_decision.py
           python3 .claude/skills/merge-gate/judge.py --self-test
 
       - name: Check PR workflow changes
