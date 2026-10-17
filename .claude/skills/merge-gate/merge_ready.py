@@ -175,6 +175,7 @@ def self_test() -> int:
     )
     assert categories.count("credential") >= 3 and categories.count("dependency") == 3, found
     assert "intent-policy" in categories and "decision-record" in categories, found
+    assert "admission-policy" in categories, found
     assert "product-requirements" in categories and "dependency-manifest" in categories, found
     assert categories.count("merge-authority") >= 5, found
     assert categories.count("migration") >= 3, found

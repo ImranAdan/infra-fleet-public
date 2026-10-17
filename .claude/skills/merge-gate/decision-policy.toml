@@ -27,6 +27,14 @@ Approve when the change follows that intent or an explicit owner request and
 keeps the position provable. Reject silent weakening of a check, drill or rule."""
 
 [[rule]]
+id = "admission-policy"
+category = "admission-policy"
+decider = "owner"
+guidance = """Operational admission policy (policies/, k8s/*/policies/). The
+delegation may make this delegable with runtime evidence; until then the owner
+decides, as when it was counted as intent policy."""
+
+[[rule]]
 id = "decision-record"
 category = "decision-record"
 decider = "evidence"

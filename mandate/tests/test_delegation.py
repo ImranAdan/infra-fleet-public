@@ -69,6 +69,71 @@ def main() -> int:
     # Escalating a reserved category is fine.
     d.parse(MINIMAL.replace('"decision-record"', '"credential"').replace('"authorize"', '"escalate"'), REPO, SOURCE)
 
+    # Reserved surfaces are found by path, whatever the owner's classes say:
+    # declared intent, enforcement material, this repository's evidence
+    # producers and agent instructions. Operational admission policy stays
+    # delegable; constitutional intent policy does not.
+    rejects(MINIMAL.replace('"decision-record"', '"intent-policy"'), expect="reserved: intent-policy")
+    d.parse(MINIMAL.replace('"decision-record"', '"admission-policy"'), REPO, SOURCE)
+    surfaces = {
+        "intent/security.md": "intent-policy",
+        ".github/rulesets/main.json": "enforcement",
+        ".github/owner-only-ruleset.json": "enforcement",
+        ".github/CODEOWNERS": "enforcement",
+        "mandate/src/mandate/gate.py": "enforcement",
+        ".github/workflows/intent-gate.yml": "evidence-producer",
+        ".github/workflows/intent-gate-retarget.yml": "evidence-producer",
+        "AGENTS.md": "agent-instructions",
+        "CLAUDE.md": "agent-instructions",
+        "apps/api/AGENTS.md": "agent-instructions",
+    }
+    # Owner classes listed first try to authorize every delegable category.
+    delegable = sorted(d.CATEGORIES - d.RESERVED)
+    greedy = d.parse(
+        (HERE.parent / "examples" / "infra-fleet-public.toml").read_text().replace(
+            "# First match wins per finding; an unmatched finding escalates.",
+            f'[[classes]]\nid = "everything"\nmatch = {{ category = {delegable!r} }}\ndecide = "authorize"\nrequire = ["intent-gate"]\n'.replace("'", '"'),
+        ),
+        REPO,
+        SOURCE,
+    )
+    assert greedy.classes[0].id == "everything"
+    # Files at the trusted base: both producers call a shared workflow, which
+    # calls a local action. Everything they reach is reserved too.
+    base = {
+        ".github/workflows/intent-gate.yml": "jobs:\n  intent:\n    uses: ./.github/workflows/intent-gate-run.yml\n",
+        ".github/workflows/intent-gate-retarget.yml": "    uses: './.github/workflows/intent-gate-run.yml'\n",
+        ".github/workflows/intent-gate-run.yml": "      - uses: actions/checkout@v5\n      - uses: ./.github/actions/compare\n",
+        ".github/actions/compare/action.yml": "runs:\n  using: composite\n",
+    }
+    surfaces[".github/workflows/intent-gate-run.yml"] = "evidence-producer"
+    surfaces[".github/actions/compare/action.yml"] = "evidence-producer"
+    surfaces[".github/actions/compare/compare.sh"] = "evidence-producer"
+    for path, category in surfaces.items():
+        found = d.reserved_findings(greedy, [path], base.get)
+        assert [c for c, _ in found] == [category], (path, found)
+        assert category in d.RESERVED, category
+        authorizing = [c.id for c in greedy.classes if category in c.categories and c.decide == "authorize"]
+        assert authorizing == [], (path, authorizing)
+    # Routine workflows and ordinary files are not reserved.
+    ordinary = [".github/workflows/ci.yml", ".github/actions/compare-other/action.yml", "docs/README.md", "k8s/base/policies/x.yaml"]
+    assert d.reserved_findings(greedy, ordinary, base.get) == []
+
+    # A-18: a mutable script an evidence workflow runs is reserved too,
+    # including scripts that script calls.
+    scripted = dict(base)
+    scripted[".github/workflows/intent-gate-run.yml"] += "      - run: python3 .github/scripts/compare_intent.py --strict\n"
+    scripted[".github/scripts/compare_intent.py"] = 'subprocess.run(["bash", "scripts/lib/diff.sh"])\n'
+    for path in (".github/scripts/compare_intent.py", "scripts/lib/diff.sh"):
+        assert [c for c, _ in d.reserved_findings(greedy, [path], scripted.get)] == ["evidence-producer"], path
+    assert d.reserved_findings(greedy, ["scripts/other.sh"], scripted.get) == []
+
+    # Two producers claiming one check name would make the source ambiguous.
+    rejects(
+        MINIMAL + '[evidence.twin]\ncheck = "CI"\nworkflow = ".github/workflows/twin.yml"\nevent = "pull_request"\n',
+        expect="same check",
+    )
+
     # Authorization needs declared evidence.
     rejects(MINIMAL.replace('require = ["ci"]', 'require = ["tests"]'), expect="declared evidence")
     rejects(MINIMAL.replace('require = ["ci"]\n', ""), expect="without requiring any evidence")
