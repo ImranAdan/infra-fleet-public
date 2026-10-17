@@ -103,6 +103,7 @@ def main() -> int:
     # A forged twin still blocks while the genuine producer passes.
     forged = e.normalize(check(71, suite=80), run(8, path=".github/workflows/forged.yml"), SUBJECT)
     assert codes([good, forged]) == ["CHECK_WRONG_SOURCE"]
+    assert e.evaluate(DELEGATION, ("intent-gate",), [good, forged], SUBJECT).accepted == ()
     # A check run that belongs to a different workflow run is not correlated to it.
     assert e.normalize(check(suite=999), run(), SUBJECT).workflow is None
 
@@ -110,6 +111,7 @@ def main() -> int:
     for stale in (
         e.normalize(check(head=OTHER), run(head=OTHER), SUBJECT),
         e.normalize(check(), run(base=OTHER), SUBJECT),
+        e.normalize(check(), {**run(), "repository": {"full_name": "ImranAdan/fork"}}, SUBJECT),
         e.normalize(check(), run(), e.Subject(REPO, HEAD, BASE, POLICY.replace("d" * 40, "e" * 40))),
     ):
         assert codes([stale]) == ["EVIDENCE_REQUIRED:intent-gate"], (stale, codes([stale]))
