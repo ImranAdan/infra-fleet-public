@@ -119,6 +119,21 @@ def main() -> int:
     ordinary = [".github/workflows/ci.yml", ".github/actions/compare-other/action.yml", "docs/README.md", "k8s/base/policies/x.yaml"]
     assert d.reserved_findings(greedy, ordinary, base.get) == []
 
+    # A-18: a mutable script an evidence workflow runs is reserved too,
+    # including scripts that script calls.
+    scripted = dict(base)
+    scripted[".github/workflows/intent-gate-run.yml"] += "      - run: python3 .github/scripts/compare_intent.py --strict\n"
+    scripted[".github/scripts/compare_intent.py"] = 'subprocess.run(["bash", "scripts/lib/diff.sh"])\n'
+    for path in (".github/scripts/compare_intent.py", "scripts/lib/diff.sh"):
+        assert [c for c, _ in d.reserved_findings(greedy, [path], scripted.get)] == ["evidence-producer"], path
+    assert d.reserved_findings(greedy, ["scripts/other.sh"], scripted.get) == []
+
+    # Two producers claiming one check name would make the source ambiguous.
+    rejects(
+        MINIMAL + '[evidence.twin]\ncheck = "CI"\nworkflow = ".github/workflows/twin.yml"\nevent = "pull_request"\n',
+        expect="same check",
+    )
+
     # Authorization needs declared evidence.
     rejects(MINIMAL.replace('require = ["ci"]', 'require = ["tests"]'), expect="declared evidence")
     rejects(MINIMAL.replace('require = ["ci"]\n', ""), expect="without requiring any evidence")
