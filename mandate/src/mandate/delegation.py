@@ -190,6 +190,8 @@ def parse(text: str, repository: str, source: str) -> Delegation:
             raise _invalid(f"{where}.event must be pull_request or workflow_dispatch")
         if "head_branch" in spec and spec["event"] != "workflow_dispatch":
             raise _invalid(f"{where}.head_branch is only valid for workflow_dispatch")
+        if any(spec["check"] == other.check for other in evidence.values()):
+            raise _invalid(f"{where}: another producer already claims the same check {spec['check']!r}")
         evidence[name] = Evidence(
             check=_text(spec["check"], f"{where}.check"),
             workflow=spec["workflow"],
@@ -222,6 +224,14 @@ def parse(text: str, repository: str, source: str) -> Delegation:
         unknown = [c for c in categories if c not in CATEGORIES]
         if unknown:
             raise _invalid(f"{where} names unknown categories: {', '.join(map(str, unknown))}")
+        patterns = raw["match"].get("paths", [])
+        if not isinstance(patterns, list) or not all(isinstance(p, str) for p in patterns):
+            raise _invalid(f"{where}.match.paths must be a list of regular expressions")
+        for pattern in patterns:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise _invalid(f"{where}.match.paths has an invalid pattern {pattern!r}: {exc}") from None
         if raw["decide"] not in ("authorize", "escalate"):
             raise _invalid(f"{where}.decide must be 'authorize' or 'escalate'")
         reserved = RESERVED.intersection(categories)
@@ -289,10 +299,15 @@ def fetch(repository: str, commit: str, delegation_repository: str = DELEGATION_
 
 
 LOCAL_USES = re.compile(r"""uses:\s*['"]?\./([^\s'"@#]+)""")
+# Repository scripts a workflow or script runs, by relative path. Over-matching
+# only reserves more. ponytail: language-level imports (python `import x`) are
+# not followed; reserve the package directory in the delegation if one matters.
+SCRIPT = re.compile(r"\.(?:py|sh|bash|js|mjs|cjs|ts|rb|pl|ps1)$")
+SCRIPT_REF = re.compile(r"""(?:^|(?<=[\s'"=(\[,]))((?:\./)?(?:[\w.-]+/)*[\w.-]+\.(?:py|sh|bash|js|mjs|cjs|ts|rb|pl|ps1))\b""", re.M)
 
 
 def _producer_paths(delegation: Delegation, read: Callable[[str], str | None]) -> set[str]:
-    """Each evidence workflow plus every local workflow or action it calls, transitively.
+    """Each evidence workflow plus every local workflow, action or script it calls, transitively.
 
     ``read`` returns a file's text at the trusted base revision, or None. A PR
     that adds a new call must edit a producer already in this set, so reading
@@ -305,12 +320,13 @@ def _producer_paths(delegation: Delegation, read: Callable[[str], str | None]) -
         if path in found:
             continue
         found.add(path)
-        texts = [read(path)] if path.endswith((".yml", ".yaml")) else [
-            read(f"{path}/action.yml"),
-            read(f"{path}/action.yaml"),
-        ]
+        if path.endswith((".yml", ".yaml")) or SCRIPT.search(path):
+            texts = [read(path)]
+        else:
+            texts = [read(f"{path}/action.yml"), read(f"{path}/action.yaml")]
         for text in texts:
             pending.extend(LOCAL_USES.findall(text or ""))
+            pending.extend(m.removeprefix("./") for m in SCRIPT_REF.findall(text or ""))
     return found
 
 

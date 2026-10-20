@@ -42,11 +42,54 @@ instructions). Operational `admission-policy` is delegable; constitutional
 reserved surfaces by path alone (`intent/`, rulesets, `CODEOWNERS`, the engine
 under `mandate/`, any `AGENTS.md` or `CLAUDE.md`, and this delegation's
 evidence-producer workflows together with every local workflow or action they
-call, followed through `read` at the trusted base), so no owner class or class
+call (including repository scripts they run), followed through `read` at the
+trusted base), so no owner class or class
 order can authorize them. The engine reports `policies/` and `k8s/*/policies/`
 as `admission-policy`; Fleet's decision policy still sends it to the owner. An owner listed as an agent is refused in
-`enforce` mode (`IDENTITY_COLLISION`). `examples/infra-fleet-public.toml` is
+`enforce` mode and escalates every shadow decision (`IDENTITY_COLLISION`).
+A malformed `match.paths` pattern fails the load. `examples/infra-fleet-public.toml` is
 Fleet's delegation.
+
+Two producers may not claim the same check name.
+
+## Evidence
+
+`mandate.evidence` turns a GitHub check run and the workflow run behind it
+into an `EvidenceRecord` (`normalize`) that keeps the provider IDs (check run,
+suite, workflow run and attempt, App), the workflow path and event, and the
+exact subject: repository, head, base and delegation source. `to_dict` /
+`from_dict` round-trip it for receipts. `evaluate(delegation, require,
+records, subject)` judges a class's required evidence on three independent
+axes and returns typed failures, never an outcome:
+
+| Axis | Fails when | Failure |
+| --- | --- | --- |
+| Authenticity | The check name matches but the App, workflow path, event or dispatch branch is not the declared producer's | `CHECK_WRONG_SOURCE` |
+| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_REQUIRED:<name>` if nothing current remains |
+| Sufficiency | The required producer is absent, running, failed, or reports conflicting or unattributable results | `EVIDENCE_REQUIRED`, `EVIDENCE_PENDING`, `EVIDENCE_FAILED:<name>`, `EVIDENCE_CONFLICT` |
+
+A rerun supersedes earlier attempts of the same workflow run; every result of
+the latest attempt counts. Green checks the
+class does not require carry no weight, and PR prose is not an input. Outcome
+precedence and the public reason codes are the decision's (KAN-24).
+
+## Decision
+
+`mandate.decision.decide(DecisionInput)` is a pure function from one snapshot
+(delegation or its load error, subject, `(category, path)` findings, proven PR
+facts, evidence records, and the caller's mechanical refusals) to
+`AUTHORIZE | VERIFY | BLOCK | ESCALATE` with every reason. Precedence is
+BLOCK > ESCALATE > VERIFY > AUTHORIZE, and AUTHORIZE needs no reason at all:
+every finding matched to an authorizing class, with its required evidence
+accepted by `mandate.evidence`. Reasons come only from the versioned
+`REGISTRY` (code, outcome, who acts next); an unregistered mechanical code is a
+`CONTRACT_ERROR`. A path with no category is `UNCLASSIFIED`, and a class match
+key the caller has not proven never matches, so both escalate. No model text is
+an input. `Decision.to_dict()` is the DecisionRecord payload.
+
+Fleet's live gate still decides `READY`/`PARK`. `LEGACY` maps its verdicts
+(`PARK`/`JUDGE` → ESCALATE, `BLOCKED` → BLOCK, `READY` → recompute), and none
+maps to AUTHORIZE.
 
 Test it through the entry point, the way the merge worker runs it:
 
@@ -54,4 +97,6 @@ Test it through the entry point, the way the merge worker runs it:
 python3 .claude/skills/merge-gate/merge_ready.py --self-test
 python3 .claude/skills/merge-gate/judge.py --self-test
 python3 mandate/tests/test_delegation.py
+python3 mandate/tests/test_evidence.py
+python3 mandate/tests/test_decision.py
 ```
