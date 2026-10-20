@@ -121,6 +121,23 @@ def main() -> int:
     collision = d.DelegationError("IDENTITY_COLLISION", "owner listed as agent")
     assert outcome(delegation=collision) == ("ESCALATE", ["IDENTITY_COLLISION"])
     assert outcome(delegation=d.DelegationError("SOMETHING_ELSE", "x")) == ("ESCALATE", ["DELEGATION_INVALID"])
+    # Shadow mode loads an owner-as-agent delegation, but it never authorizes.
+    shadow_collision = dataclasses.replace(DELEGATION, agents=(DELEGATION.owner,))
+    assert shadow_collision.identity_collision
+    assert outcome(delegation=shadow_collision) == ("ESCALATE", ["IDENTITY_COLLISION"])
+    # A malformed owner path pattern is refused at load, never a crash here.
+    try:
+        d.parse(
+            (HERE.parent / "examples" / "infra-fleet-public.toml").read_text().replace(
+                "lockfile_sibling = true }", 'lockfile_sibling = true, paths = ["["] }'
+            ),
+            REPO,
+            POLICY,
+        )
+    except d.DelegationError as exc:
+        assert exc.code == "DELEGATION_INVALID" and "paths" in str(exc), exc
+    else:
+        raise AssertionError("parse accepted a malformed paths pattern")
 
     # Precedence: BLOCK > ESCALATE > VERIFY > AUTHORIZE, every pair and the triple.
     block = {"blocking": ("HEAD_CHANGED",)}
