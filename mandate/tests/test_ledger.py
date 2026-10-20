@@ -175,7 +175,9 @@ def main() -> int:
     # An identical retry is a no-op only on a valid ledger that indexes it.
     corrupt = FakeGit()
     l.append(corrupt, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t1")
-    corrupt.objects[corrupt.objects[corrupt.refs[REF]]["tree"]]["files"][l.LEDGER] = b'{"seq":5}\n'
+    corrupt.objects[corrupt.objects[corrupt.refs[REF]]["tree"]]["files"][l.LEDGER] = (
+        b'{"seq":5}\n'
+    )
     try:
         l.append(corrupt, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t1")
     except l.LedgerError as exc:
@@ -184,7 +186,9 @@ def main() -> int:
         raise AssertionError("idempotent retry accepted on a corrupted ledger")
     orphan = FakeGit()
     l.append(orphan, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t1")
-    orphan.objects[orphan.objects[orphan.refs[REF]]["tree"]]["files"][l.receipt_path("o", "r1")] = b"{}"
+    orphan.objects[orphan.objects[orphan.refs[REF]]["tree"]]["files"][
+        l.receipt_path("o", "r1")
+    ] = b"{}"
     try:
         l.append(orphan, REPO, REF, "o", "r1", b"{}", "sha256:s", "VERIFY", "t2")
     except l.LedgerError as exc:
@@ -203,7 +207,11 @@ def main() -> int:
                 raise l.ApiError(502)
             return super().__call__(method, path, payload)
 
-    for where in ("GET repos/o/r/contents/v1/receipts", "POST repos/o/r/git/trees", "PATCH"):
+    for where in (
+        "GET repos/o/r/contents/v1/receipts",
+        "POST repos/o/r/git/trees",
+        "PATCH",
+    ):
         flaky = Flaky(where)
         l.append(flaky, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t1")
         flaky.armed = True
@@ -306,12 +314,22 @@ def main() -> int:
         "integrity on another ref passed"
     )
     assert l.ruleset_failures([writer, integrity], ref, 1), "wrong App ID passed"
+
     # GitHub matches with FNM_PATHNAME: `*` stops at `/`, `**` crosses it.
     def on(r, pattern):
         return {**r, "conditions": {"ref_name": {"include": [pattern], "exclude": []}}}
 
-    assert l.ruleset_failures([on(writer, "refs/heads/*"), on(integrity, "refs/heads/*")], ref, app), "`*` crossed a slash"
-    assert l.ruleset_failures([on(writer, "refs/heads/**"), on(integrity, "refs/heads/mandate-g0/*")], ref, app) == []
+    assert l.ruleset_failures(
+        [on(writer, "refs/heads/*"), on(integrity, "refs/heads/*")], ref, app
+    ), "`*` crossed a slash"
+    assert (
+        l.ruleset_failures(
+            [on(writer, "refs/heads/**"), on(integrity, "refs/heads/mandate-g0/*")],
+            ref,
+            app,
+        )
+        == []
+    )
     assert l.ruleset_failures([on(writer, "~ALL"), integrity], ref, app) == []
 
     print("ledger tests passed")

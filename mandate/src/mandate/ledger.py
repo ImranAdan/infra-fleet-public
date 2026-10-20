@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import fnmatch
 import hashlib
 import json
 import re
@@ -232,45 +231,60 @@ def append(
     for _attempt in range(RETRIES):
         try:
             state = read(api, repo, ref)
+            failures = verify(state.text, _receipts(api, repo, state))
+            if failures:
+                raise LedgerError("LEDGER_INVALID", "; ".join(failures))
+            lines = state.text.splitlines()
             existing = _file(api, repo, path, state.tip)
-        except ApiError as exc:
-            raise LedgerError("LEDGER_UNAVAILABLE", str(exc)) from None
-        if existing is not None:
-            if existing == receipt:
+            if existing is not None:
+                if existing != receipt:
+                    raise LedgerError(
+                        "RECEIPT_COLLISION", f"{path} already holds different bytes"
+                    )
+                indexed = {
+                    (json.loads(x)["decision_id"], json.loads(x)["receipt_revision"])
+                    for x in lines
+                }
+                if (decision_id, revision) not in indexed:
+                    raise LedgerError(
+                        "LEDGER_INVALID",
+                        f"{path} exists but the index does not record it",
+                    )
                 return None
-            raise LedgerError(
-                "RECEIPT_COLLISION", f"{path} already holds different bytes"
+            prev = json.loads(lines[-1]) if lines else None
+            item = entry(
+                prev,
+                decision_id,
+                revision,
+                receipt,
+                subject_digest,
+                outcome,
+                created_at,
             )
-        lines = state.text.splitlines()
-        failures = verify(state.text, _receipts(api, repo, state))
-        if failures:
-            raise LedgerError("LEDGER_INVALID", "; ".join(failures))
-        prev = json.loads(lines[-1]) if lines else None
-        item = entry(
-            prev, decision_id, revision, receipt, subject_digest, outcome, created_at
-        )
-        text = state.text + canonical(item).decode() + "\n"
-        sha = candidate(
-            api,
-            repo,
-            state,
-            {path: receipt, LEDGER: text.encode()},
-            f"ledger: {decision_id} {revision}",
-        )
-        try:
-            advance(api, repo, ref, sha)
+            text = state.text + canonical(item).decode() + "\n"
+            sha = candidate(
+                api,
+                repo,
+                state,
+                {path: receipt, LEDGER: text.encode()},
+                f"ledger: {decision_id} {revision}",
+            )
+            try:
+                advance(api, repo, ref, sha)
+            except ApiError as exc:
+                if exc.status in (409, 422):
+                    continue  # lost the race: re-read and rebuild
+                raise
+            if (
+                _file(api, repo, LEDGER, sha) != text.encode()
+                or _file(api, repo, path, sha) != receipt
+            ):
+                raise LedgerError(
+                    "LEDGER_INVALID", "read-back differs from what was written"
+                )
+            return item
         except ApiError as exc:
-            if exc.status in (409, 422):
-                continue  # lost the race: re-read and rebuild
             raise LedgerError("LEDGER_UNAVAILABLE", str(exc)) from None
-        if (
-            _file(api, repo, LEDGER, sha) != text.encode()
-            or _file(api, repo, path, sha) != receipt
-        ):
-            raise LedgerError(
-                "LEDGER_INVALID", "read-back differs from what was written"
-            )
-        return item
     raise LedgerError("LEDGER_UNAVAILABLE", f"lost the ref race {RETRIES} times")
 
 
@@ -427,14 +441,23 @@ def drill(api: Api, repo: str, ref: str, stamp: str) -> list[tuple[str, bool, st
 INTEGRITY_RULES = {"deletion", "non_fast_forward", "required_linear_history"}
 
 
+def _glob(pattern: str) -> re.Pattern[str]:
+    """GitHub's ruleset fnmatch with FNM_PATHNAME: `*` and `?` stop at `/`, `**` crosses it.
+
+    ponytail: bracket classes are matched literally; GitHub ref patterns here never use them.
+    """
+    out = ""
+    for token in re.split(r"(\*\*|\*|\?)", pattern):
+        out += {"**": ".*", "*": "[^/]*", "?": "[^/]"}.get(token, re.escape(token))
+    return re.compile(out + r"\Z")
+
+
 def _targets(ruleset: dict[str, Any], ref: str) -> bool:
     names = (ruleset.get("conditions") or {}).get("ref_name") or {}
     full = f"refs/heads/{ref}"
 
     def hit(pattern: str) -> bool:
-        return pattern == "~ALL" or fnmatch.fnmatchcase(
-            full, pattern.replace("**", "*")
-        )
+        return pattern == "~ALL" or bool(_glob(pattern).match(full))
 
     return any(hit(p) for p in names.get("include", [])) and not any(
         hit(p) for p in names.get("exclude", [])
