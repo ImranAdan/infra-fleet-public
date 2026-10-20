@@ -275,6 +275,11 @@ def main() -> int:
         "unsafe receipt identifiers" in f
         for f in l.verify(l.canonical(odd).decode(), {})
     )
+    # F1: one immutable receipt revision may appear in the index only once.
+    again = l.entry(first, "d1", "r1", receipt, "sha256:" + "1" * 64, "AUTHORIZE", "2026-10-20T00:00:01Z")
+    twice = l.canonical(first).decode() + "\n" + l.canonical(again).decode()
+    assert any("duplicate receipt revision d1/r1" in f for f in l.verify(twice, {l.receipt_path("d1", "r1"): receipt}))
+
     # Path identifiers cannot escape the receipts directory.
     try:
         l.receipt_path("../x", "r1")
@@ -347,6 +352,24 @@ def main() -> int:
         == []
     )
     assert l.ruleset_failures([on(writer, "~ALL"), integrity], ref, app) == []
+
+    # F2: teardown resolves exactly the two drill rulesets on the drill ref, or refuses.
+    named = [{**writer, "id": 11}, {**integrity, "id": 12}]
+    assert l.drill_ruleset_ids(named) == [11, 12]
+    production = {**writer, "id": 13, "name": "mandate-ledger-writer"}
+    assert l.drill_ruleset_ids(named + [production]) == [11, 12], "a production ruleset was selected"
+    for broken in (
+        named[:1],  # one missing
+        named + [{**integrity, "id": 14}],  # duplicated name
+        [named[0], {**named[1], "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}}}],
+        [named[0], {**named[1], "conditions": {"ref_name": {"include": ["refs/heads/mandate-g0/ledger", "refs/heads/main"], "exclude": []}}}],
+    ):
+        try:
+            l.drill_ruleset_ids(broken)
+        except l.LedgerError:
+            pass
+        else:
+            raise AssertionError(f"teardown accepted {broken}")
 
     print("ledger tests passed")
     return 0
