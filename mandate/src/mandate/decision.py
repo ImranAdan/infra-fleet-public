@@ -28,13 +28,14 @@ from typing import Any
 from mandate.delegation import CATEGORIES, RESERVED, Delegation, DelegationError
 from mandate.evidence import EvidenceRecord, Subject, evaluate
 
-REGISTRY_VERSION = 1
+REGISTRY_VERSION = 2  # 2: EVIDENCE_NOT_APPLICABLE (D-21)
 OUTCOMES = ("BLOCK", "ESCALATE", "VERIFY", "AUTHORIZE")  # worst first
 
 # code (before any ":<name>") -> (outcome, who acts next)
 REGISTRY: dict[str, tuple[str, str]] = {
     # Evidence (mandate.evidence)
     "EVIDENCE_REQUIRED": ("VERIFY", "agent"),
+    "EVIDENCE_NOT_APPLICABLE": ("VERIFY", "agent"),
     "EVIDENCE_PENDING": ("VERIFY", "mandate"),
     "CHECK_WRONG_SOURCE": ("BLOCK", "agent"),
     "EVIDENCE_CONFLICT": ("BLOCK", "agent"),

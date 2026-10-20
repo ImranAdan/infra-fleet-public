@@ -65,7 +65,7 @@ axes and returns typed failures, never an outcome:
 | Axis | Fails when | Failure |
 | --- | --- | --- |
 | Authenticity | The check name matches but the App, workflow path, event or dispatch branch is not the declared producer's | `CHECK_WRONG_SOURCE` |
-| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_REQUIRED:<name>` if nothing current remains |
+| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY, D-21) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields |
 | Sufficiency | The required producer is absent, running, failed, or reports conflicting or unattributable results | `EVIDENCE_REQUIRED`, `EVIDENCE_PENDING`, `EVIDENCE_FAILED:<name>`, `EVIDENCE_CONFLICT` |
 
 A rerun supersedes earlier attempts of the same workflow run; every result of
