@@ -91,6 +91,27 @@ Fleet's live gate still decides `READY`/`PARK`. `LEGACY` maps its verdicts
 (`PARK`/`JUDGE` → ESCALATE, `BLOCKED` → BLOCK, `READY` → recompute), and none
 maps to AUTHORIZE.
 
+## Ledger
+
+`mandate.ledger` keeps receipts on a protected branch (KAN-4 page 09, D-20).
+The layout is immutable `v1/receipts/<decision_id>/<revision>.json` files plus
+a hash-chained `v1/ledger.jsonl`.
+
+- **Append:** `append()` is a compare-and-swap. It makes one commit whose only
+  parent is the tip it read, then does a non-force ref update. A concurrent
+  writer is refused and retries.
+- **Retries and collisions:** an identical retry appends nothing. Different
+  bytes at one revision give `RECEIPT_COLLISION`.
+- **Failures:** a broken chain gives `LEDGER_INVALID`. An exhausted race or a
+  provider error gives `LEDGER_UNAVAILABLE`.
+- **Verify:** `verify()` catches middle deletion on its own. It catches tail
+  truncation and full rewrite only while an anchor (merge trailer, unexpired
+  check or owner copy) still names a later head.
+- **Topology check:** `python3 -m mandate.ledger rulesets <repo> <ref> <app>`
+  checks the two-ruleset layout read-only.
+
+The live drill is in `drill/ledger/README.md`.
+
 ## Shadow decisions
 
 `mandate.shadow` turns one live pull request into a `DecisionInput` and runs
@@ -124,4 +145,5 @@ python3 mandate/tests/test_delegation.py
 python3 mandate/tests/test_evidence.py
 python3 mandate/tests/test_decision.py
 python3 mandate/tests/test_shadow.py
+python3 mandate/tests/test_ledger.py
 ```
