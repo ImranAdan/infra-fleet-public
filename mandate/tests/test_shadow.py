@@ -119,6 +119,11 @@ def main() -> int:
         "UNCLASSIFIED",
     } <= set(codes(mixed)), codes(mixed)
 
+    # Findings attach to exact paths: a name contained in another path gains nothing from it.
+    nested = decide(("docs/decisions/README.md", "README.md"))
+    assert ("unclassified", "README.md") in shadow.findings(diff("docs/decisions/README.md", "README.md"), ["docs/decisions/README.md", "README.md"], DELEGATION, lambda _p: None)
+    assert nested.outcome == "ESCALATE" and "UNCLASSIFIED" in codes(nested), codes(nested)
+
     # A scope finding that names no changed path still counts (fail closed).
     original = gate.scope_findings
     gate.scope_findings = lambda _diff: [
