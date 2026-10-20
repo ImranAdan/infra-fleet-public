@@ -9,7 +9,10 @@ name: Mandate shadow decision
 
 on:
   workflow_run:
-    workflows: [Intent Gate, Intent Gate (retarget)]
+    # Not the retarget variant: every delegation class requires the ordinary
+    # intent-gate producer, so a retargeted PR could only ever VERIFY here.
+    # Accepting either producer is a delegation-semantics change (Codex).
+    workflows: [Intent Gate]
     types: [completed]
   workflow_dispatch:
     inputs:

@@ -106,7 +106,8 @@ Facts such as permission deltas aren't computed yet, so classes that need them
 never match. Mechanical refusals belong to the executor (KAN-28).
 
 `.github/workflows/mandate-shadow.yml` runs it from the default branch after
-each Intent Gate run. It writes the outcome to the job summary and a
+each Intent Gate run (not the retarget variant, whose producer no class
+requires yet). It writes the outcome to the job summary and a
 `decision.json` artifact. It reads only and grants nothing.
 
 ```bash
