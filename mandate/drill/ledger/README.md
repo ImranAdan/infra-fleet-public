@@ -49,8 +49,11 @@ gh run watch -R $R "$(gh run list -R $R --workflow ledger-drill.yml --limit 1 --
 
 # 6. Claude collects the transcript artifact and records the result on KAN-30.
 
-# 7. OWNER teardown: remove both drill rulesets, then the ref
-for id in $(gh api repos/$R/rulesets --jq '.[]|select(.name|startswith("mandate-ledger-"))|.id'); do gh api -X DELETE repos/$R/rulesets/$id; done
+# 7. OWNER teardown. Resolves exactly mandate-ledger-writer-drill and
+#    mandate-ledger-integrity-drill (each once, each targeting only the drill
+#    ref), shows their IDs, and deletes nothing if that does not hold.
+ids=$(PYTHONPATH=../../src python3 -m mandate.ledger drill-rulesets $R) && \
+  for id in $ids; do gh api -X DELETE repos/$R/rulesets/$id; done
 git push origin --delete mandate-g0/ledger
 ```
 

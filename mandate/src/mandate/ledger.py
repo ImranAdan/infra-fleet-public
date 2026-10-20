@@ -115,6 +115,7 @@ def verify(
     failures: list[str] = []
     prev: dict[str, Any] | None = None
     heads: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     for number, line in enumerate(text.splitlines(), 1):
         try:
             item = json.loads(line)
@@ -144,6 +145,13 @@ def verify(
         except LedgerError as exc:
             failures.append(f"line {number}: {exc}")
             break
+        key = (item["decision_id"], item["receipt_revision"])
+        if key in seen:
+            failures.append(
+                f"line {number}: duplicate receipt revision {key[0]}/{key[1]}"
+            )
+            break
+        seen.add(key)
         if path not in receipts:
             failures.append(f"line {number}: receipt {path} missing")
         elif digest(receipts[path]) != item["receipt_digest"]:
@@ -522,6 +530,33 @@ def ruleset_failures(
     return failures
 
 
+DRILL_REF = "refs/heads/mandate-g0/ledger"
+DRILL_NAMES = ("mandate-ledger-writer-drill", "mandate-ledger-integrity-drill")
+
+
+def drill_ruleset_ids(rulesets: list[dict[str, Any]]) -> list[int]:
+    """IDs of exactly the two temporary drill rulesets, or a refusal.
+
+    Each name must appear once and target only the drill ref, so teardown can
+    never select another ruleset, such as a later production ledger one.
+    """
+    ids = []
+    for name in DRILL_NAMES:
+        matches = [r for r in rulesets if r.get("name") == name]
+        if len(matches) != 1:
+            raise LedgerError(
+                "LEDGER_INVALID",
+                f"expected one ruleset named {name}, found {len(matches)}",
+            )
+        names = (matches[0].get("conditions") or {}).get("ref_name") or {}
+        if names.get("include") != [DRILL_REF] or names.get("exclude"):
+            raise LedgerError(
+                "LEDGER_INVALID", f"{name} targets {names}, not only {DRILL_REF}"
+            )
+        ids.append(matches[0]["id"])
+    return ids
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="KAN-30 ledger drill and topology check"
@@ -537,7 +572,29 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("repository")
     check.add_argument("ref")
     check.add_argument("app_id", type=int)
+    teardown = sub.add_parser(
+        "drill-rulesets", help="print the two drill ruleset IDs, or refuse"
+    )
+    teardown.add_argument("repository")
     args = parser.parse_args(argv)
+    if args.command == "drill-rulesets":
+        summaries = gh_api(
+            "GET", f"repos/{args.repository}/rulesets?per_page=100", None
+        )
+        details = [
+            gh_api("GET", f"repos/{args.repository}/rulesets/{r['id']}", None)
+            for r in summaries
+        ]
+        try:
+            ids = drill_ruleset_ids(details)
+        except LedgerError as exc:
+            print(f"refusing teardown: {exc}", file=sys.stderr)
+            return 1
+        for ruleset in details:
+            if ruleset["id"] in ids:
+                print(f"{ruleset['id']} {ruleset['name']}", file=sys.stderr)
+        print(" ".join(map(str, ids)))
+        return 0
     if args.command == "rulesets":
         summaries = gh_api(
             "GET",
