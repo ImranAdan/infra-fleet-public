@@ -184,6 +184,15 @@ def main() -> int:
         assert exc.code == "LEDGER_INVALID", exc
     else:
         raise AssertionError("idempotent retry accepted on a corrupted ledger")
+    undecodable = FakeGit()
+    l.append(undecodable, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t1")
+    undecodable.objects[undecodable.objects[undecodable.refs[REF]]["tree"]]["files"][l.LEDGER] = b"\xff\n"
+    try:
+        l.append(undecodable, REPO, REF, "d2", "r1", b"{}", "sha256:s", "VERIFY", "t2")
+    except l.LedgerError as exc:
+        assert exc.code == "LEDGER_INVALID", exc
+    else:
+        raise AssertionError("appended to an undecodable ledger")
     orphan = FakeGit()
     l.append(orphan, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t1")
     orphan.objects[orphan.objects[orphan.refs[REF]]["tree"]]["files"][
