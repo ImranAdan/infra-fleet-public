@@ -176,7 +176,11 @@ def _file(api: Api, repo: str, path: str, ref: str) -> bytes | None:
 def read(api: Api, repo: str, ref: str) -> State:
     tip = api("GET", f"repos/{repo}/git/ref/heads/{ref}", None)["object"]["sha"]
     tree = api("GET", f"repos/{repo}/git/commits/{tip}", None)["tree"]["sha"]
-    return State(tip, tree, (_file(api, repo, LEDGER, tip) or b"").decode())
+    try:
+        text = (_file(api, repo, LEDGER, tip) or b"").decode()
+    except UnicodeDecodeError as exc:
+        raise LedgerError("LEDGER_INVALID", f"{LEDGER} is not UTF-8: {exc}") from None
+    return State(tip, tree, text)
 
 
 def _receipts(api: Api, repo: str, state: State) -> dict[str, bytes]:
