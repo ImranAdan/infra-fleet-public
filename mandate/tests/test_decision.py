@@ -75,6 +75,9 @@ def main() -> int:
     # VERIFY: obtainable proof is missing or still running.
     assert outcome(records=()) == ("VERIFY", ["EVIDENCE_REQUIRED:intent-gate"])
     assert outcome(records=(record(None),)) == ("VERIFY", ["EVIDENCE_PENDING:intent-gate"])
+    # D-21: genuine evidence about another subject is explicit and still obtainable.
+    older = dataclasses.replace(GREEN, head_sha="c" * 40)
+    assert outcome(records=(older,)) == ("VERIFY", ["EVIDENCE_NOT_APPLICABLE:intent-gate"])
 
     # BLOCK: forged, conflicting or failed proof, and mechanical refusals.
     forged = record(workflow=".github/workflows/forged.yml", run_id=8, check_id=80)
