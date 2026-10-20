@@ -153,13 +153,12 @@ def applicability(record: EvidenceRecord, subject: Subject) -> tuple[str, ...]:
 
 
 def _latest_attempts(records: list[EvidenceRecord]) -> list[EvidenceRecord]:
-    """A rerun supersedes earlier attempts of the same workflow run."""
-    latest: dict[int | None, EvidenceRecord] = {}
+    """A rerun supersedes earlier attempts of the same workflow run; every
+    result of the latest attempt is kept, so input order cannot matter."""
+    latest: dict[int | None, int] = {}
     for record in records:
-        kept = latest.get(record.run_id)
-        if kept is None or (record.run_attempt or 0) > (kept.run_attempt or 0):
-            latest[record.run_id] = record
-    return list(latest.values())
+        latest[record.run_id] = max(latest.get(record.run_id, 0), record.run_attempt or 0)
+    return [r for r in records if (r.run_attempt or 0) == latest[r.run_id]]
 
 
 def evaluate(
