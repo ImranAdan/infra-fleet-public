@@ -163,6 +163,8 @@ def decide(snapshot: DecisionInput) -> Decision:
     else:
         policy = delegation.source
         required: set[str] = set()
+        if delegation.identity_collision:  # shadow mode loads it; it never authorizes
+            found.append(reason("IDENTITY_COLLISION", "the owner is also listed as an agent"))
         if not snapshot.findings:
             found.append(reason("UNCLASSIFIED", "no findings: nothing the delegation can authorize"))
         for category, path in snapshot.findings:

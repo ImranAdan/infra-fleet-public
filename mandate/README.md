@@ -46,7 +46,8 @@ call (including repository scripts they run), followed through `read` at the
 trusted base), so no owner class or class
 order can authorize them. The engine reports `policies/` and `k8s/*/policies/`
 as `admission-policy`; Fleet's decision policy still sends it to the owner. An owner listed as an agent is refused in
-`enforce` mode (`IDENTITY_COLLISION`). `examples/infra-fleet-public.toml` is
+`enforce` mode and escalates every shadow decision (`IDENTITY_COLLISION`).
+A malformed `match.paths` pattern fails the load. `examples/infra-fleet-public.toml` is
 Fleet's delegation.
 
 Two producers may not claim the same check name.
@@ -67,7 +68,8 @@ axes and returns typed failures, never an outcome:
 | Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_REQUIRED:<name>` if nothing current remains |
 | Sufficiency | The required producer is absent, running, failed, or reports conflicting or unattributable results | `EVIDENCE_REQUIRED`, `EVIDENCE_PENDING`, `EVIDENCE_FAILED:<name>`, `EVIDENCE_CONFLICT` |
 
-A rerun supersedes earlier attempts of the same workflow run. Green checks the
+A rerun supersedes earlier attempts of the same workflow run; every result of
+the latest attempt counts. Green checks the
 class does not require carry no weight, and PR prose is not an input. Outcome
 precedence and the public reason codes are the decision's (KAN-24).
 

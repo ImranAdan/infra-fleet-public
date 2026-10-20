@@ -224,6 +224,14 @@ def parse(text: str, repository: str, source: str) -> Delegation:
         unknown = [c for c in categories if c not in CATEGORIES]
         if unknown:
             raise _invalid(f"{where} names unknown categories: {', '.join(map(str, unknown))}")
+        patterns = raw["match"].get("paths", [])
+        if not isinstance(patterns, list) or not all(isinstance(p, str) for p in patterns):
+            raise _invalid(f"{where}.match.paths must be a list of regular expressions")
+        for pattern in patterns:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise _invalid(f"{where}.match.paths has an invalid pattern {pattern!r}: {exc}") from None
         if raw["decide"] not in ("authorize", "escalate"):
             raise _invalid(f"{where}.decide must be 'authorize' or 'escalate'")
         reserved = RESERVED.intersection(categories)
