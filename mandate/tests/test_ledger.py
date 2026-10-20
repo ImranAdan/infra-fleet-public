@@ -461,6 +461,40 @@ def main() -> int:
         else:
             raise AssertionError(f"teardown accepted {broken}")
 
+    # F3: teardown is all or nothing; the ref is deleted only after the
+    # selector and every ruleset deletion succeeded.
+    import os
+    import subprocess
+    import tempfile
+
+    script = drill_dir / "teardown.sh"
+
+    def teardown(selector_ok: bool, fail_delete: str | None) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "calls"
+            stubs = {
+                "python3": f'echo "python3 $*" >> {log}; {"echo 11 12" if selector_ok else "exit 1"}',
+                "gh": f'echo "gh $*" >> {log}; case "$*" in *rulesets/{fail_delete or "none"}) exit 1;; esac',
+                "git": f'echo "git $*" >> {log}',
+            }
+            for name, body in stubs.items():
+                (Path(tmp) / name).write_text(f"#!/bin/sh\n{body}\n")
+                (Path(tmp) / name).chmod(0o755)
+            env = {**os.environ, "PATH": f"{tmp}:/usr/bin:/bin"}
+            subprocess.run(["bash", str(script), REPO], env=env, capture_output=True)
+            return log.read_text().splitlines() if log.exists() else []
+
+    ok = teardown(True, None)
+    assert [c.split()[0] for c in ok] == ["python3", "gh", "gh", "git"], ok
+    assert ok[-1].endswith("--delete mandate-g0/ledger"), ok
+    for selector_ok, fail_delete in ((False, None), (True, "11"), (True, "12")):
+        calls = teardown(selector_ok, fail_delete)
+        assert not any(c.startswith("git") for c in calls), (
+            selector_ok,
+            fail_delete,
+            calls,
+        )
+
     print("ledger tests passed")
     return 0
 
