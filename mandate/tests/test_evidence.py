@@ -150,6 +150,9 @@ def main() -> int:
     rerun = e.normalize(check(75, suite=70), run(attempt=2), SUBJECT)
     first_failed = e.normalize(check(76, conclusion="failure", suite=70), run(), SUBJECT)
     assert codes([first_failed, rerun]) == []
+    # Every result of the latest attempt counts, in any order.
+    same_attempt = e.normalize(check(79, conclusion="failure", suite=70), run(), SUBJECT)
+    assert codes([good, same_attempt]) == codes([same_attempt, good]) == ["EVIDENCE_CONFLICT"]
     assert codes([failed]) == ["EVIDENCE_FAILED:intent-gate"]
     assert codes([e.normalize(check(conclusion=None), run(), SUBJECT)]) == ["EVIDENCE_PENDING:intent-gate"]
 
