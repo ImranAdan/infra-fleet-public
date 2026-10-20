@@ -118,8 +118,9 @@ The live drill is in `drill/ledger/README.md`.
 `decide()` on it (the KAN-27 adapter; D-23: it adds no outcome or reason). The
 input is built from:
 
-- **Findings:** the engine's scope findings plus reserved surfaces read at the
-  trusted base. A finding that names no changed path is kept.
+- **Findings:** the engine classifies each file from its own diff, plus
+  reserved surfaces read at the trusted base. A file that appears in the diff
+  but not in the API's file list still counts.
 - **Evidence:** the head's check runs, each correlated to its workflow run.
 - **Policy:** the owner's delegation at a pinned commit.
 

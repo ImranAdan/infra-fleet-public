@@ -74,7 +74,12 @@ def digest(data: bytes) -> str:
 
 
 def receipt_path(decision_id: str, revision: str) -> str:
-    if not (ID.match(decision_id) and ID.match(revision)):
+    if not (
+        isinstance(decision_id, str)
+        and isinstance(revision, str)
+        and ID.match(decision_id)
+        and ID.match(revision)
+    ):
         raise LedgerError(
             "LEDGER_INVALID", f"unsafe receipt identifiers {decision_id!r}/{revision!r}"
         )

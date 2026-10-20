@@ -121,21 +121,35 @@ def main() -> int:
 
     # Findings attach to exact paths: a name contained in another path gains nothing from it.
     nested = decide(("docs/decisions/README.md", "README.md"))
-    assert ("unclassified", "README.md") in shadow.findings(diff("docs/decisions/README.md", "README.md"), ["docs/decisions/README.md", "README.md"], DELEGATION, lambda _p: None)
-    assert nested.outcome == "ESCALATE" and "UNCLASSIFIED" in codes(nested), codes(nested)
+    assert ("unclassified", "README.md") in shadow.findings(
+        diff("docs/decisions/README.md", "README.md"),
+        ["docs/decisions/README.md", "README.md"],
+        DELEGATION,
+        lambda _p: None,
+    )
+    assert nested.outcome == "ESCALATE" and "UNCLASSIFIED" in codes(nested), codes(
+        nested
+    )
 
-    # A scope finding that names no changed path still counts (fail closed).
+    # A file's own diff decides its findings, and a file missing from the API's
+    # file list still counts (fail closed).
     original = gate.scope_findings
-    gate.scope_findings = lambda _diff: [
-        ("credential", "adds a secret somewhere unnamed")
-    ]
+    gate.scope_findings = lambda chunk: (
+        [("credential", "adds a secret")] if "secret.yml" in chunk else []
+    )
     try:
         found = shadow.findings(
-            "", ["docs/decisions/0009-x.md"], DELEGATION, lambda _p: None
+            diff("docs/decisions/0009-x.md", "secret.yml"),
+            ["docs/decisions/0009-x.md"],
+            DELEGATION,
+            lambda _p: None,
         )
     finally:
         gate.scope_findings = original
-    assert ("credential", "adds a secret somewhere unnamed") in found, found
+    assert ("credential", "secret.yml") in found and (
+        "credential",
+        "docs/decisions/0009-x.md",
+    ) not in found, found
 
     # The summary states that shadow grants nothing.
     assert "grants nothing" in shadow.summary(

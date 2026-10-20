@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -60,24 +61,29 @@ def _reader(repository: str, ref: str):
     return read
 
 
+def _per_file(diff: str) -> dict[str, str]:
+    """The unified diff split by file, keyed by its new path."""
+    chunks: dict[str, str] = {}
+    for chunk in re.split(r"(?m)^(?=diff --git )", diff):
+        header = re.match(r"diff --git a/(.*) b/(.*)$", chunk, re.M)
+        if header:
+            chunks[header.group(2)] = chunks.get(header.group(2), "") + chunk
+    return chunks
+
+
 def findings(
     diff: str, paths: list[str], delegation: d.Delegation, read
 ) -> tuple[tuple[str, str], ...]:
-    """(category, path) per changed path; anything unattributable still counts."""
-    found = gate.scope_findings(diff)
+    """(category, path) per changed path, classified from that file's own diff.
+
+    A file in the diff but not in ``paths`` still contributes its findings.
+    """
+    chunks = _per_file(diff)
     out: list[tuple[str, str]] = []
-    claimed: set[int] = set()
-    for path in paths:
-        cats = set()
-        for index, (category, description) in enumerate(found):
-            if path in description:  # over-attribution only restricts more
-                cats.add(category)
-                claimed.add(index)
+    for path in dict.fromkeys([*paths, *chunks]):
+        cats = {c for c, _ in gate.scope_findings(chunks.get(path, ""))}
         cats |= {c for c, _ in d.reserved_findings(delegation, [path], read)}
         out += [(c, path) for c in sorted(cats)] or [("unclassified", path)]
-    out += [
-        (c, description) for i, (c, description) in enumerate(found) if i not in claimed
-    ]
     return tuple(out)
 
 

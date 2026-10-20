@@ -262,7 +262,10 @@ def main() -> int:
     # A canonical entry with non-string identifiers is a ledger failure, not a crash.
     odd = {k: v for k, v in first.items() if k != "entry_digest"} | {"decision_id": 7}
     odd = odd | {"entry_digest": l.digest(l.canonical(odd))}
-    assert any("unsafe receipt identifiers" in f for f in l.verify(l.canonical(odd).decode(), {}))
+    assert any(
+        "unsafe receipt identifiers" in f
+        for f in l.verify(l.canonical(odd).decode(), {})
+    )
     # Path identifiers cannot escape the receipts directory.
     try:
         l.receipt_path("../x", "r1")
