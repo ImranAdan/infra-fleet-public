@@ -38,8 +38,8 @@ COMMON_PATH_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
     ),
     ("intent-policy", re.compile(r"^intent/"), "declared intent changed"),
     ("intent-policy", re.compile(r"^policy\.yaml$"), "advisor policy changed"),
-    ("intent-policy", re.compile(r"^policies/"), "policy changed"),
-    ("intent-policy", re.compile(r"^k8s/.*/policies/"), "cluster policy changed"),
+    ("admission-policy", re.compile(r"^policies/"), "admission policy changed"),
+    ("admission-policy", re.compile(r"^k8s/.*/policies/"), "cluster admission policy changed"),
     ("decision-record", re.compile(r"^docs/(?:decisions|pdr)/"), "decision record changed"),
     ("decision-record", re.compile(r"^docs/[^/]*-DDR\.md$"), "decision record changed"),
     (

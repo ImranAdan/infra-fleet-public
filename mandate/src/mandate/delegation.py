@@ -14,19 +14,24 @@ import re
 import subprocess
 import tomllib
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 DELEGATION_REPOSITORY = "ImranAdan/mandate-delegation"
 
-# Categories the engine reports (mandate.gate) plus the two the contract adds.
+# Categories the engine reports (mandate.gate), the ones the contract adds, and
+# the reserved surfaces reserved_findings() reports by path.
 CATEGORIES = frozenset(
     {
+        "admission-policy",
+        "agent-instructions",
         "credential",
         "decision-record",
         "delegation",
         "dependency",
         "dependency-manifest",
         "enforcement",
+        "evidence-producer",
         "iam",
         "intent-policy",
         "merge-authority",
@@ -39,17 +44,31 @@ CATEGORIES = frozenset(
     }
 )
 # Never delegable in version 1: these change who may act or what judges merges.
+# Operational admission-policy is delegable; constitutional intent-policy is not.
 RESERVED = frozenset(
     {
+        "agent-instructions",
         "credential",
         "delegation",
         "enforcement",
+        "evidence-producer",
         "iam",
+        "intent-policy",
         "merge-authority",
         "migration",
         "permanent-infrastructure",
         "permission-added",
     }
+)
+# Reserved surfaces found by path alone, so no owner class and no class order can
+# reach them: each reports a RESERVED category, which parse() never lets a class
+# authorize. Evidence producers are added per delegation in reserved_findings().
+RESERVED_PATHS: tuple[tuple[str, re.Pattern[str], str], ...] = (
+    ("intent-policy", re.compile(r"^intent/"), "declared intent changed"),
+    ("enforcement", re.compile(r"^\.github/rulesets/|(?:^|/)[^/]*ruleset[^/]*\.json$"), "ruleset changed"),
+    ("enforcement", re.compile(r"(?:^|/)CODEOWNERS$"), "code owners changed"),
+    ("enforcement", re.compile(r"^mandate/"), "decision engine changed"),
+    ("agent-instructions", re.compile(r"(?:^|/)(?:AGENTS|CLAUDE)\.md$"), "agent instructions changed"),
 )
 MATCH_KEYS = frozenset(
     {
@@ -267,6 +286,49 @@ def fetch(repository: str, commit: str, delegation_repository: str = DELEGATION_
     except (OSError, subprocess.CalledProcessError) as exc:
         raise _invalid(f"cannot read {delegation_repository}@{commit}:{path}") from exc
     return parse(text, repository, f"{delegation_repository}@{commit}:{path}")
+
+
+LOCAL_USES = re.compile(r"""uses:\s*['"]?\./([^\s'"@#]+)""")
+
+
+def _producer_paths(delegation: Delegation, read: Callable[[str], str | None]) -> set[str]:
+    """Each evidence workflow plus every local workflow or action it calls, transitively.
+
+    ``read`` returns a file's text at the trusted base revision, or None. A PR
+    that adds a new call must edit a producer already in this set, so reading
+    the base is enough. Local actions are reserved as whole directories.
+    """
+    found: set[str] = set()
+    pending = [spec.workflow for _, spec in delegation.evidence]
+    while pending:
+        path = pending.pop().rstrip("/")
+        if path in found:
+            continue
+        found.add(path)
+        texts = [read(path)] if path.endswith((".yml", ".yaml")) else [
+            read(f"{path}/action.yml"),
+            read(f"{path}/action.yaml"),
+        ]
+        for text in texts:
+            pending.extend(LOCAL_USES.findall(text or ""))
+    return found
+
+
+def reserved_findings(
+    delegation: Delegation, paths: list[str], read: Callable[[str], str | None]
+) -> list[tuple[str, str]]:
+    """Reserved (category, description) findings for changed ``paths``; each escalates."""
+    producers = _producer_paths(delegation, read)
+    findings = []
+    for path in paths:
+        if any(path == p or path.startswith(f"{p}/") for p in producers):
+            findings.append(("evidence-producer", f"evidence producer changed: {path}"))
+        findings.extend(
+            (category, f"{description}: {path}")
+            for category, pattern, description in RESERVED_PATHS
+            if pattern.search(path)
+        )
+    return findings
 
 
 def drifted(decided: Delegation, current: Delegation) -> bool:
