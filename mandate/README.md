@@ -91,6 +91,29 @@ Fleet's live gate still decides `READY`/`PARK`. `LEGACY` maps its verdicts
 (`PARK`/`JUDGE` → ESCALATE, `BLOCKED` → BLOCK, `READY` → recompute), and none
 maps to AUTHORIZE.
 
+## Shadow decisions
+
+`mandate.shadow` turns one live pull request into a `DecisionInput` and runs
+`decide()` on it (the KAN-27 adapter; D-23: it adds no outcome or reason). The
+input is built from:
+
+- **Findings:** the engine's scope findings plus reserved surfaces read at the
+  trusted base. A finding that names no changed path is kept.
+- **Evidence:** the head's check runs, each correlated to its workflow run.
+- **Policy:** the owner's delegation at a pinned commit.
+
+Facts such as permission deltas aren't computed yet, so classes that need them
+never match. Mechanical refusals belong to the executor (KAN-28).
+
+`.github/workflows/mandate-shadow.yml` runs it from the default branch after
+each Intent Gate run. It writes the outcome to the job summary and a
+`decision.json` artifact. It reads only and grants nothing.
+
+```bash
+PYTHONPATH=mandate/src python3 -m mandate.shadow ImranAdan/infra-fleet-public 222 \
+  --delegation-sha da6db52b465c99d955e07809bdf135104db3bc7f
+```
+
 Test it through the entry point, the way the merge worker runs it:
 
 ```bash
@@ -99,4 +122,5 @@ python3 .claude/skills/merge-gate/judge.py --self-test
 python3 mandate/tests/test_delegation.py
 python3 mandate/tests/test_evidence.py
 python3 mandate/tests/test_decision.py
+python3 mandate/tests/test_shadow.py
 ```
