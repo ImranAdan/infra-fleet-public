@@ -63,6 +63,11 @@ class ApiError(Exception):
 Api = Callable[[str, str, dict[str, Any] | None], Any]
 
 
+def _lines(text: str) -> list[str]:
+    """Index lines: append writes \n only, and values may hold other separators."""
+    return [line for line in text.split("\n") if line]
+
+
 def canonical(value: Any) -> bytes:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -116,7 +121,7 @@ def verify(
     prev: dict[str, Any] | None = None
     heads: set[str] = set()
     seen: set[tuple[str, str]] = set()
-    for number, line in enumerate(text.splitlines(), 1):
+    for number, line in enumerate(_lines(text), 1):
         try:
             item = json.loads(line)
         except ValueError:
@@ -178,6 +183,11 @@ def _file(api: Api, repo: str, path: str, ref: str) -> bytes | None:
         if exc.status == 404:
             return None
         raise
+    if not isinstance(data, dict) or data.get("encoding") != "base64":
+        # Over 1 MB the contents API returns no inline content; never read that as empty.
+        raise ApiError(
+            0, f"{path} has no inline base64 content (over the 1 MB contents limit?)"
+        )
     return base64.b64decode(data["content"])
 
 
@@ -194,7 +204,7 @@ def read(api: Api, repo: str, ref: str) -> State:
 def _receipts(api: Api, repo: str, state: State) -> dict[str, bytes]:
     """Receipts the index names; malformed lines are left for verify() to reject."""
     found: dict[str, bytes] = {}
-    for line in state.text.splitlines():
+    for line in _lines(state.text):
         try:
             item = json.loads(line)
             path = receipt_path(item["decision_id"], item["receipt_revision"])
@@ -251,21 +261,32 @@ def append(
             failures = verify(state.text, _receipts(api, repo, state))
             if failures:
                 raise LedgerError("LEDGER_INVALID", "; ".join(failures))
-            lines = state.text.splitlines()
+            lines = _lines(state.text)
             existing = _file(api, repo, path, state.tip)
             if existing is not None:
                 if existing != receipt:
                     raise LedgerError(
                         "RECEIPT_COLLISION", f"{path} already holds different bytes"
                     )
-                indexed = {
-                    (json.loads(x)["decision_id"], json.loads(x)["receipt_revision"])
-                    for x in lines
-                }
-                if (decision_id, revision) not in indexed:
+                recorded = [
+                    item
+                    for item in map(json.loads, lines)
+                    if (item["decision_id"], item["receipt_revision"])
+                    == (decision_id, revision)
+                ]
+                if not recorded:
                     raise LedgerError(
                         "LEDGER_INVALID",
                         f"{path} exists but the index does not record it",
+                    )
+                if (recorded[0]["subject_digest"], recorded[0]["outcome"]) != (
+                    subject_digest,
+                    outcome,
+                ):
+                    # created_at is when it was first recorded, so a later retry may differ.
+                    raise LedgerError(
+                        "RECEIPT_COLLISION",
+                        f"{path} is recorded with another subject or outcome",
                     )
                 return None
             prev = json.loads(lines[-1]) if lines else None

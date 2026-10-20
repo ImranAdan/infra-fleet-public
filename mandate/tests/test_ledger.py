@@ -62,7 +62,10 @@ class FakeGit:
             files = self.objects[self.objects[ref]["tree"]]["files"]
             if name not in files:
                 raise l.ApiError(404)
-            return {"content": base64.b64encode(files[name]).decode(), "encoding": "base64"}
+            return {
+                "content": base64.b64encode(files[name]).decode(),
+                "encoding": "base64",
+            }
         if method == "POST" and tail == "git/trees":
             files = dict(self.objects[payload["base_tree"]]["files"])
             files.update({t["path"]: t["content"].encode() for t in payload["tree"]})
@@ -195,6 +198,7 @@ def main() -> int:
         assert exc.code == "LEDGER_INVALID", exc
     else:
         raise AssertionError("appended to an undecodable ledger")
+
     # A ledger over the contents API's 1 MB inline limit comes back with no
     # content; it must never be read as empty and restarted at genesis.
     class Large(FakeGit):
@@ -216,11 +220,24 @@ def main() -> int:
     # A retry with the same receipt but a different subject or outcome collides.
     same = FakeGit()
     l.append(same, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t1")
-    assert l.append(same, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t9") is None
+    assert (
+        l.append(same, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t9")
+        is None
+    )
     for changed in ({"subject_digest": "sha256:other"}, {"outcome": "BLOCK"}):
         args = {"subject_digest": "sha256:s", "outcome": "AUTHORIZE"} | changed
         try:
-            l.append(same, REPO, REF, "d1", "r1", receipt, args["subject_digest"], args["outcome"], "t1")
+            l.append(
+                same,
+                REPO,
+                REF,
+                "d1",
+                "r1",
+                receipt,
+                args["subject_digest"],
+                args["outcome"],
+                "t1",
+            )
         except l.LedgerError as exc:
             assert exc.code == "RECEIPT_COLLISION", exc
         else:
@@ -229,7 +246,10 @@ def main() -> int:
     # Line separators other than \n inside values never split an entry.
     sep = FakeGit()
     l.append(sep, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t\u2028x")
-    assert l.append(sep, REPO, REF, "d2", "r1", b"{}", "sha256:s", "VERIFY", "t2")["seq"] == 1
+    assert (
+        l.append(sep, REPO, REF, "d2", "r1", b"{}", "sha256:s", "VERIFY", "t2")["seq"]
+        == 1
+    )
 
     orphan = FakeGit()
     l.append(orphan, REPO, REF, "d1", "r1", receipt, "sha256:s", "AUTHORIZE", "t1")

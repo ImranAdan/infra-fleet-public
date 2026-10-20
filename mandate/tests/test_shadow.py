@@ -133,7 +133,9 @@ def main() -> int:
 
     # A renamed reserved file still counts under its old name.
     renamed = "diff --git a/docs/AGENTS.md b/docs/decisions/0010-x.md\nsimilarity index 100%\nrename from docs/AGENTS.md\nrename to docs/decisions/0010-x.md\n"
-    moved = shadow.findings(renamed, ["docs/decisions/0010-x.md"], DELEGATION, lambda _p: None)
+    moved = shadow.findings(
+        renamed, ["docs/decisions/0010-x.md"], DELEGATION, lambda _p: None
+    )
     assert ("agent-instructions", "docs/AGENTS.md") in moved, moved
 
     # A file's own diff decides its findings, and a file missing from the API's

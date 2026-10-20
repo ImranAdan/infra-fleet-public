@@ -62,12 +62,14 @@ def _reader(repository: str, ref: str):
 
 
 def _per_file(diff: str) -> dict[str, str]:
-    """The unified diff split by file, keyed by its new path."""
+    """The unified diff split by file, keyed by its new path; a rename's old
+    path is also a key (with the same chunk), so a moved file keeps its past."""
     chunks: dict[str, str] = {}
     for chunk in re.split(r"(?m)^(?=diff --git )", diff):
         header = re.match(r"diff --git a/(.*) b/(.*)$", chunk, re.M)
         if header:
-            chunks[header.group(2)] = chunks.get(header.group(2), "") + chunk
+            for name in dict.fromkeys(header.groups()):
+                chunks[name] = chunks.get(name, "") + chunk
     return chunks
 
 

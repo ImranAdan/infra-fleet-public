@@ -37,6 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -o pipefail
           PYTHONPATH=mandate/src python3 -m mandate.ledger rulesets \
             "$GITHUB_REPOSITORY" "$LEDGER_REF" "$MANDATE_APP_ID" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Mint a contents-only App M token for this repository
