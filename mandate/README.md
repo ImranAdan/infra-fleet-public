@@ -144,9 +144,13 @@ through `ledger.append()` (KAN-26).
   - **Other receipts:** receipts of another schema in the same ledger (the
     drill's) are skipped. A receipt that claims this schema but lacks a field
     reconciliation reads gives `LEDGER_INVALID`.
-  - **Fail closed:** if the ledger or a receipt can't be read
-    (`LEDGER_INVALID` or `LEDGER_UNAVAILABLE`), every existing required run
-    on the head fails first, so an earlier success never outlives it.
+  - **Fail closed:** if anything stops the reconcile showing the current
+    decision (an unreadable ledger or receipt, a provider error, anything
+    unexpected), every existing required run on the head fails first, so an
+    earlier success never outlives it.
+  - **Identifiers:** snapshots, receipt IDs, delegation names and commit
+    SHAs are matched whole (`fullmatch`), so a trailing newline never
+    passes.
 - **One writer per head commit:** GitHub's ruleset reads the check's
   conclusion, and the Checks API has no compare-and-swap. So every job that
   records receipts or writes checks must run in the one canonical group,

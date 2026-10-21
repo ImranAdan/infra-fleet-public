@@ -33,7 +33,7 @@ SCHEMA_VERSION = 1
 CHECK_NAME = "mandate/decision"  # the required check: live decisions only
 SHADOW_CHECK_NAME = "mandate/shadow"  # never required; GitHub counts neutral as passing
 SHADOW = "shadow"  # the enforcement snapshot of a decision that grants nothing
-LIVE = re.compile(r"^sha256:[0-9a-f]{64}$")  # a real enforcement snapshot digest
+LIVE = re.compile(r"sha256:[0-9a-f]{64}")  # a real enforcement snapshot digest (fullmatch)
 # One writer per head commit (checks belong to a commit, not a PR): writers are
 # workflows called with a ``head_sha`` input, so every caller computes this group.
 CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}"
@@ -180,7 +180,7 @@ def _show(
     # snapshot can pass, shadow is neutral, anything else fails closed.
     enforcement = receipt["subject"]["enforcement"]
     shadow = enforcement == SHADOW
-    passes = outcome == "AUTHORIZE" and bool(LIVE.match(enforcement)) and len(prs) == 1
+    passes = outcome == "AUTHORIZE" and bool(LIVE.fullmatch(enforcement)) and len(prs) == 1
     if name == SHADOW_CHECK_NAME:
         conclusion = "neutral"
     else:
@@ -225,8 +225,7 @@ def _show(
 
 
 def _well_formed(receipt: dict[str, Any]) -> bool:
-    """Every field reconciliation reads, at its type. (Any outcome but
-    AUTHORIZE already fails, so the outcome itself needs no check.)"""
+    """Every field reconciliation reads, at its type."""
     subject, decision = receipt.get("subject"), receipt.get("decision")
     return (
         isinstance(receipt.get("decision_id"), str)
@@ -234,6 +233,7 @@ def _well_formed(receipt: dict[str, Any]) -> bool:
         and all(isinstance(subject.get(k), str) for k in ("repository", "head_sha", "base_sha", "policy", "enforcement"))
         and type(subject.get("pull_request")) is int
         and isinstance(decision, dict)
+        and isinstance(decision.get("outcome"), str)
         and isinstance(decision.get("reasons"), list)
         and all(
             isinstance(x, dict) and all(isinstance(x.get(k), str) for k in ("code", "outcome", "owner", "detail"))
@@ -253,13 +253,15 @@ def _newest(
     """
     found: dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]] = {}
     for entry in entries:
-        receipt = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])
+        name = f"{entry['decision_id']}/{entry['receipt_revision']}"
+        try:
+            receipt = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])
+        except ValueError:
+            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is not JSON") from None
         if not isinstance(receipt, dict) or receipt.get("schema_version") != SCHEMA_VERSION:
             continue  # another schema sharing the ledger (the drill's): not a decision
         if not _well_formed(receipt):
-            raise l.LedgerError(
-                "LEDGER_INVALID", f"receipt {entry['decision_id']}/{entry['receipt_revision']} is malformed"
-            )
+            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is malformed")
         s = receipt["subject"]
         about, enforcement, pr = (s["repository"], s["head_sha"]), s["enforcement"], s["pull_request"]
         if about == (repo, head):
@@ -292,20 +294,22 @@ def reconcile_check(api: l.Api, repo: str, ref: str, head: str, *, app_id: int) 
       bypassed), it shows the newer decision before returning.
 
     Only runs created by ``app_id`` (the publisher App) are ours. The
-    conclusion follows the receipt's recorded enforcement. If the ledger or a
-    receipt can't be read, every required run of ours on the head fails
-    before the error is raised. Returns check name -> the ledger entry it
+    conclusion follows the receipt's recorded enforcement. If anything stops
+    it showing the current decision (an unreadable ledger or receipt, a
+    provider error, any surprise), every required run of ours on the head
+    fails before the error is raised; only "nothing recorded for this head"
+    (CONTRACT_ERROR) leaves the checks alone. Returns check name -> the ledger entry it
     left on display.
     """
     try:
         return _reconcile(api, repo, ref, head, app_id)
-    except l.LedgerError as exc:
-        if exc.code in ("LEDGER_INVALID", "LEDGER_UNAVAILABLE"):
+    except Exception as exc:  # any failure to show the current decision fails closed
+        if getattr(exc, "code", None) != "CONTRACT_ERROR":
             _fail_closed(api, repo, head, app_id, exc)
         raise
 
 
-def _fail_closed(api: l.Api, repo: str, head: str, app_id: int, exc: l.LedgerError) -> None:
+def _fail_closed(api: l.Api, repo: str, head: str, app_id: int, exc: Exception) -> None:
     """The ledger can't say what is current: fail every required run of ours
     on this head, so an earlier success never outlives it. Best effort: if the
     provider is down too, the original error is what the caller sees."""
@@ -313,11 +317,11 @@ def _fail_closed(api: l.Api, repo: str, head: str, app_id: int, exc: l.LedgerErr
         "name": CHECK_NAME,
         "status": "completed",
         "conclusion": "failure",
-        "output": {"title": exc.code, "summary": str(exc)[:1000]},
+        "output": {"title": getattr(exc, "code", type(exc).__name__), "summary": str(exc)[:1000]},
     }
     try:
         for run in _runs(api, repo, head, CHECK_NAME, app_id):
-            if run.get("conclusion") != "failure" or (run.get("output") or {}).get("title") != exc.code:
+            if run.get("conclusion") != "failure" or (run.get("output") or {}).get("title") != payload["output"]["title"]:
                 api("PATCH", f"repos/{repo}/check-runs/{run['id']}", payload)
     except (l.ApiError, KeyError, TypeError):
         pass
@@ -427,7 +431,7 @@ def trailers(
             raise l.LedgerError(code, f"{field} {subject[field]} is now {fresh['subject'][field]}")
     if fresh["subject"] != subject:
         raise l.LedgerError("CONTRACT_ERROR", "the fresh decision is about another subject")
-    if not LIVE.match(subject["enforcement"]):
+    if not LIVE.fullmatch(subject["enforcement"]):
         raise l.LedgerError(
             "CONTRACT_ERROR", f"enforcement {subject['enforcement']!r} is not a live snapshot: shadow grants nothing"
         )

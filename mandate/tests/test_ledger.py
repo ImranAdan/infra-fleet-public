@@ -97,6 +97,15 @@ def receipts(git: FakeGit) -> dict[str, bytes]:
 
 
 def main() -> int:
+    # Identifiers are matched whole: a trailing newline is not a safe id.
+    for bad_id in ("d1\n", "D1", "../x"):
+        try:
+            l.receipt_path(bad_id, "r1")
+        except l.LedgerError as exc:
+            assert exc.code == "LEDGER_INVALID", exc
+        else:
+            raise AssertionError(f"accepted unsafe id {bad_id!r}")
+
     # Golden vector: one fixed entry has one fixed digest (canonical JSON, SHA-256).
     receipt = l.canonical({"decision_id": "d1", "outcome": "AUTHORIZE"})
     first = l.entry(

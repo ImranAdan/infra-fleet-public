@@ -146,8 +146,11 @@ def main() -> int:
     assert d.parse(collide, REPO, SOURCE).identity_collision
     rejects(collide.replace('mode = "shadow"', 'mode = "enforce"'), code="IDENTITY_COLLISION", expect="owner")
 
+    # Names are matched whole: a trailing newline is not a name.
+    rejects(MINIMAL.replace("[evidence.ci]", '[evidence."ci\\n"]'), expect="lowercase words joined by hyphens")
+
     # Mutable references are refused before any network call.
-    for ref in ("main", "HEAD", "a" * 39, "A" * 40):
+    for ref in ("main", "HEAD", "a" * 39, "A" * 40, "a" * 40 + "\n"):
         try:
             d.fetch(REPO, ref)
         except d.DelegationError as exc:

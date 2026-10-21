@@ -82,8 +82,8 @@ def receipt_path(decision_id: str, revision: str) -> str:
     if not (
         isinstance(decision_id, str)
         and isinstance(revision, str)
-        and ID.match(decision_id)
-        and ID.match(revision)
+        and ID.fullmatch(decision_id)
+        and ID.fullmatch(revision)
     ):
         raise LedgerError(
             "LEDGER_INVALID", f"unsafe receipt identifiers {decision_id!r}/{revision!r}"

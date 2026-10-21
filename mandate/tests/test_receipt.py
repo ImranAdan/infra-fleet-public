@@ -62,6 +62,7 @@ class FakeChecks:
         self.writes = 0
         self.shown: list[tuple[str, str]] = []  # every (conclusion, title) ever written
         self.before_write = None  # a concurrent publisher, run once
+        self.fail_writes = 0  # provider errors on the next writes
 
     def __call__(self, method: str, path: str, payload):
         if method == "GET":
@@ -80,6 +81,9 @@ class FakeChecks:
         if self.before_write:
             racer, self.before_write = self.before_write, None
             racer()
+        if self.fail_writes:
+            self.fail_writes -= 1
+            raise l.ApiError(502, "provider error")
         self.writes += 1
         self.shown.append((payload["conclusion"], payload["output"]["title"]))
         # GitHub echoes output with keys the payload never sends.
@@ -193,7 +197,13 @@ def main() -> int:
     r.reconcile_check(both(ck0, live), REPO, REF, HEAD, app_id=APP)
     assert visible(ck0) == [("success", "AUTHORIZE (r1)")], visible(ck0)
     assert ck0.runs[0]["name"] == r.CHECK_NAME
-    # Only a live sha256 snapshot can pass; any other enforcement fails closed.
+    # Only a live sha256 snapshot can pass, matched whole (a trailing newline
+    # is not live); any other enforcement fails closed.
+    nl = FakeGit()
+    r.record(nl, REPO, REF, build(decision(), enforcement=ENF + "\n"))
+    ck_nl = FakeChecks()
+    r.reconcile_check(both(ck_nl, nl), REPO, REF, HEAD, app_id=APP)
+    assert visible(ck_nl) == [("failure", "AUTHORIZE (r1)")], visible(ck_nl)
     odd = FakeGit()
     odd_id = r.record(odd, REPO, REF, build(decision(), enforcement="live"))[0]["decision_id"]
     ck_odd = FakeChecks()
@@ -308,6 +318,33 @@ def main() -> int:
     r.record(drilled, REPO, REF, bad)
     refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP))
     assert [(x["conclusion"], x["output"]["title"]) for x in ck_d.runs] == [("failure", "LEDGER_INVALID")], ck_d.runs
+    # The same for a receipt without an outcome, and for one that is not JSON.
+    for raw in ("no-outcome", "not-json"):
+        gone, ck_g = FakeGit(), FakeChecks()
+        r.record(gone, REPO, REF, enforced(decision()))
+        r.reconcile_check(both(ck_g, gone), REPO, REF, HEAD, app_id=APP)
+        if raw == "no-outcome":  # written below record(), which needs the outcome
+            odd_receipt = {**enforced(decision("ESCALATE"), at="later"), "receipt_revision": "r2"}
+            del odd_receipt["decision"]["outcome"]
+            l.append(gone, REPO, REF, odd_receipt["decision_id"], "r2", l.canonical(odd_receipt),
+                     odd_receipt["subject_digest"], "ESCALATE", "t")
+        else:
+            l.append(gone, REPO, REF, "d-x", "r1", b"not json", l.digest(b"s"), "BLOCK", "t")
+        refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_g, gone), REPO, REF, HEAD, app_id=APP))
+        assert visible(ck_g) == [("failure", "LEDGER_INVALID")], (raw, visible(ck_g))
+    # A provider error while showing a newer ESCALATE still fails the green run.
+    flaky, ck_fl = FakeGit(), FakeChecks()
+    r.record(flaky, REPO, REF, enforced(decision()))
+    r.reconcile_check(both(ck_fl, flaky), REPO, REF, HEAD, app_id=APP)
+    r.record(flaky, REPO, REF, enforced(decision("ESCALATE")))
+    ck_fl.fail_writes = 1
+    try:
+        r.reconcile_check(both(ck_fl, flaky), REPO, REF, HEAD, app_id=APP)
+    except l.ApiError:
+        pass
+    else:
+        raise AssertionError("a provider error was swallowed")
+    assert visible(ck_fl) == [("failure", "ApiError")], visible(ck_fl)
     # The same when the ledger itself cannot be verified.
     broken, ck_b = FakeGit(), FakeChecks()
     r.record(broken, REPO, REF, enforced(decision()))
@@ -431,6 +468,8 @@ def main() -> int:
     subject = enforced(decision())["subject"]
     refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "enforcement": "live"},
             build(decision(), enforcement="live"))
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "enforcement": ENF + "\n"},
+            build(decision(), enforcement=ENF + "\n"))
     assert git.refs[REF] == tip, "a refused revalidation records nothing"
     text = r.trailers(git, REPO, REF, subject, enforced(decision(), at="2026-10-22T00:00:00Z"))
     authorized = json.loads(git.files(REF)[l.LEDGER].decode().splitlines()[-1])
