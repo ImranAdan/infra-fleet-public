@@ -137,7 +137,9 @@ through `ledger.append()` (KAN-26).
   It reports middle deletion, tail truncation, full rewrite and an anchor whose
   receipt isn't recorded at or before its chain head.
 - **Limits:** forged appends with a stolen key, or truncation after the last
-  anchor, are reported as "not detectable with available anchor". The anchor
+  anchor, are reported as "not detectable with available anchor". This
+  happens every time, even when the anchor is the visible tip, because a
+  truncated tail would look the same. The anchor
   is repository-local, not an independent transparency log.
 
 The shadow output includes the receipt it would record. Nothing writes a

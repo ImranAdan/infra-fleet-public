@@ -186,8 +186,15 @@ def main() -> int:
     ledger_text = git.files(REF)[l.LEDGER].decode()
     stored_receipts = receipts(git)
     anchor = r.parse_trailers(text)
+    # The anchor is the visible tip, yet a truncated tail after it would look
+    # the same, so the limit is still stated.
     failures, limits = r.audit(ledger_text, stored_receipts, [anchor])
-    assert failures == [] and limits == [], (failures, limits)
+    assert failures == [] and limits == [
+        (
+            "0 entries visible after the last anchor: truncation, rewrite or forged "
+            "appends (key compromise) after it are not detectable with available anchor"
+        )
+    ], (failures, limits)
 
     lines = ledger_text.splitlines()
     # Middle deletion: the chain breaks.
@@ -215,8 +222,8 @@ def main() -> int:
     failures, limits = r.audit(git.files(REF)[l.LEDGER].decode(), receipts(git), [anchor])
     assert failures == [] and limits == [
         (
-            "1 entry after the last anchor: truncation, rewrite or forged appends "
-            "(key compromise) there are not detectable with available anchor"
+            "1 entry visible after the last anchor: truncation, rewrite or forged "
+            "appends (key compromise) after it are not detectable with available anchor"
         )
     ], (failures, limits)
     # No anchor at all: nothing about truncation or rewrite can be claimed.

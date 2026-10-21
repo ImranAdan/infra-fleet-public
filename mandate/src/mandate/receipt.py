@@ -242,9 +242,9 @@ def audit(
             f"no anchor: truncation, rewrite or forged appends (key compromise) in all "
             f"{len(entries)} entries are not detectable with available anchor"
         )
-    elif tail:
+    else:  # even at zero: a tail truncated back to the anchor looks the same
         limits.append(
-            f"{tail} {'entry' if tail == 1 else 'entries'} after the last anchor: truncation, "
-            "rewrite or forged appends (key compromise) there are not detectable with available anchor"
+            f"{tail} {'entry' if tail == 1 else 'entries'} visible after the last anchor: truncation, "
+            "rewrite or forged appends (key compromise) after it are not detectable with available anchor"
         )
     return failures, limits
