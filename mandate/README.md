@@ -136,7 +136,7 @@ through `ledger.append()` (KAN-26).
   - **Shadow check:** shadow decisions show on `mandate/shadow`, never the
     required name, because GitHub counts `neutral` as passing a required
     check. A shadow decision that supersedes a live one fails the existing
-    required run, and a head with only shadow decisions gets no required run.
+    required check run, and a head with only shadow decisions gets no required check run.
   - **Shared head:** checks belong to a commit, so if two PRs have decisions
     on the same head, the check fails closed. The title gives the count (it
     is limited to 255 characters) and the summary lists the PRs.
@@ -151,7 +151,7 @@ through `ledger.append()` (KAN-26).
     `CONTRACT_ERROR`.
   - **Fail closed:** if anything stops the reconcile showing the current
     decision (an unreadable ledger or receipt, a provider error, nothing
-    recorded for the head, anything unexpected), every existing required run
+    recorded for the head, anything unexpected), every existing required check run
     on the head fails first, so an earlier success never outlives it.
   - **Identifiers:** snapshots, receipt IDs, delegation names and commit
     SHAs are matched whole (`fullmatch`), so a trailing newline never
