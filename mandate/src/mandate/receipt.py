@@ -7,9 +7,9 @@ next one only when the decision's meaning (everything but the clock and the
 revision) differs from the latest, so rerunning identical inputs is a no-op,
 and flipping back to an earlier result is a new revision, never a reuse.
 
-The merge commit is the anchor: trailers() names the exact receipt digest and
-chain head, and only for an AUTHORIZE receipt that a fresh decision still
-matches. audit() checks a ledger against those anchors offline and says
+The merge commit is the anchor: trailers() records a fresh AUTHORIZE decision
+for the subject the worker acted on and names that latest revision's receipt
+digest and chain head. audit() checks a ledger against those anchors offline and says
 literally what it cannot see. The anchor is repository-local, not an
 independent transparency log: an owner or bypass actor who rewrites history,
 or a key holder who appends after the last anchor, is a residual risk that
@@ -181,27 +181,28 @@ def publish_check(
 
 
 def trailers(
-    data: bytes, entry: dict[str, Any], chain_head: str, fresh: dict[str, Any]
+    api: l.Api, repo: str, ref: str, subject: dict[str, Any], fresh: dict[str, Any]
 ) -> str:
-    """Merge-commit trailers, after final revalidation against a fresh receipt."""
-    stored = json.loads(data)
-    if (
-        l.digest(data) != entry["receipt_digest"]
-        or stored.get("decision_id") != entry["decision_id"]
-        or stored.get("receipt_revision") != entry["receipt_revision"]
-    ):
-        raise l.LedgerError("CONTRACT_ERROR", "receipt bytes are not the recorded revision")
-    if stored["decision"]["outcome"] != "AUTHORIZE":
-        raise l.LedgerError("CONTRACT_ERROR", f"receipt outcome is {stored['decision']['outcome']}")
+    """Merge-commit trailers after final revalidation.
+
+    ``subject`` is what the merge worker acted on; ``fresh`` is a receipt from
+    a decision taken just now. It must still be about that subject and
+    AUTHORIZE. It is then recorded (a no-op when it is already the latest
+    revision), so the trailers always name this decision's latest revision,
+    never a superseded one a stale worker still holds.
+    """
     for field, code in (
         ("head_sha", "HEAD_CHANGED"),
         ("base_sha", "BASE_CHANGED"),
         ("enforcement", "ENFORCEMENT_DRIFT"),
     ):
-        if fresh["subject"][field] != stored["subject"][field]:
-            raise l.LedgerError(code, f"{field} {stored['subject'][field]} is now {fresh['subject'][field]}")
-    if semantic(fresh) != semantic(stored):
-        raise l.LedgerError("CONTRACT_ERROR", "a fresh decision differs from the recorded receipt")
+        if fresh["subject"][field] != subject[field]:
+            raise l.LedgerError(code, f"{field} {subject[field]} is now {fresh['subject'][field]}")
+    if fresh["subject"] != subject:
+        raise l.LedgerError("CONTRACT_ERROR", "the fresh decision is about another subject")
+    if fresh["decision"]["outcome"] != "AUTHORIZE":
+        raise l.LedgerError("CONTRACT_ERROR", f"fresh outcome is {fresh['decision']['outcome']}")
+    entry, chain_head, _ = record(api, repo, ref, fresh)
     values = (entry["decision_id"], entry["receipt_digest"], chain_head)
     return "\n".join(f"{k}: {v}" for k, v in zip(TRAILERS, values))
 

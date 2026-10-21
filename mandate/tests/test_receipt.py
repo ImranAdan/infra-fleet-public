@@ -158,26 +158,40 @@ def main() -> int:
     r.publish_check(big, REPO, build(many), first, head1, shadow=True)
     assert len(big.runs[0]["output"]["summary"]) <= 65535
 
-    # Merge trailers: only for an AUTHORIZE receipt that a fresh decision still matches.
-    data = receipts(git)[l.receipt_path(third["decision_id"], "r3")]
-    tip_entry = json.loads(git.files(REF)[l.LEDGER].decode().splitlines()[-1])
-    chain = tip_entry["entry_digest"]
-    text = r.trailers(data, third, chain, build(decision(), at="2026-10-22T00:00:00Z"))
+    # Merge trailers: final revalidation records the fresh decision, so the
+    # trailers always name this decision's latest revision.
+    subject = receipt["subject"]
+    tip = git.refs[REF]
+    text = r.trailers(git, REPO, REF, subject, build(decision(), at="2026-10-22T00:00:00Z"))
+    assert git.refs[REF] == tip, "r3 already says AUTHORIZE: revalidation appends nothing"
+    chain = json.loads(git.files(REF)[l.LEDGER].decode().splitlines()[-1])["entry_digest"]
     parsed = r.parse_trailers("Merge pull request #7\n\nbody\n\n" + text)
     assert parsed == {
         "Mandate-Decision": third["decision_id"],
         "Mandate-Receipt-Digest": third["receipt_digest"],
         "Mandate-Chain-Head": chain,
     }, parsed
-    escalated = receipts(git)[l.receipt_path(second["decision_id"], "r2")]
-    refused("CONTRACT_ERROR", r.trailers, escalated, second, chain, build(decision("ESCALATE")))
-    refused("CONTRACT_ERROR", r.trailers, data, third, chain, build(decision("ESCALATE")))
+
+    # A stale worker holding a superseded AUTHORIZE r1 (r2 since escalated)
+    # gets trailers for a new latest revision, never for r1.
+    stale = FakeGit()
+    old, _, _ = r.record(stale, REPO, REF, receipt)
+    r.record(stale, REPO, REF, build(decision("ESCALATE")))
+    fresh = r.parse_trailers(r.trailers(stale, REPO, REF, subject, build(decision())))
+    latest = json.loads(stale.files(REF)[l.LEDGER].decode().splitlines()[-1])
+    assert latest["receipt_revision"] == "r3" and latest["outcome"] == "AUTHORIZE"
+    assert fresh["Mandate-Receipt-Digest"] == latest["receipt_digest"] != old["receipt_digest"]
+
+    # Refusals: not AUTHORIZE now, or the subject drifted since the worker acted.
+    tip = git.refs[REF]
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, subject, build(decision("ESCALATE")))
     moved = build(decision(subject=e.Subject(REPO, "c" * 40, BASE, POLICY)))
-    refused("HEAD_CHANGED", r.trailers, data, third, chain, moved)
+    refused("HEAD_CHANGED", r.trailers, git, REPO, REF, subject, moved)
     rebased = build(decision(subject=e.Subject(REPO, HEAD, "c" * 40, POLICY)))
-    refused("BASE_CHANGED", r.trailers, data, third, chain, rebased)
-    refused("ENFORCEMENT_DRIFT", r.trailers, data, third, chain, build(decision(), enforcement="sha256:e"))
-    refused("CONTRACT_ERROR", r.trailers, data, second, chain, build(decision()))
+    refused("BASE_CHANGED", r.trailers, git, REPO, REF, subject, rebased)
+    refused("ENFORCEMENT_DRIFT", r.trailers, git, REPO, REF, subject, build(decision(), enforcement="sha256:e"))
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "pull_request": 8}, build(decision()))
+    assert git.refs[REF] == tip, "a refused revalidation records nothing"
     # Only the final paragraph holds trailers; body text cannot supply or spoil them.
     quoted = "Merge\n\n" + text.replace(chain, "sha256:" + "8" * 64) + "\n\nbody\n\n" + text
     assert r.parse_trailers(quoted) == parsed, r.parse_trailers(quoted)

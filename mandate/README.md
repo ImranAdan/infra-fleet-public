@@ -132,10 +132,13 @@ through `ledger.append()` (KAN-26).
   compare-and-swap, though, so the ledger, not the check, is the authority
   for which revision is latest.
 - **Merge trailers:** `trailers()` gives `Mandate-Decision`,
-  `Mandate-Receipt-Digest` and `Mandate-Chain-Head`. It does so only for an
-  AUTHORIZE receipt whose bytes are the recorded revision and which a fresh
-  decision still matches. Otherwise it refuses with `HEAD_CHANGED`,
-  `BASE_CHANGED`, `ENFORCEMENT_DRIFT` or `CONTRACT_ERROR`.
+  `Mandate-Receipt-Digest` and `Mandate-Chain-Head` after final revalidation.
+  The fresh decision must be about the subject the merge worker acted on and
+  must AUTHORIZE. Otherwise it refuses with `HEAD_CHANGED`, `BASE_CHANGED`,
+  `ENFORCEMENT_DRIFT` or `CONTRACT_ERROR`. It then records that decision,
+  which is a no-op when it is already the latest revision, so the trailers
+  always name the latest revision. A stale worker holding a superseded
+  AUTHORIZE can't anchor a merge to it.
 - **Audit:** `audit()` checks a ledger offline against merge-commit anchors.
   It reports middle deletion, tail truncation, full rewrite and an anchor whose
   receipt isn't recorded at or before its chain head.
