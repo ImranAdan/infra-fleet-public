@@ -56,11 +56,13 @@ class FakeChecks:
         if method == "GET":
             return {"check_runs": [x for x in self.runs if x["head_sha"] in path]}
         self.writes += 1
+        # GitHub echoes output with keys the payload never sends.
+        output = {**payload["output"], "text": None, "annotations_count": 0}
         if method == "POST":
-            self.runs.append({**payload, "id": len(self.runs) + 1})
+            self.runs.append({**payload, "output": output, "id": len(self.runs) + 1})
             return self.runs[-1]
         run = next(x for x in self.runs if path.endswith(f"/check-runs/{x['id']}"))
-        run.update(payload)
+        run.update({**payload, "output": output})
         return run
 
 
@@ -143,6 +145,16 @@ def main() -> int:
     assert checks.writes == 2 and len(checks.runs) == 1
     assert checks.runs[0]["conclusion"] == "failure" and "r2" in checks.runs[0]["output"]["title"]
 
+    # The summary stays within GitHub's 65535-character output limit.
+    many = m.Decision(
+        "ESCALATE",
+        tuple(m.reason(f"UNDELEGATED:c{i}", "p" * 300) for i in range(400)),
+        (), (), POLICY, SUBJECT,
+    )
+    big = FakeChecks()
+    r.publish_check(big, REPO, build(many), first, head1, shadow=True)
+    assert len(big.runs[0]["output"]["summary"]) <= 65535
+
     # Merge trailers: only for an AUTHORIZE receipt that a fresh decision still matches.
     data = receipts(git)[l.receipt_path(third["decision_id"], "r3")]
     tip_entry = json.loads(git.files(REF)[l.LEDGER].decode().splitlines()[-1])
@@ -163,6 +175,10 @@ def main() -> int:
     refused("BASE_CHANGED", r.trailers, data, third, chain, rebased)
     refused("ENFORCEMENT_DRIFT", r.trailers, data, third, chain, build(decision(), enforcement="sha256:e"))
     refused("CONTRACT_ERROR", r.trailers, data, second, chain, build(decision()))
+    # Only the final paragraph holds trailers; body text cannot supply or spoil them.
+    quoted = "Merge\n\n" + text.replace(chain, "sha256:" + "8" * 64) + "\n\nbody\n\n" + text
+    assert r.parse_trailers(quoted) == parsed, r.parse_trailers(quoted)
+    assert r.parse_trailers("Merge\n\n" + text + "\n\nSigned-off-by: x") is None
     assert r.parse_trailers("no trailers") is None
     assert r.parse_trailers(text + "\n" + text) is None, "duplicate trailers are ambiguous"
 

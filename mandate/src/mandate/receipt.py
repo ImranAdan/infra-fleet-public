@@ -31,6 +31,7 @@ CHECK_NAME = "mandate/decision"
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
 _TRAILER = re.compile(rf"(?m)^({'|'.join(TRAILERS)}): (\S+)$")
 _CLOCK = ("evaluated_at", "receipt_revision")
+SUMMARY_LIMIT = 65535  # GitHub's check-run output.summary maximum
 
 
 def _subject(
@@ -148,6 +149,9 @@ def publish_check(
         + (" Shadow mode: this decision grants nothing." if shadow else "")
         + reasons
     )
+    if len(summary) > SUMMARY_LIMIT:
+        cut = "\n- … more reasons in the receipt"
+        summary = summary[: SUMMARY_LIMIT - len(cut)] + cut
     payload = {
         "name": CHECK_NAME,
         "external_id": did,
@@ -161,7 +165,10 @@ def publish_check(
     existing = next((x for x in runs if x.get("external_id") == did), None)
     if existing is None:
         return api("POST", f"repos/{repo}/check-runs", {**payload, "head_sha": head})
-    if existing.get("conclusion") == conclusion and existing.get("output") == payload["output"]:
+    shown = existing.get("output") or {}
+    if existing.get("conclusion") == conclusion and all(
+        shown.get(k) == v for k, v in payload["output"].items()
+    ):  # GitHub adds text and annotation fields we never send
         return existing
     return api("PATCH", f"repos/{repo}/check-runs/{existing['id']}", payload)
 
@@ -193,8 +200,9 @@ def trailers(
 
 
 def parse_trailers(message: str) -> dict[str, str] | None:
-    """The three trailers, or None when any is missing or repeated."""
-    found = _TRAILER.findall(message)
+    """The three trailers from the final paragraph, or None when any is missing or repeated."""
+    paragraphs = [p for p in message.replace("\r\n", "\n").strip().split("\n\n") if p.strip()]
+    found = _TRAILER.findall(paragraphs[-1]) if paragraphs else []
     names = [k for k, _ in found]
     if sorted(names) != sorted(TRAILERS):
         return None
