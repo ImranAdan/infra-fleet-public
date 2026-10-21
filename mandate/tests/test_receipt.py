@@ -21,6 +21,7 @@ sys.path.insert(0, str(HERE))
 from test_ledger import REF, REPO, FakeGit, receipts  # noqa: E402
 
 from mandate import decision as m  # noqa: E402
+from mandate import delegation as d  # noqa: E402
 from mandate import evidence as e  # noqa: E402
 from mandate import ledger as l  # noqa: E402
 from mandate import receipt as r  # noqa: E402
@@ -31,6 +32,16 @@ SUBJECT = e.Subject(REPO, HEAD, BASE, POLICY)
 VERSIONS = {"package": "0.1.0", "adapter": 1}
 ACTORS = {"app_id": 5336871}
 APP = 5336871  # the publisher App; runs from other Apps are never touched
+# The pinned delegation every receipt here was decided under (decision-prose
+# authorizes with intent-gate evidence).
+DELEG = d.parse(
+    (HERE.parent / "examples" / "infra-fleet-public.toml").read_text().replace(
+        'repository = "ImranAdan/infra-fleet-public"', f'repository = "{REPO}"'
+    ),
+    REPO,
+    "ImranAdan/mandate-delegation@" + "d" * 40 + ":repositories/r.toml",
+)
+RESOLVE = lambda repository, policy: DELEG  # noqa: E731
 ENF = "sha256:" + "e" * 64  # a live enforcement snapshot
 
 
@@ -48,7 +59,7 @@ def proof(subject: e.Subject) -> e.EvidenceRecord:
 def decision(outcome: str = "AUTHORIZE", subject: e.Subject = SUBJECT) -> m.Decision:
     """What decide() returns: AUTHORIZE names its classes and accepted evidence."""
     if outcome == "AUTHORIZE":
-        return m.Decision(outcome, (), ("docs",), (("intent-gate", (proof(subject),)),), POLICY, subject)
+        return m.Decision(outcome, (), ("decision-prose",), (("intent-gate", (proof(subject),)),), POLICY, subject)
     return m.Decision(outcome, (m.reason("UNCLASSIFIED", "x.py"),), (), (), POLICY, subject)
 
 
@@ -146,19 +157,19 @@ def main() -> int:
 
     # First record appends r1; a rerun of the same inputs (later clock) is a no-op.
     git = FakeGit()
-    first, head1, appended = r.record(git, REPO, REF, receipt)
+    first, head1, appended = r.record(git, REPO, REF, receipt, DELEG)
     assert appended and first["receipt_revision"] == "r1" and first["seq"] == 0
     assert head1 == first["entry_digest"]
     tip = git.refs[REF]
-    again, head2, appended = r.record(git, REPO, REF, build(decision(), at="2026-10-21T09:00:00Z"))
+    again, head2, appended = r.record(git, REPO, REF, build(decision(), at="2026-10-21T09:00:00Z"), DELEG)
     assert not appended and again == first and head2 == head1 and git.refs[REF] == tip
 
     # A changed outcome under the same subject is the next revision, same ID;
     # flipping back is a third revision, never a reuse of r1.
-    second, _, appended = r.record(git, REPO, REF, build(decision("ESCALATE")))
+    second, _, appended = r.record(git, REPO, REF, build(decision("ESCALATE")), DELEG)
     assert appended and second["receipt_revision"] == "r2"
     assert second["decision_id"] == first["decision_id"]
-    third, _, appended = r.record(git, REPO, REF, build(decision()))
+    third, _, appended = r.record(git, REPO, REF, build(decision()), DELEG)
     assert appended and third["receipt_revision"] == "r3"
 
     # Receipts are canonical, versioned and name their own revision.
@@ -169,24 +180,24 @@ def main() -> int:
     # A concurrent writer that takes the same revision first: re-read, take the next.
     race = FakeGit()
     other = build(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY)))
-    race.before_advance = lambda: r.record(race, REPO, REF, other)
-    mine, _, appended = r.record(race, REPO, REF, receipt)
+    race.before_advance = lambda: r.record(race, REPO, REF, other, DELEG)
+    mine, _, appended = r.record(race, REPO, REF, receipt, DELEG)
     assert appended and mine["seq"] == 1, mine
 
     # A concurrent writer takes this decision's next revision first: re-read, take the one after.
     same = FakeGit()
-    same.before_advance = lambda: r.record(same, REPO, REF, build(decision("ESCALATE")))
-    mine, _, appended = r.record(same, REPO, REF, receipt)
+    same.before_advance = lambda: r.record(same, REPO, REF, build(decision("ESCALATE")), DELEG)
+    mine, _, appended = r.record(same, REPO, REF, receipt, DELEG)
     assert appended and mine["receipt_revision"] == "r2" and mine["seq"] == 1, mine
 
     # A tampered receipt is never trusted for the no-op comparison, even when
     # it still says the same thing (re-serialized, so its digest differs).
     for tampered in (b'{"x":1}', json.dumps({**receipt, "receipt_revision": "r1"}, indent=1).encode()):
         bad = FakeGit()
-        r.record(bad, REPO, REF, receipt)
+        r.record(bad, REPO, REF, receipt, DELEG)
         path = l.receipt_path(receipt["decision_id"], "r1")
         bad.objects[bad.objects[bad.refs[REF]]["tree"]]["files"][path] = tampered
-        refused("LEDGER_INVALID", r.record, bad, REPO, REF, receipt)
+        refused("LEDGER_INVALID", r.record, bad, REPO, REF, receipt, DELEG)
 
     # Check run: the reconciler shows the newest decision recorded for a PR
     # head; the caller names the head, never a decision or revision. A shadow
@@ -195,8 +206,8 @@ def main() -> int:
     did = receipt["decision_id"]
     checks = FakeChecks()
     api = both(checks, git)
-    r.reconcile_check(api, REPO, REF, HEAD, app_id=APP)
-    r.reconcile_check(api, REPO, REF, HEAD, app_id=APP)
+    r.reconcile_check(api, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    r.reconcile_check(api, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert checks.writes == 1 and len(checks.runs) == 1
     run = checks.runs[0]
     assert run["name"] == r.SHADOW_CHECK_NAME == "mandate/shadow" != r.CHECK_NAME == "mandate/decision"
@@ -205,29 +216,29 @@ def main() -> int:
 
     # A live receipt passes or fails on its outcome.
     live = FakeGit()
-    did = r.record(live, REPO, REF, enforced(decision()))[0]["decision_id"]
+    did = r.record(live, REPO, REF, enforced(decision()), DELEG)[0]["decision_id"]
     ck0 = FakeChecks()
-    r.reconcile_check(both(ck0, live), REPO, REF, HEAD, app_id=APP)
+    r.reconcile_check(both(ck0, live), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck0) == [("success", "AUTHORIZE (r1)")], visible(ck0)
     assert ck0.runs[0]["name"] == r.CHECK_NAME
     # Only a live sha256 snapshot can pass, matched whole (a trailing newline
     # is not live); any other enforcement fails closed.
     nl = FakeGit()
-    r.record(nl, REPO, REF, build(decision(), enforcement=ENF + "\n"))
+    r.record(nl, REPO, REF, build(decision(), enforcement=ENF + "\n"), DELEG)
     ck_nl = FakeChecks()
-    r.reconcile_check(both(ck_nl, nl), REPO, REF, HEAD, app_id=APP)
+    r.reconcile_check(both(ck_nl, nl), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck_nl) == [("failure", "AUTHORIZE (r1)")], visible(ck_nl)
     odd = FakeGit()
-    odd_id = r.record(odd, REPO, REF, build(decision(), enforcement="live"))[0]["decision_id"]
+    odd_id = r.record(odd, REPO, REF, build(decision(), enforcement="live"), DELEG)[0]["decision_id"]
     ck_odd = FakeChecks()
-    r.reconcile_check(both(ck_odd, odd), REPO, REF, HEAD, app_id=APP)
+    r.reconcile_check(both(ck_odd, odd), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck_odd) == [("failure", "AUTHORIZE (r1)")], visible(ck_odd)
 
     # A run from another App with the same name and external_id is not ours:
     # we publish our own and never touch it.
     ck0.runs.insert(0, {**ck0.runs[0], "id": 99, "app": {"id": 999}, "conclusion": "failure"})
     ck0.runs.pop(1)
-    r.reconcile_check(both(ck0, live), REPO, REF, HEAD, app_id=APP)
+    r.reconcile_check(both(ck0, live), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert [(x["app"]["id"], x["conclusion"]) for x in ck0.runs] == [(999, "failure"), (APP, "success")]
 
     # Codex F1 interleaving: a delayed publisher read r2 AUTHORIZE; before its
@@ -235,32 +246,32 @@ def main() -> int:
     # (stale success), then it re-reads the ledger and restores r3.
     lg, ck = FakeGit(), FakeChecks()
     api2 = both(ck, lg)
-    r.record(lg, REPO, REF, enforced(decision("ESCALATE")))
-    r.reconcile_check(api2, REPO, REF, HEAD, app_id=APP)
-    r.record(lg, REPO, REF, enforced(decision()))
+    r.record(lg, REPO, REF, enforced(decision("ESCALATE")), DELEG)
+    r.reconcile_check(api2, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    r.record(lg, REPO, REF, enforced(decision()), DELEG)
 
     def newer() -> None:
-        r.record(lg, REPO, REF, enforced(decision("ESCALATE"), at="2026-10-21T01:00:00Z"))
-        r.reconcile_check(api2, REPO, REF, HEAD, app_id=APP)
+        r.record(lg, REPO, REF, enforced(decision("ESCALATE"), at="2026-10-21T01:00:00Z"), DELEG)
+        r.reconcile_check(api2, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
 
     ck.before_write = newer
-    r.reconcile_check(api2, REPO, REF, HEAD, app_id=APP)
+    r.reconcile_check(api2, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert ("success", "AUTHORIZE (r2)") in ck.shown, ck.shown  # the race really ran
     assert visible(ck) == [("failure", "ESCALATE (r3)")], visible(ck)
 
     # The same race on first publication creates two runs; both end at the latest.
     lg2, ck2 = FakeGit(), FakeChecks()
     api3 = both(ck2, lg2)
-    r.record(lg2, REPO, REF, enforced(decision()))
+    r.record(lg2, REPO, REF, enforced(decision()), DELEG)
     ck2.before_write = lambda: (
-        r.record(lg2, REPO, REF, enforced(decision("ESCALATE"))),
-        r.reconcile_check(api3, REPO, REF, HEAD, app_id=APP),
+        r.record(lg2, REPO, REF, enforced(decision("ESCALATE")), DELEG),
+        r.reconcile_check(api3, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE),
     )
-    r.reconcile_check(api3, REPO, REF, HEAD, app_id=APP)
+    r.reconcile_check(api3, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck2) == [("failure", "ESCALATE (r2)")] * 2, visible(ck2)
     # A later revision reaches both duplicates, not just the newest one.
-    r.record(lg2, REPO, REF, enforced(decision()))
-    r.reconcile_check(api3, REPO, REF, HEAD, app_id=APP)
+    r.record(lg2, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(api3, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck2) == [("success", "AUTHORIZE (r3)")] * 2, visible(ck2)
 
     # A new decision ID on the same head (here the base moved) supersedes the
@@ -268,56 +279,56 @@ def main() -> int:
     moved_base = FakeGit()
     ck_m = FakeChecks()
     api_m = both(ck_m, moved_base)
-    r.record(moved_base, REPO, REF, enforced(decision()))
-    r.reconcile_check(api_m, REPO, REF, HEAD, app_id=APP)
+    r.record(moved_base, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(api_m, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     new_base = enforced(decision("ESCALATE", subject=e.Subject(REPO, HEAD, "c" * 40, POLICY)))
-    r.record(moved_base, REPO, REF, new_base)
-    r.reconcile_check(api_m, REPO, REF, HEAD, app_id=APP)
+    r.record(moved_base, REPO, REF, new_base, DELEG)
+    r.reconcile_check(api_m, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck_m) == [("failure", "ESCALATE (r1)")], visible(ck_m)
     assert ck_m.runs[0]["external_id"] == new_base["decision_id"]
     # ... and the same while a delayed reconcile still holds the old decision.
     race_m, ck_rm = FakeGit(), FakeChecks()
     api_rm = both(ck_rm, race_m)
-    r.record(race_m, REPO, REF, enforced(decision("ESCALATE")))
-    r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP)
-    r.record(race_m, REPO, REF, enforced(decision()))
+    r.record(race_m, REPO, REF, enforced(decision("ESCALATE")), DELEG)
+    r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    r.record(race_m, REPO, REF, enforced(decision()), DELEG)
     ck_rm.before_write = lambda: (
-        r.record(race_m, REPO, REF, new_base),
-        r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP),
+        r.record(race_m, REPO, REF, new_base, DELEG),
+        r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE),
     )
-    r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP)
+    r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert ("success", "AUTHORIZE (r2)") in ck_rm.shown, ck_rm.shown
     assert visible(ck_rm) == [("failure", "ESCALATE (r1)")], visible(ck_rm)
 
     # Checks belong to a commit: two PRs on one head share one check, which
     # cannot represent both, so it fails closed while both have decisions.
     shared, ck_s = FakeGit(), FakeChecks()
-    r.record(shared, REPO, REF, enforced(decision()))
-    r.record(shared, REPO, REF, r.build(decision(), 8, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
-    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP)
+    r.record(shared, REPO, REF, enforced(decision()), DELEG)
+    r.record(shared, REPO, REF, r.build(decision(), 8, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
+    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck_s) == [("failure", "AUTHORIZE (r1), head shared by 2 PRs")], visible(ck_s)
     assert "#7, #8" in ck_s.runs[0]["output"]["summary"]
     # Many PRs: the title stays within GitHub's 255 characters.
     for n in range(9, 120):
-        r.record(shared, REPO, REF, r.build(decision(), n, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
-    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP)
+        r.record(shared, REPO, REF, r.build(decision(), n, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
+    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert len(ck_s.runs[0]["output"]["title"]) <= 255 and "113 PRs" in ck_s.runs[0]["output"]["title"]
     # A PR that moved to another commit no longer shares this head.
     r.record(shared, REPO, REF, r.build(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY)), 8, ENF,
-                                         versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
+                                         versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
     for n in range(9, 120):
         r.record(shared, REPO, REF, r.build(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY)), n, ENF,
-                                             versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
-    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP)
+                                             versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
+    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck_s) == [("success", "AUTHORIZE (r1)")], visible(ck_s)
 
     # A shadow decision that supersedes a live AUTHORIZE retires the required
     # check: shadow grants nothing, so mandate/decision must not stay green.
     to_shadow, ck_ts = FakeGit(), FakeChecks()
-    r.record(to_shadow, REPO, REF, enforced(decision()))
-    r.reconcile_check(both(ck_ts, to_shadow), REPO, REF, HEAD, app_id=APP)
-    r.record(to_shadow, REPO, REF, build(decision()))
-    r.reconcile_check(both(ck_ts, to_shadow), REPO, REF, HEAD, app_id=APP)
+    r.record(to_shadow, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(both(ck_ts, to_shadow), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    r.record(to_shadow, REPO, REF, build(decision()), DELEG)
+    r.reconcile_check(both(ck_ts, to_shadow), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     by_name = {x["name"]: x["conclusion"] for x in ck_ts.runs}
     assert by_name == {r.CHECK_NAME: "failure", r.SHADOW_CHECK_NAME: "neutral"}, by_name
     # A head that only ever had shadow decisions gets no required-name run.
@@ -329,8 +340,8 @@ def main() -> int:
     drilled, ck_d = FakeGit(), FakeChecks()
     l.append(drilled, REPO, REF, "drill-1", "r1", l.canonical({"drill": "1", "outcome": "AUTHORIZE"}),
              l.digest(b"subject"), "AUTHORIZE", "t")
-    r.record(drilled, REPO, REF, enforced(decision()))
-    r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP)
+    r.record(drilled, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck_d) == [("success", "AUTHORIZE (r1)")], visible(ck_d)
     # A newer receipt for this head that claims the schema but lacks a field
     # _show() reads (here: reasons) is refused, and the required check that
@@ -338,13 +349,13 @@ def main() -> int:
     bad = {**enforced(decision("ESCALATE"), at="later"), "receipt_revision": "r2"}
     del bad["decision"]["reasons"]
     l.append(drilled, REPO, REF, bad["decision_id"], "r2", l.canonical(bad), bad["subject_digest"], "ESCALATE", "t")
-    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP))
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert [(x["conclusion"], x["output"]["title"]) for x in ck_d.runs] == [("failure", "LEDGER_INVALID")], ck_d.runs
     # The same for a receipt without an outcome, and for one that is not JSON.
     for raw in ("no-outcome", "not-json"):
         gone, ck_g = FakeGit(), FakeChecks()
-        r.record(gone, REPO, REF, enforced(decision()))
-        r.reconcile_check(both(ck_g, gone), REPO, REF, HEAD, app_id=APP)
+        r.record(gone, REPO, REF, enforced(decision()), DELEG)
+        r.reconcile_check(both(ck_g, gone), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
         if raw == "no-outcome":  # written below record(), which needs the outcome
             odd_receipt = {**enforced(decision("ESCALATE"), at="later"), "receipt_revision": "r2"}
             del odd_receipt["decision"]["outcome"]
@@ -352,16 +363,16 @@ def main() -> int:
                      odd_receipt["subject_digest"], "ESCALATE", "t")
         else:
             l.append(gone, REPO, REF, "d-" + "a" * 64, "r1", b"not json", l.digest(b"s"), "BLOCK", "t")
-        refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_g, gone), REPO, REF, HEAD, app_id=APP))
+        refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_g, gone), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
         assert visible(ck_g) == [("failure", "LEDGER_INVALID")], (raw, visible(ck_g))
     # A provider error while showing a newer ESCALATE still fails the green run.
     flaky, ck_fl = FakeGit(), FakeChecks()
-    r.record(flaky, REPO, REF, enforced(decision()))
-    r.reconcile_check(both(ck_fl, flaky), REPO, REF, HEAD, app_id=APP)
-    r.record(flaky, REPO, REF, enforced(decision("ESCALATE")))
+    r.record(flaky, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(both(ck_fl, flaky), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    r.record(flaky, REPO, REF, enforced(decision("ESCALATE")), DELEG)
     ck_fl.fail_writes = 1
     try:
-        r.reconcile_check(both(ck_fl, flaky), REPO, REF, HEAD, app_id=APP)
+        r.reconcile_check(both(ck_fl, flaky), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     except l.ApiError:
         pass
     else:
@@ -371,77 +382,130 @@ def main() -> int:
     # is refused by record() and, written below it, fails closed on reconcile.
     lying = enforced(decision("ESCALATE"))
     lying["decision"]["outcome"] = "AUTHORIZE"
-    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, lying)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, lying, DELEG)
     unregistered = enforced(decision("ESCALATE"))
     unregistered["decision"]["reasons"][0]["code"] = "MADE_UP"
-    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, unregistered)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, unregistered, DELEG)
     liar, ck_li = FakeGit(), FakeChecks()
-    r.record(liar, REPO, REF, enforced(decision()))
-    r.reconcile_check(both(ck_li, liar), REPO, REF, HEAD, app_id=APP)
+    r.record(liar, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(both(ck_li, liar), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     lie = {**lying, "evaluated_at": "later", "receipt_revision": "r2"}
     l.append(liar, REPO, REF, lie["decision_id"], "r2", l.canonical(lie), lie["subject_digest"], "AUTHORIZE", "t")
-    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_li, liar), REPO, REF, HEAD, app_id=APP))
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_li, liar), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert visible(ck_li) == [("failure", "LEDGER_INVALID")], visible(ck_li)
     # A receipt whose outer subject was changed (its ID, digest and decision
     # still name the decided head) cannot move an authorization to another head.
     moved_receipt = enforced(decision())
     moved_receipt["subject"] = {**moved_receipt["subject"], "head_sha": "f" * 40}
-    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, moved_receipt)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, moved_receipt, DELEG)
     # ... even with its ID and digest recomputed for the new head (the
     # decision inside is still about the old one) ...
     regrafted = {**moved_receipt, "subject_digest": l.digest(l.canonical(moved_receipt["subject"]))}
     regrafted["decision_id"] = "d-" + regrafted["subject_digest"].removeprefix("sha256:")
-    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, regrafted)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, regrafted, DELEG)
     # ... and an ID that is not its subject's is refused on its own.
     renamed = {**enforced(decision()), "decision_id": "d-" + "0" * 64}
-    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, renamed)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, renamed, DELEG)
     forged = {**enforced(decision()), "subject_digest": "sha256:" + "1" * 64, "decision_id": "d-" + "1" * 64}
-    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, forged)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, forged, DELEG)
     graft, ck_gr = FakeGit(), FakeChecks()
-    r.record(graft, REPO, REF, enforced(decision("ESCALATE")))
-    r.reconcile_check(both(ck_gr, graft), REPO, REF, HEAD, app_id=APP)
+    r.record(graft, REPO, REF, enforced(decision("ESCALATE")), DELEG)
+    r.reconcile_check(both(ck_gr, graft), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     planted = {**enforced(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY))), "receipt_revision": "r1"}
     planted["subject"] = {**planted["subject"], "head_sha": HEAD}
     l.append(graft, REPO, REF, planted["decision_id"], "r1", l.canonical(planted), planted["subject_digest"], "AUTHORIZE", "t")
-    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_gr, graft), REPO, REF, HEAD, app_id=APP))
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_gr, graft), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert visible(ck_gr) == [("failure", "LEDGER_INVALID")], visible(ck_gr)
     # An AUTHORIZE decide() could not have produced: reasons deleted (no class,
     # no evidence), or evidence about another head. And an unsupported
     # decision schema is refused, never skipped in favour of an older receipt.
     fabricated = enforced(decision("ESCALATE"))
     fabricated["decision"] = {**fabricated["decision"], "outcome": "AUTHORIZE", "reasons": []}
-    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, fabricated)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, fabricated, DELEG)
     elsewhere = enforced(decision())
     elsewhere["decision"]["accepted"][0]["records"][0]["head_sha"] = "f" * 40
-    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, elsewhere)
-    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, {**enforced(decision("ESCALATE")), "schema_version": 2})
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, elsewhere, DELEG)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, {**enforced(decision("ESCALATE")), "schema_version": 2}, DELEG)
     future, ck_fu = FakeGit(), FakeChecks()
-    r.record(future, REPO, REF, enforced(decision()))
-    r.reconcile_check(both(ck_fu, future), REPO, REF, HEAD, app_id=APP)
+    r.record(future, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(both(ck_fu, future), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     v2 = {**enforced(decision("ESCALATE"), at="later"), "schema_version": 2, "receipt_revision": "r2"}
     l.append(future, REPO, REF, v2["decision_id"], "r2", l.canonical(v2), v2["subject_digest"], "ESCALATE", "t")
-    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_fu, future), REPO, REF, HEAD, app_id=APP))
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_fu, future), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert visible(ck_fu) == [("failure", "LEDGER_INVALID")], visible(ck_fu)
+    # Codex F1 (10176): an AUTHORIZE whose class, requirement and evidence the
+    # pinned delegation never declared (App 0, no workflow) is refused, and no
+    # successful required check can come of it.
+    invented = enforced(decision("ESCALATE"))
+    invented["decision"] = {
+        **invented["decision"], "outcome": "AUTHORIZE", "reasons": [], "classes": ["invented-class"],
+        "accepted": [{"requirement": "invented-evidence", "records": [{
+            **proof(SUBJECT).to_dict(), "app_id": 0, "app_slug": None, "workflow": None,
+            "run_id": None, "repository": None, "base_sha": None}]}],
+    }
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, invented, DELEG)
+    # ... each element alone: an undeclared class, a requirement the class
+    # does not name, and evidence its producer would not accept.
+    for field, value in (
+        ("classes", ["invented-class"]),
+        ("accepted", [{"requirement": "invented-evidence", "records": [proof(SUBJECT).to_dict()]}]),
+        ("accepted", [{"requirement": "intent-gate", "records": [{**proof(SUBJECT).to_dict(), "app_id": 0}]}]),
+    ):
+        tampered = enforced(decision())
+        tampered["decision"] = {**tampered["decision"], field: value}
+        refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, tampered, DELEG)
+    # ... and written below record(), it fails closed instead of going green.
+    planted_ok, ck_pl = FakeGit(), FakeChecks()
+    inv = {**invented, "receipt_revision": "r1"}
+    l.append(planted_ok, REPO, REF, inv["decision_id"], "r1", l.canonical(inv), inv["subject_digest"], "AUTHORIZE", "t")
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_pl, planted_ok), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
+    assert all(c != "success" for c, _ in visible(ck_pl)), visible(ck_pl)
+    # A receipt decided under another delegation than the one given is refused.
+    other = d.parse((HERE.parent / "examples" / "infra-fleet-public.toml").read_text().replace(
+        'repository = "ImranAdan/infra-fleet-public"', f'repository = "{REPO}"'), REPO, POLICY + "x")
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, enforced(decision()), other)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, enforced(decision("ESCALATE")), other)
+    # Reconcile checks the AUTHORIZE against the delegation its policy names: a
+    # resolver that hands back another delegation cannot make it pass.
+    wrong, ck_w = FakeGit(), FakeChecks()
+    r.record(wrong, REPO, REF, enforced(decision()), DELEG)
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(
+        both(ck_w, wrong), REPO, REF, HEAD, app_id=APP, delegations=lambda repository, policy: other))
+    assert ck_w.runs == [], ck_w.runs
+
+    # Codex F2 (10176): schema v1 is exact. Missing versions, actors,
+    # registry_version, classes or accepted, an unknown field, or an
+    # unsupported registry version are each refused.
+    for strip in (("versions",), ("actors",), ("decision", "registry_version"), ("decision", "classes"),
+                  ("decision", "accepted")):
+        partial = enforced(decision("ESCALATE"))
+        (partial if len(strip) == 1 else partial[strip[0]]).pop(strip[-1])
+        refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, partial, DELEG)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, {**enforced(decision("ESCALATE")), "extra": 1}, DELEG)
+    old_registry = enforced(decision("ESCALATE"))
+    old_registry["decision"]["registry_version"] = 1
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, old_registry, DELEG)
+
     # A ledger reset to empty leaves nothing authorizing this head: fail closed.
     reset, ck_re = FakeGit(), FakeChecks()
-    r.record(reset, REPO, REF, enforced(decision()))
-    r.reconcile_check(both(ck_re, reset), REPO, REF, HEAD, app_id=APP)
+    r.record(reset, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(both(ck_re, reset), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     reset.objects[reset.objects[reset.refs[REF]]["tree"]]["files"][l.LEDGER] = b""
-    refused("CONTRACT_ERROR", lambda: r.reconcile_check(both(ck_re, reset), REPO, REF, HEAD, app_id=APP))
+    refused("CONTRACT_ERROR", lambda: r.reconcile_check(both(ck_re, reset), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert visible(ck_re) == [("failure", "CONTRACT_ERROR")], visible(ck_re)
     # The same when the ledger itself cannot be verified.
     broken, ck_b = FakeGit(), FakeChecks()
-    r.record(broken, REPO, REF, enforced(decision()))
-    r.reconcile_check(both(ck_b, broken), REPO, REF, HEAD, app_id=APP)
+    r.record(broken, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(both(ck_b, broken), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     broken.objects[broken.objects[broken.refs[REF]]["tree"]]["files"][l.LEDGER] = b'{"seq":5}\n'
-    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_b, broken), REPO, REF, HEAD, app_id=APP))
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_b, broken), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert visible(ck_b) == [("failure", "LEDGER_INVALID")], visible(ck_b)
 
     # A receipt about another repository's commit is never shown here.
     foreign, ck_f = FakeGit(), FakeChecks()
-    r.record(foreign, REPO, REF, enforced(decision()))
-    r.record(foreign, REPO, REF, enforced(decision("ESCALATE", subject=e.Subject("x/y", HEAD, BASE, POLICY))))
-    r.reconcile_check(both(ck_f, foreign), REPO, REF, HEAD, app_id=APP)
+    r.record(foreign, REPO, REF, enforced(decision()), DELEG)
+    r.record(foreign, REPO, REF, enforced(decision("ESCALATE", subject=e.Subject("x/y", HEAD, BASE, POLICY))), DELEG)
+    r.reconcile_check(both(ck_f, foreign), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck_f) == [("success", "AUTHORIZE (r1)")], visible(ck_f)
 
     # Single writer per head commit: every job that records receipts or can
@@ -540,8 +604,8 @@ def main() -> int:
             (), (), POLICY, SUBJECT,
         )
         wide, big = FakeGit(), FakeChecks()
-        did = r.record(wide, REPO, REF, build(many))[0]["decision_id"]
-        r.reconcile_check(both(big, wide), REPO, REF, HEAD, app_id=APP)
+        did = r.record(wide, REPO, REF, build(many), DELEG)[0]["decision_id"]
+        r.reconcile_check(both(big, wide), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
         summary = big.runs[0]["output"]["summary"]
         assert len(summary.encode("utf-8")) <= r.SUMMARY_LIMIT == 65535, len(summary.encode("utf-8"))
         assert len(summary) < 65535 and summary.endswith("more reasons in the receipt")
@@ -550,19 +614,19 @@ def main() -> int:
     # Merge trailers: final revalidation records the fresh decision, so the
     # trailers always name this decision's latest revision. Shadow grants nothing.
     tip = git.refs[REF]
-    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, receipt["subject"], build(decision()))
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, receipt["subject"], build(decision()), DELEG)
     subject = enforced(decision())["subject"]
     refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "enforcement": "live"},
-            build(decision(), enforcement="live"))
+            build(decision(), enforcement="live"), DELEG)
     refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "enforcement": ENF + "\n"},
-            build(decision(), enforcement=ENF + "\n"))
+            build(decision(), enforcement=ENF + "\n"), DELEG)
     assert git.refs[REF] == tip, "a refused revalidation records nothing"
-    text = r.trailers(git, REPO, REF, subject, enforced(decision(), at="2026-10-22T00:00:00Z"))
+    text = r.trailers(git, REPO, REF, subject, enforced(decision(), at="2026-10-22T00:00:00Z"), DELEG)
     authorized = json.loads(git.files(REF)[l.LEDGER].decode().splitlines()[-1])
     chain = authorized["entry_digest"]
     assert authorized["receipt_revision"] == "r1" and authorized["outcome"] == "AUTHORIZE"
     tip = git.refs[REF]
-    assert r.trailers(git, REPO, REF, subject, enforced(decision(), at="2026-10-23T00:00:00Z")) == text
+    assert r.trailers(git, REPO, REF, subject, enforced(decision(), at="2026-10-23T00:00:00Z"), DELEG) == text
     assert git.refs[REF] == tip, "already the latest revision: revalidation appends nothing"
     parsed = r.parse_trailers("Merge pull request #7\n\nbody\n\n" + text)
     assert parsed == {
@@ -574,23 +638,23 @@ def main() -> int:
     # A stale worker holding a superseded AUTHORIZE r1 (r2 since escalated)
     # gets trailers for a new latest revision, never for r1.
     stale = FakeGit()
-    old, _, _ = r.record(stale, REPO, REF, enforced(decision()))
-    r.record(stale, REPO, REF, enforced(decision("ESCALATE")))
-    fresh = r.parse_trailers(r.trailers(stale, REPO, REF, subject, enforced(decision())))
+    old, _, _ = r.record(stale, REPO, REF, enforced(decision()), DELEG)
+    r.record(stale, REPO, REF, enforced(decision("ESCALATE")), DELEG)
+    fresh = r.parse_trailers(r.trailers(stale, REPO, REF, subject, enforced(decision()), DELEG))
     latest = json.loads(stale.files(REF)[l.LEDGER].decode().splitlines()[-1])
     assert latest["receipt_revision"] == "r3" and latest["outcome"] == "AUTHORIZE"
     assert fresh["Mandate-Receipt-Digest"] == latest["receipt_digest"] != old["receipt_digest"]
 
     # Refusals: not AUTHORIZE now, or the subject drifted since the worker acted.
     tip = git.refs[REF]
-    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, subject, enforced(decision("ESCALATE")))
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, subject, enforced(decision("ESCALATE")), DELEG)
     moved = enforced(decision(subject=e.Subject(REPO, "c" * 40, BASE, POLICY)))
-    refused("HEAD_CHANGED", r.trailers, git, REPO, REF, subject, moved)
+    refused("HEAD_CHANGED", r.trailers, git, REPO, REF, subject, moved, DELEG)
     rebased = enforced(decision(subject=e.Subject(REPO, HEAD, "c" * 40, POLICY)))
-    refused("BASE_CHANGED", r.trailers, git, REPO, REF, subject, rebased)
+    refused("BASE_CHANGED", r.trailers, git, REPO, REF, subject, rebased, DELEG)
     drifted = build(decision(), enforcement="sha256:" + "f" * 64)
-    refused("ENFORCEMENT_DRIFT", r.trailers, git, REPO, REF, subject, drifted)
-    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "pull_request": 8}, enforced(decision()))
+    refused("ENFORCEMENT_DRIFT", r.trailers, git, REPO, REF, subject, drifted, DELEG)
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "pull_request": 8}, enforced(decision()), DELEG)
     assert git.refs[REF] == tip, "a refused revalidation records nothing"
     # Only the final paragraph holds trailers; body text cannot supply or spoil them.
     quoted = "Merge\n\n" + text.replace(chain, "sha256:" + "8" * 64) + "\n\nbody\n\n" + text
@@ -622,7 +686,7 @@ def main() -> int:
     assert any("truncated or rewritten" in f for f in failures), failures
     # Full rewrite: a fresh, self-consistent chain without the anchored entry.
     rewrite = FakeGit()
-    r.record(rewrite, REPO, REF, build(decision("ESCALATE")))
+    r.record(rewrite, REPO, REF, build(decision("ESCALATE")), DELEG)
     failures, _ = r.audit(rewrite.files(REF)[l.LEDGER].decode(), receipts(rewrite), [anchor])
     assert any("truncated or rewritten" in f for f in failures), failures
     # An anchor whose receipt digest is not the one recorded for its decision.
@@ -635,7 +699,7 @@ def main() -> int:
     assert any("not recorded at or before" in f for f in failures), failures
     # Key compromise: a key holder appends well-formed entries after the last
     # anchor. Nothing is broken, so the audit must say it cannot tell.
-    r.record(git, REPO, REF, build(decision(subject=e.Subject(REPO, "e" * 40, BASE, POLICY))))
+    r.record(git, REPO, REF, build(decision(subject=e.Subject(REPO, "e" * 40, BASE, POLICY))), DELEG)
     failures, limits = r.audit(git.files(REF)[l.LEDGER].decode(), receipts(git), [anchor])
     assert failures == [] and limits == [
         (

@@ -23,12 +23,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
 
 from mandate import ledger as l
-from mandate.decision import REGISTRY, Decision, worst
-from mandate.evidence import EvidenceRecord
+from mandate.decision import REGISTRY, REGISTRY_VERSION, Decision, worst
+from mandate.delegation import Delegation
+from mandate.evidence import EvidenceRecord, Subject, evaluate
 
 SCHEMA_VERSION = 1
 DECISION_ID = re.compile(r"d-[0-9a-f]{64}")  # fullmatch; other ledger records (drills) differ
@@ -110,12 +112,19 @@ def _verified(api: l.Api, repo: str, ref: str) -> tuple[list[dict[str, Any]], di
 
 
 def record(
-    api: l.Api, repo: str, ref: str, receipt: dict[str, Any]
+    api: l.Api, repo: str, ref: str, receipt: dict[str, Any], delegation: Delegation | None = None
 ) -> tuple[dict[str, Any], str, bool]:
-    """(ledger entry for this decision's latest revision, chain head, appended)."""
-    did = receipt["decision_id"]
-    if not _well_formed(receipt):
-        raise l.LedgerError("CONTRACT_ERROR", f"receipt for {did} is not one decide() could produce")
+    """(ledger entry for this decision's latest revision, chain head, appended).
+
+    ``delegation`` is the pinned delegation the decision was taken under; an
+    AUTHORIZE is recorded only if it holds under it (_authorized)."""
+    did = receipt.get("decision_id")
+    if not isinstance(receipt, dict) or not _well_formed(receipt):
+        raise l.LedgerError("CONTRACT_ERROR", f"receipt for {did} is not exactly schema v{SCHEMA_VERSION}")
+    if delegation is not None and delegation.source != receipt["subject"]["policy"]:
+        raise l.LedgerError("CONTRACT_ERROR", f"receipt for {did} was decided under another delegation")
+    if receipt["decision"]["outcome"] == "AUTHORIZE" and not _authorized(receipt, delegation):
+        raise l.LedgerError("CONTRACT_ERROR", f"AUTHORIZE for {did} does not hold under its delegation")
     for _attempt in range(l.RETRIES):
         entries, stored = _verified(api, repo, ref)
         mine = [x for x in entries if x["decision_id"] == did]
@@ -228,61 +237,97 @@ def _show(
             api("PATCH", f"repos/{repo}/check-runs/{run['id']}", payload)
 
 
+_RECEIPT_KEYS = {"schema_version", "decision_id", "subject", "subject_digest", "decision",
+                 "versions", "actors", "evaluated_at"}  # + receipt_revision once recorded
+_SUBJECT_KEYS = {"repository", "pull_request", "head_sha", "base_sha", "policy", "enforcement"}
+_DECISION_KEYS = {"registry_version", "outcome", "reasons", "classes", "accepted", "policy", "subject"}
+_REASON_KEYS = {"code", "outcome", "owner", "detail"}
+
+
+def _records(accepted: Any) -> list[EvidenceRecord] | None:
+    """The accepted evidence as records, or None if it is not the shape decide() emits."""
+    if not isinstance(accepted, list):
+        return None
+    found = []
+    for item in accepted:
+        if not (isinstance(item, dict) and set(item) == {"requirement", "records"}
+                and isinstance(item["requirement"], str) and isinstance(item["records"], list)):
+            return None
+        for raw in item["records"]:
+            try:
+                found.append(EvidenceRecord.from_dict(raw))
+            except (ValueError, TypeError, AttributeError):
+                return None
+    return found
+
+
 def _well_formed(receipt: dict[str, Any]) -> bool:
-    """Every field reconciliation reads, at its type."""
+    """Exactly schema v1 as build() and Decision.to_dict() emit it: every key
+    present at its type, no other key, a supported registry version, a
+    decision decide() could produce from its reasons, and an identity that is
+    its subject's."""
+    revision = receipt.get("receipt_revision")
     subject, decision = receipt.get("subject"), receipt.get("decision")
+    if not (
+        set(receipt) - {"receipt_revision"} == _RECEIPT_KEYS
+        and (revision is None or (isinstance(revision, str) and l.ID.fullmatch(revision)))
+        and receipt["schema_version"] == SCHEMA_VERSION
+        and isinstance(receipt["decision_id"], str)
+        and isinstance(receipt["evaluated_at"], str)
+        and all(isinstance(receipt[k], dict) and all(isinstance(x, str) for x in receipt[k]) for k in ("versions", "actors"))
+        and isinstance(subject, dict) and set(subject) == _SUBJECT_KEYS
+        and all(isinstance(subject[k], str) for k in _SUBJECT_KEYS - {"pull_request"})
+        and type(subject["pull_request"]) is int
+        and isinstance(decision, dict) and set(decision) == _DECISION_KEYS
+        and decision["registry_version"] == REGISTRY_VERSION
+        and isinstance(decision["outcome"], str)
+        and isinstance(decision["classes"], list) and all(isinstance(c, str) for c in decision["classes"])
+        and _records(decision["accepted"]) is not None
+        and isinstance(decision["reasons"], list)
+        and all(isinstance(x, dict) and set(x) == _REASON_KEYS and all(isinstance(x[k], str) for k in _REASON_KEYS)
+                for x in decision["reasons"])
+    ):
+        return False
     return (
-        receipt.get("schema_version") == SCHEMA_VERSION
-        and isinstance(receipt.get("decision_id"), str)
-        and isinstance(subject, dict)
-        and all(isinstance(subject.get(k), str) for k in ("repository", "head_sha", "base_sha", "policy", "enforcement"))
-        and type(subject.get("pull_request")) is int
-        and isinstance(decision, dict)
-        and isinstance(decision.get("outcome"), str)
-        and isinstance(decision.get("reasons"), list)
-        and all(
-            isinstance(x, dict) and all(isinstance(x.get(k), str) for k in ("code", "outcome", "owner", "detail"))
-            for x in decision["reasons"]
-        )
         # What decide() could have produced: registered reasons with their
         # registered outcome and owner, and the outcome is the worst of them.
-        and all(
-            REGISTRY.get(x["code"].split(":", 1)[0]) == (x["outcome"], x["owner"]) for x in decision["reasons"]
-        )
+        all(REGISTRY.get(x["code"].split(":", 1)[0]) == (x["outcome"], x["owner"]) for x in decision["reasons"])
         and decision["outcome"] == worst([x["outcome"] for x in decision["reasons"]])
         # Its identity is its subject: the ID and digest recompute from it, and
         # the decision inside is about the same head, base and policy.
-        and receipt.get("subject_digest") == l.digest(l.canonical(subject))
+        and receipt["subject_digest"] == l.digest(l.canonical(subject))
         and receipt["decision_id"] == "d-" + receipt["subject_digest"].removeprefix("sha256:")
-        and decision.get("subject") == {k: subject[k] for k in ("repository", "head_sha", "base_sha", "policy")}
-        and decision.get("policy") == subject["policy"]
-        and (decision["outcome"] != "AUTHORIZE" or _proven(decision, subject))
+        and decision["subject"] == {k: subject[k] for k in ("repository", "head_sha", "base_sha", "policy")}
+        and decision["policy"] == subject["policy"]
     )
 
 
-def _proven(decision: dict[str, Any], subject: dict[str, Any]) -> bool:
-    """An AUTHORIZE is what decide() returns only when every finding matched an
-    authorizing class, and authorizing classes must require evidence: so it
-    names at least one class and accepted evidence, each record valid,
-    successful and about exactly this head and policy. (A receipt records a
-    decision; re-deriving it from its inputs is historical replay, KAN-27.)"""
-    classes, accepted = decision.get("classes"), decision.get("accepted")
-    if not (isinstance(classes, list) and classes and all(isinstance(c, str) for c in classes)):
+def _authorized(receipt: dict[str, Any], delegation: Delegation | None) -> bool:
+    """Whether an AUTHORIZE holds under the pinned delegation it names.
+
+    decide() authorizes only through the delegation's authorizing classes, and
+    those must require evidence. So the classes must be authorizing classes of
+    exactly this delegation (its source is the receipt's policy), the accepted
+    requirements exactly what they require, and re-evaluating the claimed
+    records with the production evidence rules (producer, App, workflow,
+    event, subject binding) must accept exactly them. Whether the delegation
+    should have matched the PR's findings needs the inputs: historical replay
+    (KAN-27). Whether the check runs exist is the producer's word, as in
+    decide().
+    """
+    subject, decision = receipt["subject"], receipt["decision"]
+    if delegation is None or (delegation.source, delegation.repository) != (subject["policy"], subject["repository"]):
         return False
-    if not (isinstance(accepted, list) and accepted):
+    authorize = {c.id: c for c in delegation.classes if c.decide == "authorize"}
+    classes = decision["classes"]
+    if not classes or any(c not in authorize for c in classes):
         return False
-    for item in accepted:
-        records = item.get("records") if isinstance(item, dict) else None
-        if not (isinstance(item.get("requirement"), str) and isinstance(records, list) and records):
-            return False
-        for raw in records:
-            try:
-                record = EvidenceRecord.from_dict(raw)
-            except (ValueError, TypeError, AttributeError):
-                return False
-            if (record.conclusion, record.head_sha, record.policy) != ("success", subject["head_sha"], subject["policy"]):
-                return False
-    return True
+    required = tuple(sorted({name for c in classes for name in authorize[c].require}))
+    records = _records(decision["accepted"]) or []
+    about = Subject(subject["repository"], subject["head_sha"], subject["base_sha"], subject["policy"])
+    found = evaluate(delegation, required, records, about)
+    accepted = [{"requirement": n, "records": [r.to_dict() for r in rs]} for n, rs in found.accepted]
+    return not found.failures and accepted == decision["accepted"]
 
 
 def _newest(
@@ -320,7 +365,15 @@ def _newest(
     return found
 
 
-def reconcile_check(api: l.Api, repo: str, ref: str, head: str, *, app_id: int) -> dict[str, dict[str, Any]]:
+def reconcile_check(
+    api: l.Api,
+    repo: str,
+    ref: str,
+    head: str,
+    *,
+    app_id: int,
+    delegations: Callable[[str, str], Delegation],
+) -> dict[str, dict[str, Any]]:
     """Show the newest decision recorded for a head commit on its check.
 
     The only check publisher. The caller names the head, never a decision or
@@ -342,14 +395,16 @@ def reconcile_check(api: l.Api, repo: str, ref: str, head: str, *, app_id: int) 
       bypassed), it shows the newer decision before returning.
 
     Only runs created by ``app_id`` (the publisher App) are ours. The
-    conclusion follows the receipt's recorded enforcement. If anything stops
+    conclusion follows the receipt's recorded enforcement, and a passing one
+    needs the AUTHORIZE to hold under its pinned delegation, which
+    ``delegations(repository, policy)`` resolves. If anything stops
     it showing the current decision (an unreadable ledger or receipt, a
     provider error, nothing recorded for the head, any surprise), every
     required run of ours on the head fails before the error is raised. Returns check name -> the ledger entry it
     left on display.
     """
     try:
-        return _reconcile(api, repo, ref, head, app_id)
+        return _reconcile(api, repo, ref, head, app_id, delegations)
     except Exception as exc:  # any failure to show the current decision fails closed
         _fail_closed(api, repo, head, app_id, exc)
         raise
@@ -373,13 +428,20 @@ def _fail_closed(api: l.Api, repo: str, head: str, app_id: int, exc: Exception) 
         pass
 
 
-def _reconcile(api: l.Api, repo: str, ref: str, head: str, app_id: int) -> dict[str, dict[str, Any]]:
+def _reconcile(
+    api: l.Api, repo: str, ref: str, head: str, app_id: int, delegations: Callable[[str, str], Delegation]
+) -> dict[str, dict[str, Any]]:
     for _attempt in range(l.RETRIES):
         entries, stored = _verified(api, repo, ref)
         shown = _newest(entries, stored, repo, head)
         if not shown:
             raise l.LedgerError("CONTRACT_ERROR", f"no receipt recorded for {repo}@{head}")
         for name, (entry, receipt, prs) in shown.items():
+            s = receipt["subject"]
+            live = receipt["decision"]["outcome"] == "AUTHORIZE" and LIVE.fullmatch(s["enforcement"])
+            if name == CHECK_NAME and live and not _authorized(receipt, delegations(repo, s["policy"])):
+                # Never pass a required check on an AUTHORIZE its delegation does not support.
+                raise l.LedgerError("LEDGER_INVALID", f"AUTHORIZE {entry['decision_id']} does not hold under its delegation")
             _show(api, repo, name, receipt, entry, entries[-1]["entry_digest"], app_id, prs)
         now = _newest(*_verified(api, repo, ref), repo, head)
         if {k: v[0] for k, v in now.items()} == {k: v[0] for k, v in shown.items()}:
@@ -461,7 +523,7 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
 
 
 def trailers(
-    api: l.Api, repo: str, ref: str, subject: dict[str, Any], fresh: dict[str, Any]
+    api: l.Api, repo: str, ref: str, subject: dict[str, Any], fresh: dict[str, Any], delegation: Delegation
 ) -> str:
     """Merge-commit trailers after final revalidation.
 
@@ -486,7 +548,7 @@ def trailers(
         )
     if fresh["decision"]["outcome"] != "AUTHORIZE":
         raise l.LedgerError("CONTRACT_ERROR", f"fresh outcome is {fresh['decision']['outcome']}")
-    entry, chain_head, _ = record(api, repo, ref, fresh)
+    entry, chain_head, _ = record(api, repo, ref, fresh, delegation)
     values = (entry["decision_id"], entry["receipt_digest"], chain_head)
     return "\n".join(f"{k}: {v}" for k, v in zip(TRAILERS, values))
 

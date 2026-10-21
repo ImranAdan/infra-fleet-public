@@ -148,11 +148,23 @@ through `ledger.append()` (KAN-26).
     one `decide()` could produce: unregistered reasons, an outcome other than
     the worst of its reasons, an identity that isn't its subject's (the ID
     and digest must recompute from the subject, and the decision inside must
-    be about the same head, base and policy), an unsupported schema, or an
-    AUTHORIZE without the classes and accepted evidence `decide()` requires.
-    That evidence must be valid, successful records about this head and
-    policy. A receipt records a decision; re-deriving it from its inputs is
-    historical replay (KAN-27). `record()` refuses such a receipt as
+    be about the same head, base and policy), or anything but exactly schema
+    v1. Schema v1 means every key `build()` emits, no other key, and the
+    supported registry version.
+  - **AUTHORIZE holds under its delegation:** `record(…, delegation)`,
+    `trailers(…, delegation)` and `reconcile_check(…, delegations=resolver)`
+    accept an AUTHORIZE only if it checks out against the pinned delegation
+    its policy names.
+    - Its classes must be that delegation's authorizing classes.
+    - The accepted requirements must be exactly what those classes require.
+    - Re-running the production evidence rules (`evidence.evaluate`:
+      producer, App, workflow, event, subject binding) on the claimed records
+      must accept exactly them.
+
+    Two things stay unchecked here. Whether the classes should have matched
+    the PR's findings needs the inputs, which is historical replay (KAN-27).
+    Whether the check runs exist rests on the producer's word, as in
+    `decide()`. `record()` refuses such a receipt as
     `CONTRACT_ERROR`.
   - **Fail closed:** if anything stops the reconcile showing the current
     decision (an unreadable ledger or receipt, a provider error, nothing
