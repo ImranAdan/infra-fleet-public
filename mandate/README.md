@@ -112,6 +112,38 @@ a hash-chained `v1/ledger.jsonl`.
 
 The live drill is in `drill/ledger/README.md`.
 
+## Receipts
+
+`mandate.receipt` turns a `Decision` into a versioned receipt and records it
+through `ledger.append()` (KAN-26).
+
+- **Decision ID:** `d-` plus the SHA-256 of the canonical subject. The subject
+  is the repository, pull request, head, base, delegation revision and
+  enforcement snapshot, so any drift gives a new ID.
+- **Revisions:** `record()` appends `r1`, `r2` and so on under one ID. It
+  appends only when the latest revision says something different, ignoring the
+  clock. Rerunning identical inputs is a no-op. Flipping back to an earlier
+  result is a new revision, never a reuse. A concurrent writer that takes the
+  same revision makes it re-read and take the next.
+- **Check run:** `publish_check()` keeps one `mandate/decision` check run per
+  decision ID showing the latest revision. It writes nothing when that is
+  already shown, and its conclusion is `neutral` in shadow mode.
+- **Merge trailers:** `trailers()` gives `Mandate-Decision`,
+  `Mandate-Receipt-Digest` and `Mandate-Chain-Head`. It does so only for an
+  AUTHORIZE receipt whose bytes are the recorded revision and which a fresh
+  decision still matches. Otherwise it refuses with `HEAD_CHANGED`,
+  `BASE_CHANGED`, `ENFORCEMENT_DRIFT` or `CONTRACT_ERROR`.
+- **Audit:** `audit()` checks a ledger offline against merge-commit anchors.
+  It reports middle deletion, tail truncation, full rewrite and an anchor whose
+  receipt isn't recorded at or before its chain head.
+- **Limits:** forged appends with a stolen key, or truncation after the last
+  anchor, are reported as "not detectable with available anchor". The anchor
+  is repository-local, not an independent transparency log.
+
+The shadow output includes the receipt it would record. Nothing writes a
+production ledger yet: that needs the `mandate-ledger` branch, its two
+rulesets and a `checks: write` token, all owner actions gated by KAN-31.
+
 ## Shadow decisions
 
 `mandate.shadow` turns one live pull request into a `DecisionInput` and runs
