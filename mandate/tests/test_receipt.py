@@ -313,9 +313,9 @@ def main() -> int:
     # A newer receipt for this head that claims the schema but lacks a field
     # _show() reads (here: reasons) is refused, and the required check that
     # was green fails closed rather than staying green.
-    bad = enforced(decision("ESCALATE"), at="later")
+    bad = {**enforced(decision("ESCALATE"), at="later"), "receipt_revision": "r2"}
     del bad["decision"]["reasons"]
-    r.record(drilled, REPO, REF, bad)
+    l.append(drilled, REPO, REF, bad["decision_id"], "r2", l.canonical(bad), bad["subject_digest"], "ESCALATE", "t")
     refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP))
     assert [(x["conclusion"], x["output"]["title"]) for x in ck_d.runs] == [("failure", "LEDGER_INVALID")], ck_d.runs
     # The same for a receipt without an outcome, and for one that is not JSON.
@@ -345,6 +345,28 @@ def main() -> int:
     else:
         raise AssertionError("a provider error was swallowed")
     assert visible(ck_fl) == [("failure", "ApiError")], visible(ck_fl)
+    # An outcome the reasons contradict (AUTHORIZE beside an ESCALATE reason)
+    # is refused by record() and, written below it, fails closed on reconcile.
+    lying = enforced(decision("ESCALATE"))
+    lying["decision"]["outcome"] = "AUTHORIZE"
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, lying)
+    unregistered = enforced(decision("ESCALATE"))
+    unregistered["decision"]["reasons"][0]["code"] = "MADE_UP"
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, unregistered)
+    liar, ck_li = FakeGit(), FakeChecks()
+    r.record(liar, REPO, REF, enforced(decision()))
+    r.reconcile_check(both(ck_li, liar), REPO, REF, HEAD, app_id=APP)
+    lie = {**lying, "evaluated_at": "later", "receipt_revision": "r2"}
+    l.append(liar, REPO, REF, lie["decision_id"], "r2", l.canonical(lie), lie["subject_digest"], "AUTHORIZE", "t")
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_li, liar), REPO, REF, HEAD, app_id=APP))
+    assert visible(ck_li) == [("failure", "LEDGER_INVALID")], visible(ck_li)
+    # A ledger reset to empty leaves nothing authorizing this head: fail closed.
+    reset, ck_re = FakeGit(), FakeChecks()
+    r.record(reset, REPO, REF, enforced(decision()))
+    r.reconcile_check(both(ck_re, reset), REPO, REF, HEAD, app_id=APP)
+    reset.objects[reset.objects[reset.refs[REF]]["tree"]]["files"][l.LEDGER] = b""
+    refused("CONTRACT_ERROR", lambda: r.reconcile_check(both(ck_re, reset), REPO, REF, HEAD, app_id=APP))
+    assert visible(ck_re) == [("failure", "CONTRACT_ERROR")], visible(ck_re)
     # The same when the ledger itself cannot be verified.
     broken, ck_b = FakeGit(), FakeChecks()
     r.record(broken, REPO, REF, enforced(decision()))

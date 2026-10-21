@@ -27,7 +27,7 @@ from typing import Any
 from urllib.parse import quote
 
 from mandate import ledger as l
-from mandate.decision import Decision
+from mandate.decision import REGISTRY, Decision, worst
 
 SCHEMA_VERSION = 1
 CHECK_NAME = "mandate/decision"  # the required check: live decisions only
@@ -112,6 +112,8 @@ def record(
 ) -> tuple[dict[str, Any], str, bool]:
     """(ledger entry for this decision's latest revision, chain head, appended)."""
     did = receipt["decision_id"]
+    if not _well_formed(receipt):
+        raise l.LedgerError("CONTRACT_ERROR", f"receipt for {did} is not one decide() could produce")
     for _attempt in range(l.RETRIES):
         entries, stored = _verified(api, repo, ref)
         mine = [x for x in entries if x["decision_id"] == did]
@@ -239,6 +241,12 @@ def _well_formed(receipt: dict[str, Any]) -> bool:
             isinstance(x, dict) and all(isinstance(x.get(k), str) for k in ("code", "outcome", "owner", "detail"))
             for x in decision["reasons"]
         )
+        # What decide() could have produced: registered reasons with their
+        # registered outcome and owner, and the outcome is the worst of them.
+        and all(
+            REGISTRY.get(x["code"].split(":", 1)[0]) == (x["outcome"], x["owner"]) for x in decision["reasons"]
+        )
+        and decision["outcome"] == worst([x["outcome"] for x in decision["reasons"]])
     )
 
 
@@ -296,16 +304,14 @@ def reconcile_check(api: l.Api, repo: str, ref: str, head: str, *, app_id: int) 
     Only runs created by ``app_id`` (the publisher App) are ours. The
     conclusion follows the receipt's recorded enforcement. If anything stops
     it showing the current decision (an unreadable ledger or receipt, a
-    provider error, any surprise), every required run of ours on the head
-    fails before the error is raised; only "nothing recorded for this head"
-    (CONTRACT_ERROR) leaves the checks alone. Returns check name -> the ledger entry it
+    provider error, nothing recorded for the head, any surprise), every
+    required run of ours on the head fails before the error is raised. Returns check name -> the ledger entry it
     left on display.
     """
     try:
         return _reconcile(api, repo, ref, head, app_id)
     except Exception as exc:  # any failure to show the current decision fails closed
-        if getattr(exc, "code", None) != "CONTRACT_ERROR":
-            _fail_closed(api, repo, head, app_id, exc)
+        _fail_closed(api, repo, head, app_id, exc)
         raise
 
 

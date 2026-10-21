@@ -142,12 +142,15 @@ through `ledger.append()` (KAN-26).
     is limited to 255 characters) and the summary lists the PRs.
   - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
   - **Other receipts:** receipts of another schema in the same ledger (the
-    drill's) are skipped. A receipt that claims this schema but lacks a field
-    reconciliation reads gives `LEDGER_INVALID`.
+    drill's) are skipped. A receipt that claims this schema gives
+    `LEDGER_INVALID` if it lacks a field reconciliation reads, or if it isn't
+    one `decide()` could produce: unregistered reasons, or an outcome other
+    than the worst of its reasons. `record()` refuses such a receipt as
+    `CONTRACT_ERROR`.
   - **Fail closed:** if anything stops the reconcile showing the current
-    decision (an unreadable ledger or receipt, a provider error, anything
-    unexpected), every existing required run on the head fails first, so an
-    earlier success never outlives it.
+    decision (an unreadable ledger or receipt, a provider error, nothing
+    recorded for the head, anything unexpected), every existing required run
+    on the head fails first, so an earlier success never outlives it.
   - **Identifiers:** snapshots, receipt IDs, delegation names and commit
     SHAs are matched whole (`fullmatch`), so a trailing newline never
     passes.
