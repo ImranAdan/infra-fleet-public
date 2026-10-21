@@ -31,6 +31,8 @@ from mandate.decision import Decision
 
 SCHEMA_VERSION = 1
 CHECK_NAME = "mandate/decision"
+SHADOW = "shadow"  # the enforcement snapshot of a decision that grants nothing
+LIVE = re.compile(r"^sha256:[0-9a-f]{64}$")  # a real enforcement snapshot digest
 # One writer per pull request: writers are workflows called with a ``pr`` input,
 # so every caller computes this same group.
 CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.pr }}"
@@ -143,11 +145,13 @@ def record(
 
 
 def _show(
-    api: l.Api, repo: str, receipt: dict[str, Any], entry: dict[str, Any], chain_head: str, shadow: bool
+    api: l.Api, repo: str, receipt: dict[str, Any], entry: dict[str, Any], chain_head: str, app_id: int
 ) -> None:
-    """Make every ``mandate/decision`` run for this decision show this revision."""
+    """Make every ``mandate/decision`` run of ours for this decision show this revision."""
     head, did = receipt["subject"]["head_sha"], receipt["decision_id"]
     outcome, revision = receipt["decision"]["outcome"], entry["receipt_revision"]
+    # From the recorded snapshot, never a caller flag: shadow can't be made to pass.
+    shadow = receipt["subject"]["enforcement"] == SHADOW
     conclusion = "neutral" if shadow else ("success" if outcome == "AUTHORIZE" else "failure")
     reasons = "".join(
         f"\n- `{x['code']}` ({x['outcome']}, {x['owner']}): {x['detail'][:200]}"
@@ -182,7 +186,9 @@ def _show(
         runs += data["check_runs"]
         if not data["check_runs"] or len(runs) >= data["total_count"]:
             break
-    mine = [x for x in runs if x.get("external_id") == did]
+    mine = [
+        x for x in runs if x.get("external_id") == did and (x.get("app") or {}).get("id") == app_id
+    ]
     if not mine:
         api("POST", f"repos/{repo}/check-runs", {**payload, "head_sha": head})
     for run in mine:  # a past race can leave two; each must show the latest
@@ -193,7 +199,7 @@ def _show(
             api("PATCH", f"repos/{repo}/check-runs/{run['id']}", payload)
 
 
-def reconcile_check(api: l.Api, repo: str, ref: str, did: str, *, shadow: bool) -> dict[str, Any]:
+def reconcile_check(api: l.Api, repo: str, ref: str, did: str, *, app_id: int) -> dict[str, Any]:
     """Show the ledger's latest revision of ``did`` on its ``mandate/decision`` check.
 
     The only check publisher. The caller names a decision, never a revision,
@@ -206,7 +212,9 @@ def reconcile_check(api: l.Api, repo: str, ref: str, did: str, *, shadow: bool) 
     - if the ledger moved while this ran (only possible when that boundary is
       bypassed), it shows the newer revision before returning.
 
-    Returns the ledger entry it left on display.
+    Only runs created by ``app_id`` (the publisher App) are ours. The
+    conclusion follows the receipt's recorded enforcement: a shadow receipt is
+    always neutral. Returns the ledger entry it left on display.
     """
     for _attempt in range(l.RETRIES):
         entries, mine, stored = _latest(api, repo, ref, did)
@@ -214,7 +222,7 @@ def reconcile_check(api: l.Api, repo: str, ref: str, did: str, *, shadow: bool) 
             raise l.LedgerError("CONTRACT_ERROR", f"no receipt recorded for {did}")
         entry = mine[-1]
         receipt = json.loads(stored[l.receipt_path(did, entry["receipt_revision"])])
-        _show(api, repo, receipt, entry, entries[-1]["entry_digest"], shadow)
+        _show(api, repo, receipt, entry, entries[-1]["entry_digest"], app_id)
         if _latest(api, repo, ref, did)[1][-1] == entry:
             return entry
     raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {did}")
@@ -268,6 +276,10 @@ def trailers(
             raise l.LedgerError(code, f"{field} {subject[field]} is now {fresh['subject'][field]}")
     if fresh["subject"] != subject:
         raise l.LedgerError("CONTRACT_ERROR", "the fresh decision is about another subject")
+    if not LIVE.match(subject["enforcement"]):
+        raise l.LedgerError(
+            "CONTRACT_ERROR", f"enforcement {subject['enforcement']!r} is not a live snapshot: shadow grants nothing"
+        )
     if fresh["decision"]["outcome"] != "AUTHORIZE":
         raise l.LedgerError("CONTRACT_ERROR", f"fresh outcome is {fresh['decision']['outcome']}")
     entry, chain_head, _ = record(api, repo, ref, fresh)

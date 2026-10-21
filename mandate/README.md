@@ -125,12 +125,14 @@ through `ledger.append()` (KAN-26).
   clock. Rerunning identical inputs is a no-op. Flipping back to an earlier
   result is a new revision, never a reuse. A concurrent writer that takes the
   same revision makes it re-read and take the next.
-- **Check run:** `reconcile_check(decision_id)` is the only publisher. The
-  caller names a decision, never a revision. It reads the verified ledger and
-  makes every `mandate/decision` run for that decision show the latest
-  revision. It writes nothing when that is already shown, and its conclusion
-  is `neutral` in shadow mode. The summary is capped at 65,535 UTF-8 bytes,
-  cut on a character boundary.
+- **Check run:** `reconcile_check(decision_id, app_id=…)` is the only
+  publisher. The caller names a decision, never a revision. It reads the
+  verified ledger and makes every `mandate/decision` run *created by the
+  publisher App* for that decision show the latest revision; another App's run
+  with the same name is never touched. It writes nothing when that is already
+  shown. The conclusion comes from the receipt's recorded enforcement, never a
+  caller flag: a shadow receipt is always `neutral`. The summary is capped at
+  65,535 UTF-8 bytes, cut on a character boundary.
 - **One writer per pull request:** GitHub's ruleset reads the check's
   conclusion, and the Checks API has no compare-and-swap. So every job that
   records receipts or writes checks must run in the one canonical group,
@@ -148,8 +150,9 @@ through `ledger.append()` (KAN-26).
     (`filter=all`, paged), so duplicates from a past race are kept current.
 - **Merge trailers:** `trailers()` gives `Mandate-Decision`,
   `Mandate-Receipt-Digest` and `Mandate-Chain-Head` after final revalidation.
-  The fresh decision must be about the subject the merge worker acted on and
-  must AUTHORIZE. Otherwise it refuses with `HEAD_CHANGED`, `BASE_CHANGED`,
+  The fresh decision must be about the subject the merge worker acted on, must
+  have a live enforcement snapshot (a `sha256:` digest; shadow grants
+  nothing) and must AUTHORIZE. Otherwise it refuses with `HEAD_CHANGED`, `BASE_CHANGED`,
   `ENFORCEMENT_DRIFT` or `CONTRACT_ERROR`. It then records that decision,
   which is a no-op when it is already the latest revision, so the trailers
   always name the latest revision. A stale worker holding a superseded

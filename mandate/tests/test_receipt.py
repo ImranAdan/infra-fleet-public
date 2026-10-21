@@ -29,6 +29,8 @@ POLICY = "ImranAdan/mandate-delegation@" + "d" * 40 + ":repositories/r.toml"
 SUBJECT = e.Subject(REPO, HEAD, BASE, POLICY)
 VERSIONS = {"package": "0.1.0", "adapter": 1}
 ACTORS = {"app_id": 5336871}
+APP = 5336871  # the publisher App; runs from other Apps are never touched
+ENF = "sha256:" + "e" * 64  # a live enforcement snapshot
 
 
 def decision(outcome: str = "AUTHORIZE", subject: e.Subject = SUBJECT) -> m.Decision:
@@ -38,6 +40,10 @@ def decision(outcome: str = "AUTHORIZE", subject: e.Subject = SUBJECT) -> m.Deci
 
 def build(dec: m.Decision, at: str = "2026-10-21T00:00:00Z", enforcement: str = "shadow") -> dict:
     return r.build(dec, 7, enforcement, versions=VERSIONS, actors=ACTORS, evaluated_at=at)
+
+
+def enforced(dec: m.Decision, at: str = "2026-10-21T00:00:00Z") -> dict:
+    return build(dec, at, enforcement=ENF)
 
 
 def refused(code: str, fn, *args) -> None:
@@ -73,7 +79,9 @@ class FakeChecks:
         # GitHub echoes output with keys the payload never sends.
         output = {**payload["output"], "text": None, "annotations_count": 0}
         if method == "POST":
-            self.runs.append({**payload, "output": output, "id": len(self.runs) + 1})
+            self.runs.append(
+                {**payload, "output": output, "id": len(self.runs) + 1, "app": {"id": APP}}
+            )
             return self.runs[-1]
         run = next(x for x in self.runs if path.endswith(f"/check-runs/{x['id']}"))
         run.update({**payload, "output": output})
@@ -158,51 +166,64 @@ def main() -> int:
         refused("LEDGER_INVALID", r.record, bad, REPO, REF, receipt)
 
     # Check run: the reconciler shows the ledger's latest revision for a
-    # decision; nothing the caller holds can choose the revision.
+    # decision; nothing the caller holds can choose the revision. A shadow
+    # receipt (enforcement "shadow") is always neutral: no caller can make it pass.
     did = receipt["decision_id"]
     checks = FakeChecks()
     api = both(checks, git)
-    r.reconcile_check(api, REPO, REF, did, shadow=True)
-    r.reconcile_check(api, REPO, REF, did, shadow=True)
+    r.reconcile_check(api, REPO, REF, did, app_id=APP)
+    r.reconcile_check(api, REPO, REF, did, app_id=APP)
     assert checks.writes == 1 and len(checks.runs) == 1
     run = checks.runs[0]
     assert run["name"] == r.CHECK_NAME == "mandate/decision"
-    assert run["external_id"] == did and run["conclusion"] == "neutral"
-    assert third["receipt_digest"] in run["output"]["summary"] and "r3" in run["output"]["title"]
-    r.reconcile_check(api, REPO, REF, did, shadow=False)
-    assert checks.writes == 2 and visible(checks) == [("success", "AUTHORIZE (r3)")]
+    assert run["external_id"] == did and visible(checks) == [("neutral", "AUTHORIZE (r3)")]
+    assert third["receipt_digest"] in run["output"]["summary"]
+
+    # A live receipt passes or fails on its outcome.
+    live = FakeGit()
+    did = r.record(live, REPO, REF, enforced(decision()))[0]["decision_id"]
+    ck0 = FakeChecks()
+    r.reconcile_check(both(ck0, live), REPO, REF, did, app_id=APP)
+    assert visible(ck0) == [("success", "AUTHORIZE (r1)")], visible(ck0)
+
+    # A run from another App with the same name and external_id is not ours:
+    # we publish our own and never touch it.
+    ck0.runs.insert(0, {**ck0.runs[0], "id": 99, "app": {"id": 999}, "conclusion": "failure"})
+    ck0.runs.pop(1)
+    r.reconcile_check(both(ck0, live), REPO, REF, did, app_id=APP)
+    assert [(x["app"]["id"], x["conclusion"]) for x in ck0.runs] == [(999, "failure"), (APP, "success")]
 
     # Codex F1 interleaving: a delayed publisher read r2 AUTHORIZE; before its
     # write lands, r3 ESCALATE is recorded and shown. The delayed write happens
     # (stale success), then it re-reads the ledger and restores r3.
     lg, ck = FakeGit(), FakeChecks()
     api2 = both(ck, lg)
-    r.record(lg, REPO, REF, build(decision("ESCALATE")))
-    r.reconcile_check(api2, REPO, REF, did, shadow=False)
-    r.record(lg, REPO, REF, build(decision()))
+    r.record(lg, REPO, REF, enforced(decision("ESCALATE")))
+    r.reconcile_check(api2, REPO, REF, did, app_id=APP)
+    r.record(lg, REPO, REF, enforced(decision()))
 
     def newer() -> None:
-        r.record(lg, REPO, REF, build(decision("ESCALATE"), at="2026-10-21T01:00:00Z"))
-        r.reconcile_check(api2, REPO, REF, did, shadow=False)
+        r.record(lg, REPO, REF, enforced(decision("ESCALATE"), at="2026-10-21T01:00:00Z"))
+        r.reconcile_check(api2, REPO, REF, did, app_id=APP)
 
     ck.before_write = newer
-    r.reconcile_check(api2, REPO, REF, did, shadow=False)
+    r.reconcile_check(api2, REPO, REF, did, app_id=APP)
     assert ("success", "AUTHORIZE (r2)") in ck.shown, ck.shown  # the race really ran
     assert visible(ck) == [("failure", "ESCALATE (r3)")], visible(ck)
 
     # The same race on first publication creates two runs; both end at the latest.
     lg2, ck2 = FakeGit(), FakeChecks()
     api3 = both(ck2, lg2)
-    r.record(lg2, REPO, REF, build(decision()))
+    r.record(lg2, REPO, REF, enforced(decision()))
     ck2.before_write = lambda: (
-        r.record(lg2, REPO, REF, build(decision("ESCALATE"))),
-        r.reconcile_check(api3, REPO, REF, did, shadow=False),
+        r.record(lg2, REPO, REF, enforced(decision("ESCALATE"))),
+        r.reconcile_check(api3, REPO, REF, did, app_id=APP),
     )
-    r.reconcile_check(api3, REPO, REF, did, shadow=False)
+    r.reconcile_check(api3, REPO, REF, did, app_id=APP)
     assert visible(ck2) == [("failure", "ESCALATE (r2)")] * 2, visible(ck2)
     # A later revision reaches both duplicates, not just the newest one.
-    r.record(lg2, REPO, REF, build(decision()))
-    r.reconcile_check(api3, REPO, REF, did, shadow=False)
+    r.record(lg2, REPO, REF, enforced(decision()))
+    r.reconcile_check(api3, REPO, REF, did, app_id=APP)
     assert visible(ck2) == [("success", "AUTHORIZE (r3)")] * 2, visible(ck2)
 
     # Single writer per pull request: every job that records receipts or can
@@ -236,7 +257,8 @@ def main() -> int:
     }
     for name, (text, expected) in cases.items():
         assert r.serial_violations({name: text}) == expected, (name, r.serial_violations({name: text}))
-    workflows = {w.name: w.read_text() for w in (ROOT / ".github" / "workflows").glob("*.yml")}
+    folder = ROOT / ".github" / "workflows"
+    workflows = {w.name: w.read_text() for w in [*folder.glob("*.yml"), *folder.glob("*.yaml")]}
     assert len(workflows) > 10 and r.serial_violations(workflows) == [], r.serial_violations(workflows)
 
     # Codex F2: the summary fits GitHub's 65535-byte limit in UTF-8, cut on a
@@ -249,46 +271,55 @@ def main() -> int:
             (), (), POLICY, SUBJECT,
         )
         wide, big = FakeGit(), FakeChecks()
-        r.record(wide, REPO, REF, build(many))
-        r.reconcile_check(both(big, wide), REPO, REF, did, shadow=True)
+        did = r.record(wide, REPO, REF, build(many))[0]["decision_id"]
+        r.reconcile_check(both(big, wide), REPO, REF, did, app_id=APP)
         summary = big.runs[0]["output"]["summary"]
         assert len(summary.encode("utf-8")) <= r.SUMMARY_LIMIT == 65535, len(summary.encode("utf-8"))
         assert len(summary) < 65535 and summary.endswith("more reasons in the receipt")
         assert "\ufffd" not in summary, f"shift {shift}: cut inside a multibyte character"
 
     # Merge trailers: final revalidation records the fresh decision, so the
-    # trailers always name this decision's latest revision.
-    subject = receipt["subject"]
+    # trailers always name this decision's latest revision. Shadow grants nothing.
     tip = git.refs[REF]
-    text = r.trailers(git, REPO, REF, subject, build(decision(), at="2026-10-22T00:00:00Z"))
-    assert git.refs[REF] == tip, "r3 already says AUTHORIZE: revalidation appends nothing"
-    chain = json.loads(git.files(REF)[l.LEDGER].decode().splitlines()[-1])["entry_digest"]
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, receipt["subject"], build(decision()))
+    subject = enforced(decision())["subject"]
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "enforcement": "live"},
+            build(decision(), enforcement="live"))
+    assert git.refs[REF] == tip, "a refused revalidation records nothing"
+    text = r.trailers(git, REPO, REF, subject, enforced(decision(), at="2026-10-22T00:00:00Z"))
+    authorized = json.loads(git.files(REF)[l.LEDGER].decode().splitlines()[-1])
+    chain = authorized["entry_digest"]
+    assert authorized["receipt_revision"] == "r1" and authorized["outcome"] == "AUTHORIZE"
+    tip = git.refs[REF]
+    assert r.trailers(git, REPO, REF, subject, enforced(decision(), at="2026-10-23T00:00:00Z")) == text
+    assert git.refs[REF] == tip, "already the latest revision: revalidation appends nothing"
     parsed = r.parse_trailers("Merge pull request #7\n\nbody\n\n" + text)
     assert parsed == {
-        "Mandate-Decision": third["decision_id"],
-        "Mandate-Receipt-Digest": third["receipt_digest"],
+        "Mandate-Decision": authorized["decision_id"],
+        "Mandate-Receipt-Digest": authorized["receipt_digest"],
         "Mandate-Chain-Head": chain,
     }, parsed
 
     # A stale worker holding a superseded AUTHORIZE r1 (r2 since escalated)
     # gets trailers for a new latest revision, never for r1.
     stale = FakeGit()
-    old, _, _ = r.record(stale, REPO, REF, receipt)
-    r.record(stale, REPO, REF, build(decision("ESCALATE")))
-    fresh = r.parse_trailers(r.trailers(stale, REPO, REF, subject, build(decision())))
+    old, _, _ = r.record(stale, REPO, REF, enforced(decision()))
+    r.record(stale, REPO, REF, enforced(decision("ESCALATE")))
+    fresh = r.parse_trailers(r.trailers(stale, REPO, REF, subject, enforced(decision())))
     latest = json.loads(stale.files(REF)[l.LEDGER].decode().splitlines()[-1])
     assert latest["receipt_revision"] == "r3" and latest["outcome"] == "AUTHORIZE"
     assert fresh["Mandate-Receipt-Digest"] == latest["receipt_digest"] != old["receipt_digest"]
 
     # Refusals: not AUTHORIZE now, or the subject drifted since the worker acted.
     tip = git.refs[REF]
-    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, subject, build(decision("ESCALATE")))
-    moved = build(decision(subject=e.Subject(REPO, "c" * 40, BASE, POLICY)))
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, subject, enforced(decision("ESCALATE")))
+    moved = enforced(decision(subject=e.Subject(REPO, "c" * 40, BASE, POLICY)))
     refused("HEAD_CHANGED", r.trailers, git, REPO, REF, subject, moved)
-    rebased = build(decision(subject=e.Subject(REPO, HEAD, "c" * 40, POLICY)))
+    rebased = enforced(decision(subject=e.Subject(REPO, HEAD, "c" * 40, POLICY)))
     refused("BASE_CHANGED", r.trailers, git, REPO, REF, subject, rebased)
-    refused("ENFORCEMENT_DRIFT", r.trailers, git, REPO, REF, subject, build(decision(), enforcement="sha256:e"))
-    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "pull_request": 8}, build(decision()))
+    drifted = build(decision(), enforcement="sha256:" + "f" * 64)
+    refused("ENFORCEMENT_DRIFT", r.trailers, git, REPO, REF, subject, drifted)
+    refused("CONTRACT_ERROR", r.trailers, git, REPO, REF, {**subject, "pull_request": 8}, enforced(decision()))
     assert git.refs[REF] == tip, "a refused revalidation records nothing"
     # Only the final paragraph holds trailers; body text cannot supply or spoil them.
     quoted = "Merge\n\n" + text.replace(chain, "sha256:" + "8" * 64) + "\n\nbody\n\n" + text
