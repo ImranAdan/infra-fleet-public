@@ -331,8 +331,9 @@ def main() -> int:
     assert all(c == "failure" for c, _ in visible(ck_s)), visible(ck_s)
     ck_s.open_prs = set(range(1, 200))
     # A PR reopened while a reconcile runs is seen before it returns.
-    ck_s.open_prs = {7}
-    ck_s.before_write = lambda: ck_s.open_prs.add(8)
+    # (#7 reopens: its receipt is older than #8's, so only the PR set changes.)
+    ck_s.open_prs = {8}
+    ck_s.before_write = lambda: ck_s.open_prs.add(7)
     r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck_s) == [("failure", "AUTHORIZE (r1), head shared by 2 PRs")], visible(ck_s)
     ck_s.open_prs = set(range(1, 200))
