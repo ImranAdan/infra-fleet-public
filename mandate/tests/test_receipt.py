@@ -8,6 +8,7 @@ check-run publisher runs against a fake checks API. Nothing calls GitHub.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -57,7 +58,13 @@ class FakeChecks:
 
     def __call__(self, method: str, path: str, payload):
         if method == "GET":
-            return {"check_runs": [dict(x) for x in self.runs if x["head_sha"] in path]}
+            # Like GitHub: filter defaults to latest (newest run per suite; one
+            # suite here), and pages are short, so callers must page by total.
+            runs = [dict(x) for x in self.runs if x["head_sha"] in path]
+            if "filter=all" not in path:
+                runs = runs[-1:]
+            page = int(re.search(r"[?&]page=(\d+)", path).group(1)) if "page=" in path else 1
+            return {"total_count": len(runs), "check_runs": runs[page - 1 : page]}
         if self.before_write:
             racer, self.before_write = self.before_write, None
             racer()
@@ -193,21 +200,42 @@ def main() -> int:
     )
     r.reconcile_check(api3, REPO, REF, did, shadow=False)
     assert visible(ck2) == [("failure", "ESCALATE (r2)")] * 2, visible(ck2)
+    # A later revision reaches both duplicates, not just the newest one.
+    r.record(lg2, REPO, REF, build(decision()))
+    r.reconcile_check(api3, REPO, REF, did, shadow=False)
+    assert visible(ck2) == [("success", "AUTHORIZE (r3)")] * 2, visible(ck2)
 
-    # Single writer per pull request: every workflow that records receipts or
-    # can write checks declares the serialized concurrency group.
-    good = (
-        "permissions:\n  checks: write\nconcurrency:\n"
-        "  group: mandate-decision-${{ github.repository }}-${{ inputs.pr }}\n"
-        "  cancel-in-progress: false\nrun: python3 -m mandate.receipt reconcile\n"
-    )
-    assert r.serial_violations({"good.yml": good}) == []
-    assert r.serial_violations({"bad.yml": "run: python3 -m mandate.receipt reconcile\n"}) == ["bad.yml"]
-    assert r.serial_violations({"cancel.yml": good.replace("false", "true")}) == ["cancel.yml"]
-    assert r.serial_violations({"checks.yml": "permissions:\n  checks: write\n"}) == ["checks.yml"]
-    assert r.serial_violations({"inline.yml": "run: python3 -c 'from mandate import receipt'\n"}) == ["inline.yml"]
-    assert r.serial_violations({"app.yml": "with:\n  permission-checks: write\n"}) == ["app.yml"]
-    assert r.serial_violations({"read.yml": "permissions:\n  checks: read\n"}) == []
+    # Single writer per pull request: every job that records receipts or can
+    # write checks runs in the one canonical per-PR group, without cancelling.
+    group = r.CANONICAL_GROUP
+    assert group == "mandate-decision-${{ github.repository }}-${{ inputs.pr }}"
+
+    def wf(head: str = "", **jobs: str) -> str:
+        return "on: workflow_call\n" + head + "jobs:\n" + "".join(
+            f"  {name}:\n    runs-on: ubuntu-latest\n{body}" for name, body in jobs.items()
+        )
+
+    serial = f"    concurrency:\n      group: {group}\n      cancel-in-progress: false\n"
+    write = "    steps:\n      - run: python3 -m mandate.receipt reconcile\n"
+    top = f"concurrency:\n  group: '{group}'\n  cancel-in-progress: false\n"
+    cases = {
+        "job.yml": (wf(writer=serial + write), []),
+        "top.yml": (wf(top, writer=write), []),
+        "bare.yml": (wf(writer=write), ["bare.yml:writer"]),
+        "other-job.yml": (wf(reader=serial, writer=write), ["other-job.yml:writer"]),
+        "suffix.yml": (wf(writer=serial.replace("inputs.pr", "github.run_id") + write), ["suffix.yml:writer"]),
+        "cancel.yml": (wf(writer=serial.replace("false", "true") + write), ["cancel.yml:writer"]),
+        "checks.yml": (wf("permissions:\n  checks: write\n", a="    steps: []\n"), ["checks.yml:a"]),
+        "job-checks.yml": (wf(a="    permissions:\n      checks: write\n"), ["job-checks.yml:a"]),
+        "inline.yml": (wf(a="    steps:\n      - run: python3 -c 'from mandate import receipt'\n"), ["inline.yml:a"]),
+        "app.yml": (wf(a="    steps:\n      - with:\n          permission-checks: write\n"), ["app.yml:a"]),
+        "path.yml": (wf(a="    steps:\n      - run: python3 mandate/src/mandate/receipt.py\n"), ["path.yml:a"]),
+        "read.yml": (wf("permissions:\n  checks: read\n", a="    steps: []\n"), []),
+        "tests.yml": (wf(a="    steps:\n      - run: python3 mandate/tests/test_receipt.py\n"), []),
+        "odd.yml": ("jobs:\n    a:\n        steps:\n          - run: python3 -m mandate.receipt\n", ["odd.yml:?"]),
+    }
+    for name, (text, expected) in cases.items():
+        assert r.serial_violations({name: text}) == expected, (name, r.serial_violations({name: text}))
     workflows = {w.name: w.read_text() for w in (ROOT / ".github" / "workflows").glob("*.yml")}
     assert len(workflows) > 10 and r.serial_violations(workflows) == [], r.serial_violations(workflows)
 

@@ -132,17 +132,20 @@ through `ledger.append()` (KAN-26).
   is `neutral` in shadow mode. The summary is capped at 65,535 UTF-8 bytes,
   cut on a character boundary.
 - **One writer per pull request:** GitHub's ruleset reads the check's
-  conclusion, and the Checks API has no compare-and-swap. So every workflow
-  that records receipts or writes checks must run in the concurrency group
-  `mandate-decision-<repository>-<pull request>` with
-  `cancel-in-progress: false`. `serial_violations()` enforces this over
-  `.github/workflows/` in the tests.
+  conclusion, and the Checks API has no compare-and-swap. So every job that
+  records receipts or writes checks must run in the one canonical group,
+  `mandate-decision-${{ github.repository }}-${{ inputs.pr }}`, with
+  `cancel-in-progress: false`. That means writers are workflows called with a
+  `pr` input, so every caller computes the same group.
+  `serial_violations()` checks this per job over `.github/workflows/` in the
+  tests, and fails closed on a workflow it can't parse.
   - **Why it's safe:** GitHub runs at most one job in a group at a time. A
     newer pending run replaces an older pending one, and because it
     reconciles from the ledger, it loses nothing.
   - **Backstop:** if the ledger still moves during a reconcile (only possible
     when the boundary is bypassed), the reconcile re-reads and shows the newer
-    revision before returning.
+    revision before returning. It lists every run for the decision
+    (`filter=all`, paged), so duplicates from a past race are kept current.
 - **Merge trailers:** `trailers()` gives `Mandate-Decision`,
   `Mandate-Receipt-Digest` and `Mandate-Chain-Head` after final revalidation.
   The fresh decision must be about the subject the merge worker acted on and
@@ -199,4 +202,5 @@ python3 mandate/tests/test_evidence.py
 python3 mandate/tests/test_decision.py
 python3 mandate/tests/test_shadow.py
 python3 mandate/tests/test_ledger.py
+python3 mandate/tests/test_receipt.py
 ```

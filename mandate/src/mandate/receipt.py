@@ -31,7 +31,12 @@ from mandate.decision import Decision
 
 SCHEMA_VERSION = 1
 CHECK_NAME = "mandate/decision"
-SERIAL_GROUP = "mandate-decision-"  # + <repository>-<pull request>: one writer per PR
+# One writer per pull request: writers are workflows called with a ``pr`` input,
+# so every caller computes this same group.
+CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.pr }}"
+_WRITES = re.compile(
+    r"(?m)mandate(\.| import )receipt|src/mandate/receipt\.py|^\s*(permission-)?checks:\s*write\b"
+)
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
 _TRAILER = re.compile(rf"(?m)^({'|'.join(TRAILERS)}): (\S+)$")
 _CLOCK = ("evaluated_at", "receipt_revision")
@@ -166,9 +171,17 @@ def _show(
         "conclusion": conclusion,
         "output": {"title": f"{outcome} ({revision})", "summary": summary},
     }
-    runs = api(
-        "GET", f"repos/{repo}/commits/{head}/check-runs?check_name={quote(CHECK_NAME)}", None
-    )["check_runs"]
+    runs: list[dict[str, Any]] = []
+    for page in range(1, 1000):  # filter=all: the default lists only the newest run
+        data = api(
+            "GET",
+            f"repos/{repo}/commits/{head}/check-runs?check_name={quote(CHECK_NAME)}"
+            f"&filter=all&per_page=100&page={page}",
+            None,
+        )
+        runs += data["check_runs"]
+        if not data["check_runs"] or len(runs) >= data["total_count"]:
+            break
     mine = [x for x in runs if x.get("external_id") == did]
     if not mine:
         api("POST", f"repos/{repo}/check-runs", {**payload, "head_sha": head})
@@ -187,9 +200,9 @@ def reconcile_check(api: l.Api, repo: str, ref: str, did: str, *, shadow: bool) 
     so a delayed caller cannot choose a superseded one. The Checks API has no
     compare-and-swap, so two boundaries hold the check to the ledger:
 
-    - one writer per pull request: every workflow that records receipts or
-      writes checks runs in the ``mandate-decision-<repo>-<pr>`` concurrency
-      group without cancelling in progress (serial_violations() enforces it);
+    - one writer per pull request: every job that records receipts or writes
+      checks runs in CANONICAL_GROUP without cancelling in progress
+      (serial_violations() enforces it over the workflows);
     - if the ledger moved while this ran (only possible when that boundary is
       bypassed), it shows the newer revision before returning.
 
@@ -207,17 +220,32 @@ def reconcile_check(api: l.Api, repo: str, ref: str, did: str, *, shadow: bool) 
     raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {did}")
 
 
-def serial_violations(workflows: dict[str, str]) -> list[str]:
-    """Workflows that record receipts or write checks outside the serialized group."""
-    return sorted(
-        name
-        for name, text in workflows.items()
-        if re.search(r"(?m)mandate(\.| import )receipt|src/mandate/receipt\.py|^\s*(permission-)?checks:\s*write\b", text)
-        and not (
-            re.search(rf"(?m)^\s*group:\s*{SERIAL_GROUP}\S+", text)
-            and re.search(r"(?m)^\s*cancel-in-progress:\s*false\b", text)
-        )
+def _serialized(block: str) -> bool:
+    """Whether a workflow header or job block declares the canonical group."""
+    found = re.search(r"(?m)^( *)concurrency:[ \t]*\n((?:\1 +\S.*\n?)+)", block)
+    if not found:
+        return False
+    keys = dict(re.findall(r"(?m)^ +([\w-]+):[ \t]*(.*?)[ \t]*$", found.group(2)))
+    return (
+        keys.get("group", "").strip("'\"") == CANONICAL_GROUP
+        and keys.get("cancel-in-progress") == "false"
     )
+
+
+def serial_violations(workflows: dict[str, str]) -> list[str]:
+    """``file:job`` for each job that records receipts or can write checks
+    outside the canonical per-PR concurrency group."""
+    bad = []
+    for name, text in sorted(workflows.items()):
+        header, _, body = text.partition("\njobs:\n")
+        jobs = re.findall(r"(?m)^  ([\w-]+):[ \t]*\n((?:(?:    .*)?\n?)*)", body)
+        if not jobs and _WRITES.search(text):
+            bad.append(f"{name}:?")  # writes, but no job this parser can read: fail closed
+        for job, block in jobs:
+            writes = _WRITES.search(header) or _WRITES.search(block)
+            if writes and not (_serialized(header) or _serialized(block)):
+                bad.append(f"{name}:{job}")
+    return bad
 
 
 def trailers(
