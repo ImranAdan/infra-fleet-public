@@ -153,16 +153,23 @@ def _show(
     prs: list[int],
 ) -> None:
     """Make every run of ours named ``name`` on the head show this revision,
-    whichever decision ID it showed before. Decisions from more than one PR
-    on the head (``prs``) cannot share one check: it fails closed."""
+    whichever decision ID it showed before.
+
+    The shadow check is always neutral. The required check passes only for a
+    live sha256 snapshot that AUTHORIZEs for a single PR (``prs``: every PR
+    with a decision on this head, since a check belongs to the commit); a
+    shadow decision there only fails runs that already exist."""
     head, did = receipt["subject"]["head_sha"], receipt["decision_id"]
     outcome, revision = receipt["decision"]["outcome"], entry["receipt_revision"]
     # From the recorded snapshot, never a caller flag: only a live sha256
     # snapshot can pass, shadow is neutral, anything else fails closed.
     enforcement = receipt["subject"]["enforcement"]
     shadow = enforcement == SHADOW
-    passes = outcome == "AUTHORIZE" and bool(LIVE.match(enforcement))
-    conclusion = "neutral" if shadow else ("success" if passes and len(prs) == 1 else "failure")
+    passes = outcome == "AUTHORIZE" and bool(LIVE.match(enforcement)) and len(prs) == 1
+    if name == SHADOW_CHECK_NAME:
+        conclusion = "neutral"
+    else:
+        conclusion = "success" if passes else "failure"
     reasons = "".join(
         f"\n- `{x['code']}` ({x['outcome']}, {x['owner']}): {x['detail'][:200]}"
         for x in receipt["decision"]["reasons"]
@@ -171,6 +178,7 @@ def _show(
         f"Receipt `{did}/{revision}`, digest `{entry['receipt_digest']}`, "
         f"chain head `{chain_head}`."
         + (" Shadow mode: this decision grants nothing." if shadow else "")
+        + (f" Head shared by PRs {', '.join(f'#{n}' for n in prs)}: one check cannot represent them all." if len(prs) > 1 else "")
         + reasons
     )
     encoded = summary.encode("utf-8")
@@ -184,8 +192,9 @@ def _show(
         "status": "completed",
         "conclusion": conclusion,
         "output": {
-            "title": f"{outcome} ({revision})"
-            + (f", head shared by {', '.join(f'#{n}' for n in prs)}" if len(prs) > 1 else ""),
+            "title": f"{outcome} ({revision})"  # GitHub caps titles at 255 characters
+            + (f", head shared by {len(prs)} PRs" if len(prs) > 1 else "")
+            + (", shadow: grants nothing" if shadow and name == CHECK_NAME else ""),
             "summary": summary,
         },
     }
@@ -201,7 +210,7 @@ def _show(
         if not data["check_runs"] or len(runs) >= data["total_count"]:
             break
     mine = [x for x in runs if (x.get("app") or {}).get("id") == app_id]
-    if not mine:
+    if not mine and not (shadow and name == CHECK_NAME):  # never open a required run for shadow
         api("POST", f"repos/{repo}/check-runs", {**payload, "head_sha": head})
     for run in mine:  # a past race or an older decision ID; each must show this
         shown = run.get("output") or {}
@@ -214,16 +223,21 @@ def _show(
 def _newest(
     entries: list[dict[str, Any]], stored: dict[str, bytes], repo: str, head: str
 ) -> dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]]:
-    """Check name -> (entry, receipt, PRs) for the newest decision recorded on
-    this head, with every PR that has a decision on it under that name."""
+    """Check name -> (entry, receipt, PRs) to show for this head.
+
+    The required check follows the newest decision of any mode, so a shadow
+    decision that supersedes a live one retires it; the shadow check follows
+    the newest shadow decision. PRs: every PR with such a decision on the head.
+    """
     found: dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]] = {}
     for entry in entries:
         receipt = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])
         s = receipt["subject"]
         if (s["repository"], s["head_sha"]) == (repo, head):
-            name = SHADOW_CHECK_NAME if s["enforcement"] == SHADOW else CHECK_NAME
-            prs = sorted({*found.get(name, ({}, {}, []))[2], s["pull_request"]})
-            found[name] = (entry, receipt, prs)
+            names = [CHECK_NAME] + ([SHADOW_CHECK_NAME] if s["enforcement"] == SHADOW else [])
+            for name in names:
+                prs = sorted({*found.get(name, ({}, {}, []))[2], s["pull_request"]})
+                found[name] = (entry, receipt, prs)
     return found
 
 
@@ -233,9 +247,11 @@ def reconcile_check(api: l.Api, repo: str, ref: str, head: str, *, app_id: int) 
     The only check publisher. The caller names the head, never a decision or
     revision, so a delayed caller cannot choose a superseded one, including an
     older decision ID for the same head (base, policy or enforcement moved).
-    Live decisions go to the required ``mandate/decision``; shadow decisions
-    only to ``mandate/shadow``, since GitHub counts neutral as passing. Checks
-    belong to a commit, so decisions from two PRs on one head fail closed.
+    The required ``mandate/decision`` follows the newest decision of any mode
+    and passes only for a live AUTHORIZE; shadow decisions show on
+    ``mandate/shadow`` (GitHub counts neutral as passing, so never on the
+    required name) and fail any required run they supersede. Checks belong to
+    a commit, so decisions from two PRs on one head fail closed.
 
     The Checks API has no compare-and-swap, so two boundaries hold the checks
     to the ledger:
@@ -263,12 +279,14 @@ def reconcile_check(api: l.Api, repo: str, ref: str, head: str, *, app_id: int) 
     raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {repo}@{head}")
 
 
-def _serialized(block: str) -> bool:
-    """Whether a workflow header or job block declares the canonical group."""
-    found = re.search(r"(?m)^( *)concurrency:[ \t]*\n((?:\1 +\S.*\n?)+)", block)
+def _serialized(block: str, indent: str) -> bool:
+    """Whether ``concurrency`` at exactly this level (workflow: "", job: four
+    spaces) names the canonical group without cancelling. GitHub applies no
+    other concurrency, so a nested mapping (a matrix value) never counts."""
+    found = re.search(rf"(?m)^{indent}concurrency:[ \t]*\n((?:{indent} +\S.*\n?)+)", block)
     if not found:
         return False
-    keys = dict(re.findall(r"(?m)^ +([\w-]+):[ \t]*(.*?)[ \t]*$", found.group(2)))
+    keys = dict(re.findall(rf"(?m)^{indent}  ([\w-]+):[ \t]*(.*?)[ \t]*$", found.group(1)))
     return (
         keys.get("group", "").strip("'\"") == CANONICAL_GROUP
         and keys.get("cancel-in-progress") == "false"
@@ -326,7 +344,7 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
                 or _may_write_checks(header)
                 or _may_write_checks(block)
             )
-            if writes and not (_serialized(header) or _serialized(block)):
+            if writes and not (_serialized(header, "") or _serialized(block, "    ")):
                 bad.append(f"{name}:{job}")
     return bad
 

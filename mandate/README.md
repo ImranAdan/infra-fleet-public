@@ -130,19 +130,23 @@ through `ledger.append()` (KAN-26).
   newest decision recorded for that head on every run of the publisher App,
   replacing an older decision ID for the same head. Runs from other Apps are
   never touched, and it writes nothing when the decision is already shown.
-  - **Required check:** live decisions go to `mandate/decision`. Only a live
-    `sha256:` snapshot with AUTHORIZE can pass; any other value fails.
-  - **Shadow check:** shadow decisions go only to `mandate/shadow`, never the
+  - **Required check:** `mandate/decision` follows the newest decision of any
+    mode. Only a live `sha256:` snapshot with AUTHORIZE can pass; any other
+    value fails.
+  - **Shadow check:** shadow decisions show on `mandate/shadow`, never the
     required name, because GitHub counts `neutral` as passing a required
-    check.
+    check. A shadow decision that supersedes a live one fails the existing
+    required run, and a head with only shadow decisions gets no required run.
   - **Shared head:** checks belong to a commit, so if two PRs have decisions
-    on the same head, the check fails closed.
+    on the same head, the check fails closed. The title gives the count (it
+    is limited to 255 characters) and the summary lists the PRs.
   - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
 - **One writer per head commit:** GitHub's ruleset reads the check's
   conclusion, and the Checks API has no compare-and-swap. So every job that
   records receipts or writes checks must run in the one canonical group,
   `mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}`, with
-  `cancel-in-progress: false`. That means writers are workflows called with a
+  `cancel-in-progress: false`, set at workflow or job level (GitHub applies
+  no other `concurrency`). That means writers are workflows called with a
   `head_sha` input.
   - **Why it's safe:** GitHub runs at most one job in a group at a time. A
     newer pending run replaces an older pending one, and because it

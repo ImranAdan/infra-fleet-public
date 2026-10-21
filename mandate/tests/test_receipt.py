@@ -11,6 +11,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -66,7 +67,12 @@ class FakeChecks:
         if method == "GET":
             # Like GitHub: filter defaults to latest (newest run per suite; one
             # suite here), and pages are short, so callers must page by total.
-            runs = [dict(x) for x in self.runs if x["head_sha"] in path]
+            name = re.search(r"[?&]check_name=([^&]+)", path)
+            runs = [
+                dict(x)
+                for x in self.runs
+                if x["head_sha"] in path and (not name or x["name"] == unquote(name.group(1)))
+            ]
             if "filter=all" not in path:
                 runs = runs[-1:]
             page = int(re.search(r"[?&]page=(\d+)", path).group(1)) if "page=" in path else 1
@@ -266,7 +272,25 @@ def main() -> int:
     r.record(shared, REPO, REF, enforced(decision()))
     r.record(shared, REPO, REF, r.build(decision(), 8, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
     r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP)
-    assert [(c, "#7" in t and "#8" in t) for c, t in visible(ck_s)] == [("failure", True)], visible(ck_s)
+    assert visible(ck_s) == [("failure", "AUTHORIZE (r1), head shared by 2 PRs")], visible(ck_s)
+    assert "#7, #8" in ck_s.runs[0]["output"]["summary"]
+    # Many PRs: the title stays within GitHub's 255 characters.
+    for n in range(9, 120):
+        r.record(shared, REPO, REF, r.build(decision(), n, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
+    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP)
+    assert len(ck_s.runs[0]["output"]["title"]) <= 255 and "113 PRs" in ck_s.runs[0]["output"]["title"]
+    # A shadow decision that supersedes a live AUTHORIZE retires the required
+    # check: shadow grants nothing, so mandate/decision must not stay green.
+    to_shadow, ck_ts = FakeGit(), FakeChecks()
+    r.record(to_shadow, REPO, REF, enforced(decision()))
+    r.reconcile_check(both(ck_ts, to_shadow), REPO, REF, HEAD, app_id=APP)
+    r.record(to_shadow, REPO, REF, build(decision()))
+    r.reconcile_check(both(ck_ts, to_shadow), REPO, REF, HEAD, app_id=APP)
+    by_name = {x["name"]: x["conclusion"] for x in ck_ts.runs}
+    assert by_name == {r.CHECK_NAME: "failure", r.SHADOW_CHECK_NAME: "neutral"}, by_name
+    # A head that only ever had shadow decisions gets no required-name run.
+    assert {x["name"] for x in checks.runs} == {r.SHADOW_CHECK_NAME}
+
     # A receipt about another repository's commit is never shown here.
     foreign, ck_f = FakeGit(), FakeChecks()
     r.record(foreign, REPO, REF, enforced(decision()))
@@ -320,6 +344,13 @@ def main() -> int:
             ["flow-job.yml:?"],
         ),
         "after-jobs.yml": (wf(reader="    steps: []\n") + "permissions:\n  checks: write\n", ["after-jobs.yml:?"]),
+        # Only workflow- or job-level concurrency serializes; a nested mapping does not.
+        "nested.yml": (
+            wf(writer="    permissions:\n      checks: write\n    strategy:\n      matrix:\n"
+               "        concurrency:\n"
+               f"          group: {group}\n          cancel-in-progress: false\n"),
+            ["nested.yml:writer"],
+        ),
         "job-write-all.yml": (wf(a="    permissions: write-all\n"), ["job-write-all.yml:a"]),
         # An App token minted without permission inputs carries every App
         # permission, which for the Mandate App includes checks: write.
