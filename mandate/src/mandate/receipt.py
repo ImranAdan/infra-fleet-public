@@ -318,6 +318,8 @@ def _authorized(receipt: dict[str, Any], delegation: Delegation | None) -> bool:
     subject, decision = receipt["subject"], receipt["decision"]
     if delegation is None or (delegation.source, delegation.repository) != (subject["policy"], subject["repository"]):
         return False
+    if LIVE.fullmatch(subject["enforcement"]) and delegation.mode != "enforce":
+        return False  # a shadow-mode delegation grants no merge authority
     authorize = {c.id: c for c in delegation.classes if c.decide == "authorize"}
     classes = decision["classes"]
     if not classes or any(c not in authorize for c in classes):
@@ -331,12 +333,12 @@ def _authorized(receipt: dict[str, Any], delegation: Delegation | None) -> bool:
 
 
 def _newest(
-    entries: list[dict[str, Any]], stored: dict[str, bytes], repo: str, head: str
+    entries: list[dict[str, Any]], stored: dict[str, bytes], repo: str, head: str, open_prs: set[int]
 ) -> dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]]:
     """Check name -> (entry, receipt, PRs) to show for this head.
 
-    PRs: those whose latest decision is about this head (a PR that moved to
-    another commit no longer counts). The required check follows the newest
+    PRs: open ones whose latest decision is about this head (a PR that moved
+    to another commit, or closed, no longer counts). The required check follows the newest
     of their decisions in any mode, so a shadow decision that supersedes a
     live one retires it; the shadow check follows the newest shadow one.
     """
@@ -354,7 +356,7 @@ def _newest(
         if receipt["subject"]["repository"] == repo:
             decisions.append((entry, receipt))
     latest = {receipt["subject"]["pull_request"]: receipt for _, receipt in decisions}
-    prs = sorted(pr for pr, receipt in latest.items() if receipt["subject"]["head_sha"] == head)
+    prs = sorted(pr for pr, receipt in latest.items() if receipt["subject"]["head_sha"] == head and pr in open_prs)
     found: dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]] = {}
     for entry, receipt in decisions:
         s = receipt["subject"]
@@ -428,12 +430,24 @@ def _fail_closed(api: l.Api, repo: str, head: str, app_id: int, exc: Exception) 
         pass
 
 
+def _open_prs(api: l.Api, repo: str, head: str) -> set[int]:
+    """PRs GitHub lists as open on this commit; a closed PR's decision is not current."""
+    found: set[int] = set()
+    for page in range(1, 1000):
+        batch = api("GET", f"repos/{repo}/commits/{head}/pulls?per_page=100&page={page}", None)
+        found |= {p["number"] for p in batch if p.get("state") == "open"}
+        if len(batch) < 100:
+            return found
+    return found
+
+
 def _reconcile(
     api: l.Api, repo: str, ref: str, head: str, app_id: int, delegations: Callable[[str, str], Delegation]
 ) -> dict[str, dict[str, Any]]:
     for _attempt in range(l.RETRIES):
         entries, stored = _verified(api, repo, ref)
-        shown = _newest(entries, stored, repo, head)
+        open_prs = _open_prs(api, repo, head)
+        shown = _newest(entries, stored, repo, head, open_prs)
         if not shown:
             raise l.LedgerError("CONTRACT_ERROR", f"no receipt recorded for {repo}@{head}")
         for name, (entry, receipt, prs) in shown.items():
@@ -443,7 +457,7 @@ def _reconcile(
                 # Never pass a required check on an AUTHORIZE its delegation does not support.
                 raise l.LedgerError("LEDGER_INVALID", f"AUTHORIZE {entry['decision_id']} does not hold under its delegation")
             _show(api, repo, name, receipt, entry, entries[-1]["entry_digest"], app_id, prs)
-        now = _newest(*_verified(api, repo, ref), repo, head)
+        now = _newest(*_verified(api, repo, ref), repo, head, open_prs)
         if {k: v[0] for k, v in now.items()} == {k: v[0] for k, v in shown.items()}:
             return {k: v[0] for k, v in shown.items()}
     raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {repo}@{head}")

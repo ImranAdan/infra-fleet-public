@@ -137,9 +137,10 @@ through `ledger.append()` (KAN-26).
     required name, because GitHub counts `neutral` as passing a required
     check. A shadow decision that supersedes a live one fails the existing
     required check run, and a head with only shadow decisions gets no required check run.
-  - **Shared head:** checks belong to a commit, so if two PRs whose latest
-    decisions are about the same head both have decisions there, the check
-    fails closed. A PR that moved to another commit no longer counts. The title gives the count (it
+  - **Shared head:** checks belong to a commit, so if two open PRs whose
+    latest decisions are about the same head both have decisions there, the
+    check fails closed. A PR that moved to another commit no longer counts,
+    and neither does one GitHub no longer lists as open on the commit. The title gives the count (it
     is limited to 255 characters) and the summary lists the PRs.
   - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
   - **Other receipts:** receipts of another schema in the same ledger (the
@@ -155,6 +156,8 @@ through `ledger.append()` (KAN-26).
     `trailers(…, delegation)` and `reconcile_check(…, delegations=resolver)`
     accept an AUTHORIZE only if it checks out against the pinned delegation
     its policy names.
+    - A live AUTHORIZE needs a delegation in `enforce` mode; `shadow` mode
+      grants no merge authority.
     - Its classes must be that delegation's authorizing classes.
     - The accepted requirements must be exactly what those classes require.
     - Re-running the production evidence rules (`evidence.evaluate`:

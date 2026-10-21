@@ -33,14 +33,12 @@ VERSIONS = {"package": "0.1.0", "adapter": 1}
 ACTORS = {"app_id": 5336871}
 APP = 5336871  # the publisher App; runs from other Apps are never touched
 # The pinned delegation every receipt here was decided under (decision-prose
-# authorizes with intent-gate evidence).
-DELEG = d.parse(
-    (HERE.parent / "examples" / "infra-fleet-public.toml").read_text().replace(
-        'repository = "ImranAdan/infra-fleet-public"', f'repository = "{REPO}"'
-    ),
-    REPO,
-    "ImranAdan/mandate-delegation@" + "d" * 40 + ":repositories/r.toml",
+# authorizes with intent-gate evidence). Only enforce mode grants authority.
+EXAMPLE = (HERE.parent / "examples" / "infra-fleet-public.toml").read_text().replace(
+    'repository = "ImranAdan/infra-fleet-public"', f'repository = "{REPO}"'
 )
+DELEG = d.parse(EXAMPLE.replace('mode = "shadow"', 'mode = "enforce"'), REPO, POLICY)
+SHADOW_DELEG = d.parse(EXAMPLE, REPO, POLICY)
 RESOLVE = lambda repository, policy: DELEG  # noqa: E731
 ENF = "sha256:" + "e" * 64  # a live enforcement snapshot
 
@@ -87,6 +85,7 @@ class FakeChecks:
         self.shown: list[tuple[str, str]] = []  # every (conclusion, title) ever written
         self.before_write = None  # a concurrent publisher, run once
         self.fail_writes = 0  # provider errors on the next writes
+        self.open_prs = set(range(1, 200))  # PRs GitHub lists as open on the commit
 
     def __call__(self, method: str, path: str, payload):
         if method == "GET":
@@ -123,10 +122,17 @@ class FakeChecks:
 
 
 def both(checks: FakeChecks, git: FakeGit):
-    """One provider: check-run calls go to the checks fake, the rest to Git."""
-    return lambda method, path, payload: (checks if "check-runs" in path else git)(
-        method, path, payload
-    )
+    """One provider: check-run calls go to the checks fake, PRs for a commit
+    to its open set, the rest to Git."""
+
+    def api(method, path, payload):
+        if "/pulls" in path:  # paged like GitHub: 100 per page
+            page = int(re.search(r"[?&]page=(\d+)", path).group(1))
+            listed = [{"number": n, "state": "open"} for n in sorted(checks.open_prs)]
+            return listed[(page - 1) * 100 : page * 100]
+        return (checks if "check-runs" in path else git)(method, path, payload)
+
+    return api
 
 
 def visible(checks: FakeChecks) -> list[tuple[str, str]]:
@@ -313,6 +319,17 @@ def main() -> int:
         r.record(shared, REPO, REF, r.build(decision(), n, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
     r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert len(ck_s.runs[0]["output"]["title"]) <= 255 and "113 PRs" in ck_s.runs[0]["output"]["title"]
+    # A closed PR no longer shares the head either.
+    ck_s.open_prs = {7}
+    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    assert visible(ck_s) == [("success", "AUTHORIZE (r1)")], visible(ck_s)
+    ck_s.open_prs = set(range(1, 200))
+    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    # If the only PR with a decision closed, nothing is shown as current: fail closed.
+    ck_s.open_prs = set()
+    refused("CONTRACT_ERROR", lambda: r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
+    assert all(c == "failure" for c, _ in visible(ck_s)), visible(ck_s)
+    ck_s.open_prs = set(range(1, 200))
     # A PR that moved to another commit no longer shares this head.
     r.record(shared, REPO, REF, r.build(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY)), 8, ENF,
                                          versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
@@ -465,6 +482,18 @@ def main() -> int:
         'repository = "ImranAdan/infra-fleet-public"', f'repository = "{REPO}"'), REPO, POLICY + "x")
     refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, enforced(decision()), other)
     refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, enforced(decision("ESCALATE")), other)
+    # A shadow-mode delegation grants no merge authority: a live AUTHORIZE
+    # under it is refused, while a shadow AUTHORIZE under it still records.
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, enforced(decision()), SHADOW_DELEG)
+    assert r.record(FakeGit(), REPO, REF, build(decision()), SHADOW_DELEG)[2]
+    shadow_mode, ck_sm = FakeGit(), FakeChecks()
+    r.record(shadow_mode, REPO, REF, enforced(decision()), DELEG)
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(
+        both(ck_sm, shadow_mode), REPO, REF, HEAD, app_id=APP, delegations=lambda repository, policy: SHADOW_DELEG))
+    # A decision on an unusable delegation records as the shadow adapter builds
+    # it (no policy on subject or decision).
+    unusable = m.decide(m.DecisionInput(d.DelegationError("DELEGATION_INVALID", "bad"), e.Subject(REPO, HEAD, BASE, ""), (), {}, (), ()))
+    assert r.record(FakeGit(), REPO, REF, build(unusable))[2]
     # Reconcile checks the AUTHORIZE against the delegation its policy names: a
     # resolver that hands back another delegation cannot make it pass.
     wrong, ck_w = FakeGit(), FakeChecks()
