@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent / "src"))
 sys.path.insert(0, str(HERE))
 
@@ -51,11 +52,17 @@ class FakeChecks:
     def __init__(self) -> None:
         self.runs: list[dict] = []
         self.writes = 0
+        self.shown: list[tuple[str, str]] = []  # every (conclusion, title) ever written
+        self.before_write = None  # a concurrent publisher, run once
 
     def __call__(self, method: str, path: str, payload):
         if method == "GET":
-            return {"check_runs": [x for x in self.runs if x["head_sha"] in path]}
+            return {"check_runs": [dict(x) for x in self.runs if x["head_sha"] in path]}
+        if self.before_write:
+            racer, self.before_write = self.before_write, None
+            racer()
         self.writes += 1
+        self.shown.append((payload["conclusion"], payload["output"]["title"]))
         # GitHub echoes output with keys the payload never sends.
         output = {**payload["output"], "text": None, "annotations_count": 0}
         if method == "POST":
@@ -64,6 +71,17 @@ class FakeChecks:
         run = next(x for x in self.runs if path.endswith(f"/check-runs/{x['id']}"))
         run.update({**payload, "output": output})
         return run
+
+
+def both(checks: FakeChecks, git: FakeGit):
+    """One provider: check-run calls go to the checks fake, the rest to Git."""
+    return lambda method, path, payload: (checks if "check-runs" in path else git)(
+        method, path, payload
+    )
+
+
+def visible(checks: FakeChecks) -> list[tuple[str, str]]:
+    return [(x["conclusion"], x["output"]["title"]) for x in checks.runs]
 
 
 def main() -> int:
@@ -132,31 +150,83 @@ def main() -> int:
         bad.objects[bad.objects[bad.refs[REF]]["tree"]]["files"][path] = tampered
         refused("LEDGER_INVALID", r.record, bad, REPO, REF, receipt)
 
-    # Check run: one per decision on the head; republishing the same revision writes nothing.
+    # Check run: the reconciler shows the ledger's latest revision for a
+    # decision; nothing the caller holds can choose the revision.
+    did = receipt["decision_id"]
     checks = FakeChecks()
-    r.publish_check(checks, REPO, receipt, first, head1, shadow=True)
-    r.publish_check(checks, REPO, receipt, first, head1, shadow=True)
+    api = both(checks, git)
+    r.reconcile_check(api, REPO, REF, did, shadow=True)
+    r.reconcile_check(api, REPO, REF, did, shadow=True)
     assert checks.writes == 1 and len(checks.runs) == 1
     run = checks.runs[0]
     assert run["name"] == r.CHECK_NAME == "mandate/decision"
-    assert run["external_id"] == receipt["decision_id"] and run["conclusion"] == "neutral"
-    assert first["receipt_digest"] in run["output"]["summary"]
-    r.publish_check(checks, REPO, build(decision("ESCALATE")), second, second["entry_digest"], shadow=False)
-    assert checks.writes == 2 and len(checks.runs) == 1
-    assert checks.runs[0]["conclusion"] == "failure" and "r2" in checks.runs[0]["output"]["title"]
-    # A delayed publisher of a superseded revision never replaces the newer one.
-    r.publish_check(checks, REPO, receipt, first, head1, shadow=False)
-    assert checks.writes == 2 and "r2" in checks.runs[0]["output"]["title"], checks.runs[0]
+    assert run["external_id"] == did and run["conclusion"] == "neutral"
+    assert third["receipt_digest"] in run["output"]["summary"] and "r3" in run["output"]["title"]
+    r.reconcile_check(api, REPO, REF, did, shadow=False)
+    assert checks.writes == 2 and visible(checks) == [("success", "AUTHORIZE (r3)")]
 
-    # The summary stays within GitHub's 65535-character output limit.
-    many = m.Decision(
-        "ESCALATE",
-        tuple(m.reason(f"UNDELEGATED:c{i}", "p" * 300) for i in range(400)),
-        (), (), POLICY, SUBJECT,
+    # Codex F1 interleaving: a delayed publisher read r2 AUTHORIZE; before its
+    # write lands, r3 ESCALATE is recorded and shown. The delayed write happens
+    # (stale success), then it re-reads the ledger and restores r3.
+    lg, ck = FakeGit(), FakeChecks()
+    api2 = both(ck, lg)
+    r.record(lg, REPO, REF, build(decision("ESCALATE")))
+    r.reconcile_check(api2, REPO, REF, did, shadow=False)
+    r.record(lg, REPO, REF, build(decision()))
+
+    def newer() -> None:
+        r.record(lg, REPO, REF, build(decision("ESCALATE"), at="2026-10-21T01:00:00Z"))
+        r.reconcile_check(api2, REPO, REF, did, shadow=False)
+
+    ck.before_write = newer
+    r.reconcile_check(api2, REPO, REF, did, shadow=False)
+    assert ("success", "AUTHORIZE (r2)") in ck.shown, ck.shown  # the race really ran
+    assert visible(ck) == [("failure", "ESCALATE (r3)")], visible(ck)
+
+    # The same race on first publication creates two runs; both end at the latest.
+    lg2, ck2 = FakeGit(), FakeChecks()
+    api3 = both(ck2, lg2)
+    r.record(lg2, REPO, REF, build(decision()))
+    ck2.before_write = lambda: (
+        r.record(lg2, REPO, REF, build(decision("ESCALATE"))),
+        r.reconcile_check(api3, REPO, REF, did, shadow=False),
     )
-    big = FakeChecks()
-    r.publish_check(big, REPO, build(many), first, head1, shadow=True)
-    assert len(big.runs[0]["output"]["summary"]) <= 65535
+    r.reconcile_check(api3, REPO, REF, did, shadow=False)
+    assert visible(ck2) == [("failure", "ESCALATE (r2)")] * 2, visible(ck2)
+
+    # Single writer per pull request: every workflow that records receipts or
+    # can write checks declares the serialized concurrency group.
+    good = (
+        "permissions:\n  checks: write\nconcurrency:\n"
+        "  group: mandate-decision-${{ github.repository }}-${{ inputs.pr }}\n"
+        "  cancel-in-progress: false\nrun: python3 -m mandate.receipt reconcile\n"
+    )
+    assert r.serial_violations({"good.yml": good}) == []
+    assert r.serial_violations({"bad.yml": "run: python3 -m mandate.receipt reconcile\n"}) == ["bad.yml"]
+    assert r.serial_violations({"cancel.yml": good.replace("false", "true")}) == ["cancel.yml"]
+    assert r.serial_violations({"checks.yml": "permissions:\n  checks: write\n"}) == ["checks.yml"]
+    assert r.serial_violations({"inline.yml": "run: python3 -c 'from mandate import receipt'\n"}) == ["inline.yml"]
+    assert r.serial_violations({"app.yml": "with:\n  permission-checks: write\n"}) == ["app.yml"]
+    assert r.serial_violations({"read.yml": "permissions:\n  checks: read\n"}) == []
+    workflows = {w.name: w.read_text() for w in (ROOT / ".github" / "workflows").glob("*.yml")}
+    assert len(workflows) > 10 and r.serial_violations(workflows) == [], r.serial_violations(workflows)
+
+    # Codex F2: the summary fits GitHub's 65535-byte limit in UTF-8, cut on a
+    # character boundary, with multibyte reason text. Shifting by 0-3 ASCII
+    # bytes makes some variant's cut fall inside a multibyte character.
+    for shift in range(4):
+        many = m.Decision(
+            "ESCALATE",
+            tuple(m.reason(f"UNDELEGATED:c{i}", "x" * shift + "é€😀" * 100) for i in range(400)),
+            (), (), POLICY, SUBJECT,
+        )
+        wide, big = FakeGit(), FakeChecks()
+        r.record(wide, REPO, REF, build(many))
+        r.reconcile_check(both(big, wide), REPO, REF, did, shadow=True)
+        summary = big.runs[0]["output"]["summary"]
+        assert len(summary.encode("utf-8")) <= r.SUMMARY_LIMIT == 65535, len(summary.encode("utf-8"))
+        assert len(summary) < 65535 and summary.endswith("more reasons in the receipt")
+        assert "\ufffd" not in summary, f"shift {shift}: cut inside a multibyte character"
 
     # Merge trailers: final revalidation records the fresh decision, so the
     # trailers always name this decision's latest revision.

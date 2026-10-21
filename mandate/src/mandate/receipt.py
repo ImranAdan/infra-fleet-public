@@ -7,6 +7,9 @@ next one only when the decision's meaning (everything but the clock and the
 revision) differs from the latest, so rerunning identical inputs is a no-op,
 and flipping back to an earlier result is a new revision, never a reuse.
 
+reconcile_check() is the only check publisher: it shows the ledger's latest
+revision, and every writer runs as one serialized job per pull request.
+
 The merge commit is the anchor: trailers() records a fresh AUTHORIZE decision
 for the subject the worker acted on and names that latest revision's receipt
 digest and chain head. audit() checks a ledger against those anchors offline and says
@@ -28,6 +31,7 @@ from mandate.decision import Decision
 
 SCHEMA_VERSION = 1
 CHECK_NAME = "mandate/decision"
+SERIAL_GROUP = "mandate-decision-"  # + <repository>-<pull request>: one writer per PR
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
 _TRAILER = re.compile(rf"(?m)^({'|'.join(TRAILERS)}): (\S+)$")
 _CLOCK = ("evaluated_at", "receipt_revision")
@@ -84,22 +88,29 @@ def semantic(receipt: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in receipt.items() if k not in _CLOCK}
 
 
+def _latest(
+    api: l.Api, repo: str, ref: str, did: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, bytes]]:
+    """(all entries, this decision's entries, receipts) from a verified ledger."""
+    try:
+        state = l.read(api, repo, ref)
+        stored = l._receipts(api, repo, state)
+    except l.ApiError as exc:
+        raise l.LedgerError("LEDGER_UNAVAILABLE", str(exc)) from None
+    failures = l.verify(state.text, stored)
+    if failures:
+        raise l.LedgerError("LEDGER_INVALID", "; ".join(failures))
+    entries = [json.loads(x) for x in l._lines(state.text)]
+    return entries, [x for x in entries if x["decision_id"] == did], stored
+
+
 def record(
     api: l.Api, repo: str, ref: str, receipt: dict[str, Any]
 ) -> tuple[dict[str, Any], str, bool]:
     """(ledger entry for this decision's latest revision, chain head, appended)."""
     did = receipt["decision_id"]
     for _attempt in range(l.RETRIES):
-        try:
-            state = l.read(api, repo, ref)
-            stored = l._receipts(api, repo, state)
-        except l.ApiError as exc:
-            raise l.LedgerError("LEDGER_UNAVAILABLE", str(exc)) from None
-        failures = l.verify(state.text, stored)
-        if failures:
-            raise l.LedgerError("LEDGER_INVALID", "; ".join(failures))
-        entries = [json.loads(x) for x in l._lines(state.text)]
-        mine = [x for x in entries if x["decision_id"] == did]
+        entries, mine, stored = _latest(api, repo, ref, did)
         if mine:
             latest = json.loads(stored[l.receipt_path(did, mine[-1]["receipt_revision"])])
             if semantic(latest) == semantic(receipt):
@@ -126,16 +137,10 @@ def record(
     raise l.LedgerError("LEDGER_UNAVAILABLE", f"lost the revision race {l.RETRIES} times")
 
 
-def publish_check(
-    api: l.Api,
-    repo: str,
-    receipt: dict[str, Any],
-    entry: dict[str, Any],
-    chain_head: str,
-    *,
-    shadow: bool,
-) -> dict[str, Any]:
-    """Create or update the one ``mandate/decision`` check run for this decision ID."""
+def _show(
+    api: l.Api, repo: str, receipt: dict[str, Any], entry: dict[str, Any], chain_head: str, shadow: bool
+) -> None:
+    """Make every ``mandate/decision`` run for this decision show this revision."""
     head, did = receipt["subject"]["head_sha"], receipt["decision_id"]
     outcome, revision = receipt["decision"]["outcome"], entry["receipt_revision"]
     conclusion = "neutral" if shadow else ("success" if outcome == "AUTHORIZE" else "failure")
@@ -149,9 +154,11 @@ def publish_check(
         + (" Shadow mode: this decision grants nothing." if shadow else "")
         + reasons
     )
-    if len(summary) > SUMMARY_LIMIT:
+    encoded = summary.encode("utf-8")
+    if len(encoded) > SUMMARY_LIMIT:  # bytes, cut on a character boundary
         cut = "\n- … more reasons in the receipt"
-        summary = summary[: SUMMARY_LIMIT - len(cut)] + cut
+        keep = encoded[: SUMMARY_LIMIT - len(cut.encode("utf-8"))]
+        summary = keep.decode("utf-8", "ignore") + cut
     payload = {
         "name": CHECK_NAME,
         "external_id": did,
@@ -162,22 +169,55 @@ def publish_check(
     runs = api(
         "GET", f"repos/{repo}/commits/{head}/check-runs?check_name={quote(CHECK_NAME)}", None
     )["check_runs"]
-    existing = next((x for x in runs if x.get("external_id") == did), None)
-    if existing is None:
-        return api("POST", f"repos/{repo}/check-runs", {**payload, "head_sha": head})
-    # Never move the check back to a superseded revision. ponytail: the Checks
-    # API has no compare-and-swap, so a GET/PATCH race can still land a stale
-    # revision; consumers must take the latest revision from the ledger, as
-    # trailers() does with a fresh decision, never from this check alone.
-    shown_revision = re.search(rf"`{re.escape(did)}/r(\d+)`", (existing.get("output") or {}).get("summary") or "")
-    if shown_revision and int(shown_revision.group(1)) > int(revision.removeprefix("r")):
-        return existing
-    shown = existing.get("output") or {}
-    if existing.get("conclusion") == conclusion and all(
-        shown.get(k) == v for k, v in payload["output"].items()
-    ):  # GitHub adds text and annotation fields we never send
-        return existing
-    return api("PATCH", f"repos/{repo}/check-runs/{existing['id']}", payload)
+    mine = [x for x in runs if x.get("external_id") == did]
+    if not mine:
+        api("POST", f"repos/{repo}/check-runs", {**payload, "head_sha": head})
+    for run in mine:  # a past race can leave two; each must show the latest
+        shown = run.get("output") or {}
+        if run.get("conclusion") != conclusion or any(
+            shown.get(k) != v for k, v in payload["output"].items()
+        ):  # GitHub adds text and annotation fields we never send
+            api("PATCH", f"repos/{repo}/check-runs/{run['id']}", payload)
+
+
+def reconcile_check(api: l.Api, repo: str, ref: str, did: str, *, shadow: bool) -> dict[str, Any]:
+    """Show the ledger's latest revision of ``did`` on its ``mandate/decision`` check.
+
+    The only check publisher. The caller names a decision, never a revision,
+    so a delayed caller cannot choose a superseded one. The Checks API has no
+    compare-and-swap, so two boundaries hold the check to the ledger:
+
+    - one writer per pull request: every workflow that records receipts or
+      writes checks runs in the ``mandate-decision-<repo>-<pr>`` concurrency
+      group without cancelling in progress (serial_violations() enforces it);
+    - if the ledger moved while this ran (only possible when that boundary is
+      bypassed), it shows the newer revision before returning.
+
+    Returns the ledger entry it left on display.
+    """
+    for _attempt in range(l.RETRIES):
+        entries, mine, stored = _latest(api, repo, ref, did)
+        if not mine:
+            raise l.LedgerError("CONTRACT_ERROR", f"no receipt recorded for {did}")
+        entry = mine[-1]
+        receipt = json.loads(stored[l.receipt_path(did, entry["receipt_revision"])])
+        _show(api, repo, receipt, entry, entries[-1]["entry_digest"], shadow)
+        if _latest(api, repo, ref, did)[1][-1] == entry:
+            return entry
+    raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {did}")
+
+
+def serial_violations(workflows: dict[str, str]) -> list[str]:
+    """Workflows that record receipts or write checks outside the serialized group."""
+    return sorted(
+        name
+        for name, text in workflows.items()
+        if re.search(r"(?m)mandate(\.| import )receipt|src/mandate/receipt\.py|^\s*(permission-)?checks:\s*write\b", text)
+        and not (
+            re.search(rf"(?m)^\s*group:\s*{SERIAL_GROUP}\S+", text)
+            and re.search(r"(?m)^\s*cancel-in-progress:\s*false\b", text)
+        )
+    )
 
 
 def trailers(

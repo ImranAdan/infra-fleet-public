@@ -125,12 +125,24 @@ through `ledger.append()` (KAN-26).
   clock. Rerunning identical inputs is a no-op. Flipping back to an earlier
   result is a new revision, never a reuse. A concurrent writer that takes the
   same revision makes it re-read and take the next.
-- **Check run:** `publish_check()` keeps one `mandate/decision` check run per
-  decision ID showing the latest revision. It writes nothing when that is
-  already shown, and its conclusion is `neutral` in shadow mode. It never
-  moves the check back to an older revision. The Checks API has no
-  compare-and-swap, though, so the ledger, not the check, is the authority
-  for which revision is latest.
+- **Check run:** `reconcile_check(decision_id)` is the only publisher. The
+  caller names a decision, never a revision. It reads the verified ledger and
+  makes every `mandate/decision` run for that decision show the latest
+  revision. It writes nothing when that is already shown, and its conclusion
+  is `neutral` in shadow mode. The summary is capped at 65,535 UTF-8 bytes,
+  cut on a character boundary.
+- **One writer per pull request:** GitHub's ruleset reads the check's
+  conclusion, and the Checks API has no compare-and-swap. So every workflow
+  that records receipts or writes checks must run in the concurrency group
+  `mandate-decision-<repository>-<pull request>` with
+  `cancel-in-progress: false`. `serial_violations()` enforces this over
+  `.github/workflows/` in the tests.
+  - **Why it's safe:** GitHub runs at most one job in a group at a time. A
+    newer pending run replaces an older pending one, and because it
+    reconciles from the ledger, it loses nothing.
+  - **Backstop:** if the ledger still moves during a reconcile (only possible
+    when the boundary is bypassed), the reconcile re-reads and shows the newer
+    revision before returning.
 - **Merge trailers:** `trailers()` gives `Mandate-Decision`,
   `Mandate-Receipt-Digest` and `Mandate-Chain-Head` after final revalidation.
   The fresh decision must be about the subject the merge worker acted on and
