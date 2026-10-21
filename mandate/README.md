@@ -125,24 +125,40 @@ through `ledger.append()` (KAN-26).
   clock. Rerunning identical inputs is a no-op. Flipping back to an earlier
   result is a new revision, never a reuse. A concurrent writer that takes the
   same revision makes it re-read and take the next.
-- **Check run:** `reconcile_check(decision_id, app_id=…)` is the only
-  publisher. The caller names a decision, never a revision. It reads the
-  verified ledger and makes every `mandate/decision` run *created by the
-  publisher App* for that decision show the latest revision; another App's run
-  with the same name is never touched. It writes nothing when that is already
-  shown. The conclusion comes from the receipt's recorded enforcement, never a
-  caller flag. Only a live `sha256:` snapshot can pass, a shadow receipt is
-  always `neutral`, and any other value fails. The summary is capped at
-  65,535 UTF-8 bytes, cut on a character boundary.
-- **One writer per pull request:** GitHub's ruleset reads the check's
+- **Check run:** `reconcile_check(head_sha, app_id=…)` is the only publisher.
+  The caller names a head commit, never a decision or revision. It shows the
+  newest decision recorded for that head on every run of the publisher App,
+  replacing an older decision ID for the same head. Runs from other Apps are
+  never touched, and it writes nothing when the decision is already shown.
+  - **Required check:** live decisions go to `mandate/decision`. Only a live
+    `sha256:` snapshot with AUTHORIZE can pass; any other value fails.
+  - **Shadow check:** shadow decisions go only to `mandate/shadow`, never the
+    required name, because GitHub counts `neutral` as passing a required
+    check.
+  - **Shared head:** checks belong to a commit, so if two PRs have decisions
+    on the same head, the check fails closed.
+  - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
+- **One writer per head commit:** GitHub's ruleset reads the check's
   conclusion, and the Checks API has no compare-and-swap. So every job that
   records receipts or writes checks must run in the one canonical group,
-  `mandate-decision-${{ github.repository }}-${{ inputs.pr }}`, with
+  `mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}`, with
   `cancel-in-progress: false`. That means writers are workflows called with a
-  `pr` input, so every caller computes the same group.
-  `serial_violations()` checks this per job over `.github/workflows/` in the
-  tests, and fails closed: a workflow it can't split into jobs, and any
-  permissions it can't read, count as writing. A job counts as a writer if it:
+  `head_sha` input.
+  - **Why it's safe:** GitHub runs at most one job in a group at a time. A
+    newer pending run replaces an older pending one, and because it
+    reconciles from the ledger, it loses nothing.
+  - **Backstop:** if the ledger still moves during a reconcile (only possible
+    when the boundary is bypassed), the reconcile re-reads and shows the newer
+    decision before returning. It lists every run (`filter=all`, paged), so
+    duplicates from a past race are kept current.
+  - **G4 owner action:** the ruleset that requires `mandate/decision` must
+    bind it to the publisher App. Otherwise a commit status or another App's
+    check with the same name could satisfy it.
+
+  `serial_violations()` checks this per job over `.github/workflows/`
+  (`.yml` and `.yaml`) in the tests and fails closed: any line under `jobs:`
+  it didn't read, and any permissions it can't read, count as writing. A job
+  counts as a writer if it:
   - uses `mandate.receipt`;
   - can write checks: `checks: write` or `write-all`, or an App token input
     `permission-checks: write`;
@@ -156,13 +172,6 @@ through `ledger.append()` (KAN-26).
   `read` (`gh api repos/ImranAdan/infra-fleet-public/actions/permissions/workflow`
   → `"default_workflow_permissions":"read"`). Changing that default to
   `write` would bypass this check.
-  - **Why it's safe:** GitHub runs at most one job in a group at a time. A
-    newer pending run replaces an older pending one, and because it
-    reconciles from the ledger, it loses nothing.
-  - **Backstop:** if the ledger still moves during a reconcile (only possible
-    when the boundary is bypassed), the reconcile re-reads and shows the newer
-    revision before returning. It lists every run for the decision
-    (`filter=all`, paged), so duplicates from a past race are kept current.
 - **Merge trailers:** `trailers()` gives `Mandate-Decision`,
   `Mandate-Receipt-Digest` and `Mandate-Chain-Head` after final revalidation.
   The fresh decision must be about the subject the merge worker acted on, must

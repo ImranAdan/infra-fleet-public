@@ -30,12 +30,13 @@ from mandate import ledger as l
 from mandate.decision import Decision
 
 SCHEMA_VERSION = 1
-CHECK_NAME = "mandate/decision"
+CHECK_NAME = "mandate/decision"  # the required check: live decisions only
+SHADOW_CHECK_NAME = "mandate/shadow"  # never required; GitHub counts neutral as passing
 SHADOW = "shadow"  # the enforcement snapshot of a decision that grants nothing
 LIVE = re.compile(r"^sha256:[0-9a-f]{64}$")  # a real enforcement snapshot digest
-# One writer per pull request: writers are workflows called with a ``pr`` input,
-# so every caller computes this same group.
-CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.pr }}"
+# One writer per head commit (checks belong to a commit, not a PR): writers are
+# workflows called with a ``head_sha`` input, so every caller computes this group.
+CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}"
 _USES_RECEIPTS = re.compile(r"mandate(\.| import )receipt|src/mandate/receipt\.py")
 _ACCESS = ("read", "write", "none")
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
@@ -94,10 +95,8 @@ def semantic(receipt: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in receipt.items() if k not in _CLOCK}
 
 
-def _latest(
-    api: l.Api, repo: str, ref: str, did: str
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, bytes]]:
-    """(all entries, this decision's entries, receipts) from a verified ledger."""
+def _verified(api: l.Api, repo: str, ref: str) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
+    """(entries, receipts) from a verified ledger."""
     try:
         state = l.read(api, repo, ref)
         stored = l._receipts(api, repo, state)
@@ -106,8 +105,7 @@ def _latest(
     failures = l.verify(state.text, stored)
     if failures:
         raise l.LedgerError("LEDGER_INVALID", "; ".join(failures))
-    entries = [json.loads(x) for x in l._lines(state.text)]
-    return entries, [x for x in entries if x["decision_id"] == did], stored
+    return [json.loads(x) for x in l._lines(state.text)], stored
 
 
 def record(
@@ -116,7 +114,8 @@ def record(
     """(ledger entry for this decision's latest revision, chain head, appended)."""
     did = receipt["decision_id"]
     for _attempt in range(l.RETRIES):
-        entries, mine, stored = _latest(api, repo, ref, did)
+        entries, stored = _verified(api, repo, ref)
+        mine = [x for x in entries if x["decision_id"] == did]
         if mine:
             latest = json.loads(stored[l.receipt_path(did, mine[-1]["receipt_revision"])])
             if semantic(latest) == semantic(receipt):
@@ -144,9 +143,18 @@ def record(
 
 
 def _show(
-    api: l.Api, repo: str, receipt: dict[str, Any], entry: dict[str, Any], chain_head: str, app_id: int
+    api: l.Api,
+    repo: str,
+    name: str,
+    receipt: dict[str, Any],
+    entry: dict[str, Any],
+    chain_head: str,
+    app_id: int,
+    prs: list[int],
 ) -> None:
-    """Make every ``mandate/decision`` run of ours for this decision show this revision."""
+    """Make every run of ours named ``name`` on the head show this revision,
+    whichever decision ID it showed before. Decisions from more than one PR
+    on the head (``prs``) cannot share one check: it fails closed."""
     head, did = receipt["subject"]["head_sha"], receipt["decision_id"]
     outcome, revision = receipt["decision"]["outcome"], entry["receipt_revision"]
     # From the recorded snapshot, never a caller flag: only a live sha256
@@ -154,7 +162,7 @@ def _show(
     enforcement = receipt["subject"]["enforcement"]
     shadow = enforcement == SHADOW
     passes = outcome == "AUTHORIZE" and bool(LIVE.match(enforcement))
-    conclusion = "neutral" if shadow else ("success" if passes else "failure")
+    conclusion = "neutral" if shadow else ("success" if passes and len(prs) == 1 else "failure")
     reasons = "".join(
         f"\n- `{x['code']}` ({x['outcome']}, {x['owner']}): {x['detail'][:200]}"
         for x in receipt["decision"]["reasons"]
@@ -171,29 +179,31 @@ def _show(
         keep = encoded[: SUMMARY_LIMIT - len(cut.encode("utf-8"))]
         summary = keep.decode("utf-8", "ignore") + cut
     payload = {
-        "name": CHECK_NAME,
+        "name": name,
         "external_id": did,
         "status": "completed",
         "conclusion": conclusion,
-        "output": {"title": f"{outcome} ({revision})", "summary": summary},
+        "output": {
+            "title": f"{outcome} ({revision})"
+            + (f", head shared by {', '.join(f'#{n}' for n in prs)}" if len(prs) > 1 else ""),
+            "summary": summary,
+        },
     }
     runs: list[dict[str, Any]] = []
     for page in range(1, 1000):  # filter=all: the default lists only the newest run
         data = api(
             "GET",
-            f"repos/{repo}/commits/{head}/check-runs?check_name={quote(CHECK_NAME)}"
+            f"repos/{repo}/commits/{head}/check-runs?check_name={quote(name)}"
             f"&filter=all&per_page=100&page={page}",
             None,
         )
         runs += data["check_runs"]
         if not data["check_runs"] or len(runs) >= data["total_count"]:
             break
-    mine = [
-        x for x in runs if x.get("external_id") == did and (x.get("app") or {}).get("id") == app_id
-    ]
+    mine = [x for x in runs if (x.get("app") or {}).get("id") == app_id]
     if not mine:
         api("POST", f"repos/{repo}/check-runs", {**payload, "head_sha": head})
-    for run in mine:  # a past race can leave two; each must show the latest
+    for run in mine:  # a past race or an older decision ID; each must show this
         shown = run.get("output") or {}
         if run.get("conclusion") != conclusion or any(
             shown.get(k) != v for k, v in payload["output"].items()
@@ -201,33 +211,56 @@ def _show(
             api("PATCH", f"repos/{repo}/check-runs/{run['id']}", payload)
 
 
-def reconcile_check(api: l.Api, repo: str, ref: str, did: str, *, app_id: int) -> dict[str, Any]:
-    """Show the ledger's latest revision of ``did`` on its ``mandate/decision`` check.
+def _newest(
+    entries: list[dict[str, Any]], stored: dict[str, bytes], repo: str, head: str
+) -> dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]]:
+    """Check name -> (entry, receipt, PRs) for the newest decision recorded on
+    this head, with every PR that has a decision on it under that name."""
+    found: dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]] = {}
+    for entry in entries:
+        receipt = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])
+        s = receipt["subject"]
+        if (s["repository"], s["head_sha"]) == (repo, head):
+            name = SHADOW_CHECK_NAME if s["enforcement"] == SHADOW else CHECK_NAME
+            prs = sorted({*found.get(name, ({}, {}, []))[2], s["pull_request"]})
+            found[name] = (entry, receipt, prs)
+    return found
 
-    The only check publisher. The caller names a decision, never a revision,
-    so a delayed caller cannot choose a superseded one. The Checks API has no
-    compare-and-swap, so two boundaries hold the check to the ledger:
 
-    - one writer per pull request: every job that records receipts or writes
+def reconcile_check(api: l.Api, repo: str, ref: str, head: str, *, app_id: int) -> dict[str, dict[str, Any]]:
+    """Show the newest decision recorded for a head commit on its check.
+
+    The only check publisher. The caller names the head, never a decision or
+    revision, so a delayed caller cannot choose a superseded one, including an
+    older decision ID for the same head (base, policy or enforcement moved).
+    Live decisions go to the required ``mandate/decision``; shadow decisions
+    only to ``mandate/shadow``, since GitHub counts neutral as passing. Checks
+    belong to a commit, so decisions from two PRs on one head fail closed.
+
+    The Checks API has no compare-and-swap, so two boundaries hold the checks
+    to the ledger:
+
+    - one writer per head commit: every job that records receipts or writes
       checks runs in CANONICAL_GROUP without cancelling in progress
       (serial_violations() enforces it over the workflows);
     - if the ledger moved while this ran (only possible when that boundary is
-      bypassed), it shows the newer revision before returning.
+      bypassed), it shows the newer decision before returning.
 
     Only runs created by ``app_id`` (the publisher App) are ours. The
-    conclusion follows the receipt's recorded enforcement: a shadow receipt is
-    always neutral. Returns the ledger entry it left on display.
+    conclusion follows the receipt's recorded enforcement. Returns check name
+    -> the ledger entry it left on display.
     """
     for _attempt in range(l.RETRIES):
-        entries, mine, stored = _latest(api, repo, ref, did)
-        if not mine:
-            raise l.LedgerError("CONTRACT_ERROR", f"no receipt recorded for {did}")
-        entry = mine[-1]
-        receipt = json.loads(stored[l.receipt_path(did, entry["receipt_revision"])])
-        _show(api, repo, receipt, entry, entries[-1]["entry_digest"], app_id)
-        if _latest(api, repo, ref, did)[1][-1] == entry:
-            return entry
-    raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {did}")
+        entries, stored = _verified(api, repo, ref)
+        shown = _newest(entries, stored, repo, head)
+        if not shown:
+            raise l.LedgerError("CONTRACT_ERROR", f"no receipt recorded for {repo}@{head}")
+        for name, (entry, receipt, prs) in shown.items():
+            _show(api, repo, name, receipt, entry, entries[-1]["entry_digest"], app_id, prs)
+        now = _newest(*_verified(api, repo, ref), repo, head)
+        if {k: v[0] for k, v in now.items()} == {k: v[0] for k, v in shown.items()}:
+            return {k: v[0] for k, v in shown.items()}
+    raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {repo}@{head}")
 
 
 def _serialized(block: str) -> bool:
@@ -279,8 +312,14 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
     for name, text in sorted(workflows.items()):
         header, _, body = text.partition("\njobs:\n")
         jobs = re.findall(r"(?m)^  ([\w-]+):[ \t]*\n((?:(?:    .*)?\n?)*)", body)
-        if not jobs and (_USES_RECEIPTS.search(text) or _may_write_checks(text)):
-            bad.append(f"{name}:?")  # writes, but no job this parser can read: fail closed
+        # Every line of jobs: must be a job key or nested under one; anything
+        # else (a flow-mapping job, keys after jobs:) was not read: fail closed.
+        unread = any(
+            not re.fullmatch(r"\s*(#.*)?|  [\w-]+:[ \t]*(#.*)?|    .*", line)
+            for line in body.splitlines()
+        )
+        if unread or (not jobs and (_USES_RECEIPTS.search(text) or _may_write_checks(text))):
+            bad.append(f"{name}:?")
         for job, block in jobs:
             writes = (
                 _USES_RECEIPTS.search(header + block)

@@ -165,17 +165,18 @@ def main() -> int:
         bad.objects[bad.objects[bad.refs[REF]]["tree"]]["files"][path] = tampered
         refused("LEDGER_INVALID", r.record, bad, REPO, REF, receipt)
 
-    # Check run: the reconciler shows the ledger's latest revision for a
-    # decision; nothing the caller holds can choose the revision. A shadow
-    # receipt (enforcement "shadow") is always neutral: no caller can make it pass.
+    # Check run: the reconciler shows the newest decision recorded for a PR
+    # head; the caller names the head, never a decision or revision. A shadow
+    # receipt is published only under mandate/shadow, never the required name
+    # (GitHub counts neutral as passing a required check).
     did = receipt["decision_id"]
     checks = FakeChecks()
     api = both(checks, git)
-    r.reconcile_check(api, REPO, REF, did, app_id=APP)
-    r.reconcile_check(api, REPO, REF, did, app_id=APP)
+    r.reconcile_check(api, REPO, REF, HEAD, app_id=APP)
+    r.reconcile_check(api, REPO, REF, HEAD, app_id=APP)
     assert checks.writes == 1 and len(checks.runs) == 1
     run = checks.runs[0]
-    assert run["name"] == r.CHECK_NAME == "mandate/decision"
+    assert run["name"] == r.SHADOW_CHECK_NAME == "mandate/shadow" != r.CHECK_NAME == "mandate/decision"
     assert run["external_id"] == did and visible(checks) == [("neutral", "AUTHORIZE (r3)")]
     assert third["receipt_digest"] in run["output"]["summary"]
 
@@ -183,20 +184,21 @@ def main() -> int:
     live = FakeGit()
     did = r.record(live, REPO, REF, enforced(decision()))[0]["decision_id"]
     ck0 = FakeChecks()
-    r.reconcile_check(both(ck0, live), REPO, REF, did, app_id=APP)
+    r.reconcile_check(both(ck0, live), REPO, REF, HEAD, app_id=APP)
     assert visible(ck0) == [("success", "AUTHORIZE (r1)")], visible(ck0)
+    assert ck0.runs[0]["name"] == r.CHECK_NAME
     # Only a live sha256 snapshot can pass; any other enforcement fails closed.
     odd = FakeGit()
     odd_id = r.record(odd, REPO, REF, build(decision(), enforcement="live"))[0]["decision_id"]
     ck_odd = FakeChecks()
-    r.reconcile_check(both(ck_odd, odd), REPO, REF, odd_id, app_id=APP)
+    r.reconcile_check(both(ck_odd, odd), REPO, REF, HEAD, app_id=APP)
     assert visible(ck_odd) == [("failure", "AUTHORIZE (r1)")], visible(ck_odd)
 
     # A run from another App with the same name and external_id is not ours:
     # we publish our own and never touch it.
     ck0.runs.insert(0, {**ck0.runs[0], "id": 99, "app": {"id": 999}, "conclusion": "failure"})
     ck0.runs.pop(1)
-    r.reconcile_check(both(ck0, live), REPO, REF, did, app_id=APP)
+    r.reconcile_check(both(ck0, live), REPO, REF, HEAD, app_id=APP)
     assert [(x["app"]["id"], x["conclusion"]) for x in ck0.runs] == [(999, "failure"), (APP, "success")]
 
     # Codex F1 interleaving: a delayed publisher read r2 AUTHORIZE; before its
@@ -205,15 +207,15 @@ def main() -> int:
     lg, ck = FakeGit(), FakeChecks()
     api2 = both(ck, lg)
     r.record(lg, REPO, REF, enforced(decision("ESCALATE")))
-    r.reconcile_check(api2, REPO, REF, did, app_id=APP)
+    r.reconcile_check(api2, REPO, REF, HEAD, app_id=APP)
     r.record(lg, REPO, REF, enforced(decision()))
 
     def newer() -> None:
         r.record(lg, REPO, REF, enforced(decision("ESCALATE"), at="2026-10-21T01:00:00Z"))
-        r.reconcile_check(api2, REPO, REF, did, app_id=APP)
+        r.reconcile_check(api2, REPO, REF, HEAD, app_id=APP)
 
     ck.before_write = newer
-    r.reconcile_check(api2, REPO, REF, did, app_id=APP)
+    r.reconcile_check(api2, REPO, REF, HEAD, app_id=APP)
     assert ("success", "AUTHORIZE (r2)") in ck.shown, ck.shown  # the race really ran
     assert visible(ck) == [("failure", "ESCALATE (r3)")], visible(ck)
 
@@ -223,19 +225,59 @@ def main() -> int:
     r.record(lg2, REPO, REF, enforced(decision()))
     ck2.before_write = lambda: (
         r.record(lg2, REPO, REF, enforced(decision("ESCALATE"))),
-        r.reconcile_check(api3, REPO, REF, did, app_id=APP),
+        r.reconcile_check(api3, REPO, REF, HEAD, app_id=APP),
     )
-    r.reconcile_check(api3, REPO, REF, did, app_id=APP)
+    r.reconcile_check(api3, REPO, REF, HEAD, app_id=APP)
     assert visible(ck2) == [("failure", "ESCALATE (r2)")] * 2, visible(ck2)
     # A later revision reaches both duplicates, not just the newest one.
     r.record(lg2, REPO, REF, enforced(decision()))
-    r.reconcile_check(api3, REPO, REF, did, app_id=APP)
+    r.reconcile_check(api3, REPO, REF, HEAD, app_id=APP)
     assert visible(ck2) == [("success", "AUTHORIZE (r3)")] * 2, visible(ck2)
 
-    # Single writer per pull request: every job that records receipts or can
-    # write checks runs in the one canonical per-PR group, without cancelling.
+    # A new decision ID on the same head (here the base moved) supersedes the
+    # old one on the same check: a late reconcile shows the newest decision.
+    moved_base = FakeGit()
+    ck_m = FakeChecks()
+    api_m = both(ck_m, moved_base)
+    r.record(moved_base, REPO, REF, enforced(decision()))
+    r.reconcile_check(api_m, REPO, REF, HEAD, app_id=APP)
+    new_base = enforced(decision("ESCALATE", subject=e.Subject(REPO, HEAD, "c" * 40, POLICY)))
+    r.record(moved_base, REPO, REF, new_base)
+    r.reconcile_check(api_m, REPO, REF, HEAD, app_id=APP)
+    assert visible(ck_m) == [("failure", "ESCALATE (r1)")], visible(ck_m)
+    assert ck_m.runs[0]["external_id"] == new_base["decision_id"]
+    # ... and the same while a delayed reconcile still holds the old decision.
+    race_m, ck_rm = FakeGit(), FakeChecks()
+    api_rm = both(ck_rm, race_m)
+    r.record(race_m, REPO, REF, enforced(decision("ESCALATE")))
+    r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP)
+    r.record(race_m, REPO, REF, enforced(decision()))
+    ck_rm.before_write = lambda: (
+        r.record(race_m, REPO, REF, new_base),
+        r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP),
+    )
+    r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP)
+    assert ("success", "AUTHORIZE (r2)") in ck_rm.shown, ck_rm.shown
+    assert visible(ck_rm) == [("failure", "ESCALATE (r1)")], visible(ck_rm)
+
+    # Checks belong to a commit: two PRs on one head share one check, which
+    # cannot represent both, so it fails closed while both have decisions.
+    shared, ck_s = FakeGit(), FakeChecks()
+    r.record(shared, REPO, REF, enforced(decision()))
+    r.record(shared, REPO, REF, r.build(decision(), 8, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
+    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP)
+    assert [(c, "#7" in t and "#8" in t) for c, t in visible(ck_s)] == [("failure", True)], visible(ck_s)
+    # A receipt about another repository's commit is never shown here.
+    foreign, ck_f = FakeGit(), FakeChecks()
+    r.record(foreign, REPO, REF, enforced(decision()))
+    r.record(foreign, REPO, REF, enforced(decision("ESCALATE", subject=e.Subject("x/y", HEAD, BASE, POLICY))))
+    r.reconcile_check(both(ck_f, foreign), REPO, REF, HEAD, app_id=APP)
+    assert visible(ck_f) == [("success", "AUTHORIZE (r1)")], visible(ck_f)
+
+    # Single writer per head commit: every job that records receipts or can
+    # write checks runs in the one canonical per-head group, without cancelling.
     group = r.CANONICAL_GROUP
-    assert group == "mandate-decision-${{ github.repository }}-${{ inputs.pr }}"
+    assert group == "mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}"
 
     def wf(head: str = "", **jobs: str) -> str:
         return "on: workflow_call\n" + head + "jobs:\n" + "".join(
@@ -254,7 +296,7 @@ def main() -> int:
         "top.yml": (wf(top, writer=write), []),
         "bare.yml": (wf(writer=write), ["bare.yml:writer"]),
         "other-job.yml": (wf(reader=serial, writer=write), ["other-job.yml:writer"]),
-        "suffix.yml": (wf(writer=serial.replace("inputs.pr", "github.run_id") + write), ["suffix.yml:writer"]),
+        "suffix.yml": (wf(writer=serial.replace("inputs.head_sha", "inputs.pr") + write), ["suffix.yml:writer"]),
         "cancel.yml": (wf(writer=serial.replace("false", "true") + write), ["cancel.yml:writer"]),
         "checks.yml": (wf("permissions:\n  checks: write\n", a="    steps: []\n"), ["checks.yml:a"]),
         "job-checks.yml": (wf(a="    permissions:\n      checks: write\n"), ["job-checks.yml:a"]),
@@ -272,6 +314,12 @@ def main() -> int:
         "block.yml": (wf(a="    permissions:\n      contents: read  # just reads\n      checks: none\n"), []),
         "token-quoted.yml": (wf(a=token + "          permission-checks: 'write'\n"), ["token-quoted.yml:a"]),
         "token-checks.yml": (wf(a=token + "          permission-checks: write\n"), ["token-checks.yml:a"]),
+        # Any part of jobs: this parser did not consume fails closed.
+        "flow-job.yml": (
+            wf(reader="    steps: []\n") + "  writer: {runs-on: x, permissions: {checks: write}, steps: []}\n",
+            ["flow-job.yml:?"],
+        ),
+        "after-jobs.yml": (wf(reader="    steps: []\n") + "permissions:\n  checks: write\n", ["after-jobs.yml:?"]),
         "job-write-all.yml": (wf(a="    permissions: write-all\n"), ["job-write-all.yml:a"]),
         # An App token minted without permission inputs carries every App
         # permission, which for the Mandate App includes checks: write.
@@ -301,7 +349,7 @@ def main() -> int:
         )
         wide, big = FakeGit(), FakeChecks()
         did = r.record(wide, REPO, REF, build(many))[0]["decision_id"]
-        r.reconcile_check(both(big, wide), REPO, REF, did, app_id=APP)
+        r.reconcile_check(both(big, wide), REPO, REF, HEAD, app_id=APP)
         summary = big.runs[0]["output"]["summary"]
         assert len(summary.encode("utf-8")) <= r.SUMMARY_LIMIT == 65535, len(summary.encode("utf-8"))
         assert len(summary) < 65535 and summary.endswith("more reasons in the receipt")
