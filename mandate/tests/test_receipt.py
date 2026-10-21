@@ -336,6 +336,14 @@ def main() -> int:
         "empty.yml": (wf("permissions: {}\n", a="    steps: []\n"), []),
         "read-all.yml": (wf("permissions: read-all\n", a="    steps: []\n"), []),
         "block.yml": (wf(a="    permissions:\n      contents: read  # just reads\n      checks: none\n"), []),
+        "blank.yml": (wf(a="    permissions:\n\n      checks: write\n"), ["blank.yml:a"]),
+        "comment.yml": (wf(a="    # this job never writes checks: write\n    steps: []\n"), []),
+        "merge-key.yml": (wf(a="    permissions:\n      <<: *perms\n"), ["merge-key.yml:a"]),
+        "quoted-hash.yml": (wf(a="    permissions: {name: 'x #', checks: write}\n"), ["quoted-hash.yml:a"]),
+        "quoted-input.yml": (
+            wf(a="    steps:\n      - with: {note: 'a #', permission-checks: write}\n"),
+            ["quoted-input.yml:a"],
+        ),
         "token-quoted.yml": (wf(a=token + "          permission-checks: 'write'\n"), ["token-quoted.yml:a"]),
         "token-checks.yml": (wf(a=token + "          permission-checks: write\n"), ["token-checks.yml:a"]),
         # Any part of jobs: this parser did not consume fails closed.

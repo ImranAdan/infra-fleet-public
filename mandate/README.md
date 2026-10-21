@@ -160,17 +160,22 @@ through `ledger.append()` (KAN-26).
     check with the same name could satisfy it.
 
   `serial_violations()` checks this per job over `.github/workflows/`
-  (`.yml` and `.yaml`) in the tests and fails closed: any line under `jobs:`
-  it didn't read, and any permissions it can't read, count as writing. A job
-  counts as a writer if it:
-  - uses `mandate.receipt`;
-  - can write checks: `checks: write` or `write-all`, or an App token input
-    `permission-checks: write`;
-  - mints an App token with no `permission-*` inputs, because that token
-    carries every App permission and the Mandate App has `checks: write`;
-  - writes permissions in any form other than the canonical ones:
-    `read-all`, `{}`, a block of unquoted `key: read|write|none`, or unquoted
-    token inputs. Flow mappings, quoted values and aliases all count.
+  (`.yml` and `.yaml`) in the tests and fails closed. Any line under `jobs:`
+  it didn't read counts as writing. Within each job and the workflow header
+  it scans every line, so blank lines and nesting hide nothing. A job counts
+  as a writer if, outside comments, any of these holds:
+  - it uses `mandate.receipt`;
+  - a line mentions `checks` other than as `checks: read` or `checks: none`
+    (so `checks: write`, `permission-checks: write`, flow mappings and quoted
+    values all count);
+  - an inline `permissions:` value is anything but `read-all` or `{}` (so
+    `write-all`);
+  - it uses a YAML alias or merge key;
+  - it mints an App token with no `permission-*` inputs, because that token
+    carries every App permission and the Mandate App has `checks: write`.
+
+  The check guards against mistakes, not against someone who can edit
+  workflows: workflow changes are already owner decisions at the merge gate.
 
   Jobs that declare no permissions get the repository default, which is
   `read` (`gh api repos/ImranAdan/infra-fleet-public/actions/permissions/workflow`

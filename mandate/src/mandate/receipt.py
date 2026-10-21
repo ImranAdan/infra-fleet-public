@@ -38,7 +38,6 @@ LIVE = re.compile(r"^sha256:[0-9a-f]{64}$")  # a real enforcement snapshot diges
 # workflows called with a ``head_sha`` input, so every caller computes this group.
 CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}"
 _USES_RECEIPTS = re.compile(r"mandate(\.| import )receipt|src/mandate/receipt\.py")
-_ACCESS = ("read", "write", "none")
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
 _TRAILER = re.compile(rf"(?m)^({'|'.join(TRAILERS)}): (\S+)$")
 _CLOCK = ("evaluated_at", "receipt_revision")
@@ -294,31 +293,31 @@ def _serialized(block: str, indent: str) -> bool:
 
 
 def _may_write_checks(block: str) -> bool:
-    """Whether a workflow header or job block can write checks.
+    """Whether a workflow header or job block can write checks, scanning every
+    line (so blank lines or nesting hide nothing) and failing closed.
 
-    Only canonical forms are read: ``permissions:`` as ``read-all``,
-    ``write-all`` or ``{}``, or a block of unquoted ``key: read|write|none``
-    lines; App token ``permission-*`` inputs as unquoted ``read|write``. Any
-    other YAML form (flow mappings, quotes, aliases) counts as a writer, and so
-    does an App token step without permission inputs, which carries every App
-    permission (the Mandate App has checks: write).
+    A line can write checks if, outside comments, it mentions ``checks`` other
+    than as ``checks: read|none``, or sets ``permissions:`` inline to anything
+    but ``read-all`` or ``{}`` (so ``write-all``), or uses a YAML alias or
+    merge key. An App token step without ``permission-*`` inputs also counts:
+    it carries every App permission, and the Mandate App has checks: write.
+
+    It guards against mistakes, not an adversary who can edit workflows:
+    workflow changes are themselves owner decisions at the merge gate.
     """
-    for found in re.finditer(r"(?m)^( *)permissions:[ \t]*([^#\n]*?)[ \t]*(?:#.*)?$", block):
-        indent, inline = found.group(1), found.group(2)
-        if inline:
-            if inline not in ("read-all", "{}"):
-                return True  # write-all, or a form this reader does not accept
-            continue
-        children = re.match(rf"((?:{indent} +\S.*\n?)*)", block[found.end() + 1 :]).group(1)
-        for line in children.splitlines():
-            pair = re.fullmatch(r" +([a-z-]+): *([a-z-]+) *(?:#.*)?", line)
-            if not pair or pair.group(2) not in _ACCESS or pair.groups() == ("checks", "write"):
-                return True
-    for step in re.split(r"(?m)^(?= *- )", block):
-        inputs = re.findall(r"(?m)^ *permission-([\w-]+):[ \t]*(.*?)[ \t]*(?:#.*)?$", step)
-        if "create-github-app-token" in step and not inputs:
+    for raw in block.splitlines():
+        if raw.lstrip().startswith("#"):
+            continue  # a whole-line comment
+        line = raw if ("'" in raw or '"' in raw) else re.sub(r"\s#.*", "", raw)  # a quoted # stays
+        if re.search(r"\bchecks\b", line) and not re.fullmatch(r" *checks: *(read|none) *", line):
             return True
-        if any(v not in ("read", "write") or (k, v) == ("checks", "write") for k, v in inputs):
+        if re.search(r"<<:|(?:^|[:\-])\s+\*[\w-]+\s*$", line):
+            return True
+        inline = re.fullmatch(r" *permissions:[ \t]*(.*?)[ \t]*", line)
+        if inline and inline.group(1) not in ("", "read-all", "{}"):
+            return True
+    for step in re.split(r"(?m)^(?= *- )", block):
+        if "create-github-app-token" in step and not re.search(r"(?m)^ *permission-[\w-]+:", step):
             return True
     return False
 
