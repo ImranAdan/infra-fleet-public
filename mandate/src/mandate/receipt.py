@@ -28,8 +28,10 @@ from urllib.parse import quote
 
 from mandate import ledger as l
 from mandate.decision import REGISTRY, Decision, worst
+from mandate.evidence import EvidenceRecord
 
 SCHEMA_VERSION = 1
+DECISION_ID = re.compile(r"d-[0-9a-f]{64}")  # fullmatch; other ledger records (drills) differ
 CHECK_NAME = "mandate/decision"  # the required check: live decisions only
 SHADOW_CHECK_NAME = "mandate/shadow"  # never required; GitHub counts neutral as passing
 SHADOW = "shadow"  # the enforcement snapshot of a decision that grants nothing
@@ -230,7 +232,8 @@ def _well_formed(receipt: dict[str, Any]) -> bool:
     """Every field reconciliation reads, at its type."""
     subject, decision = receipt.get("subject"), receipt.get("decision")
     return (
-        isinstance(receipt.get("decision_id"), str)
+        receipt.get("schema_version") == SCHEMA_VERSION
+        and isinstance(receipt.get("decision_id"), str)
         and isinstance(subject, dict)
         and all(isinstance(subject.get(k), str) for k in ("repository", "head_sha", "base_sha", "policy", "enforcement"))
         and type(subject.get("pull_request")) is int
@@ -253,7 +256,33 @@ def _well_formed(receipt: dict[str, Any]) -> bool:
         and receipt["decision_id"] == "d-" + receipt["subject_digest"].removeprefix("sha256:")
         and decision.get("subject") == {k: subject[k] for k in ("repository", "head_sha", "base_sha", "policy")}
         and decision.get("policy") == subject["policy"]
+        and (decision["outcome"] != "AUTHORIZE" or _proven(decision, subject))
     )
+
+
+def _proven(decision: dict[str, Any], subject: dict[str, Any]) -> bool:
+    """An AUTHORIZE is what decide() returns only when every finding matched an
+    authorizing class, and authorizing classes must require evidence: so it
+    names at least one class and accepted evidence, each record valid,
+    successful and about exactly this head and policy. (A receipt records a
+    decision; re-deriving it from its inputs is historical replay, KAN-27.)"""
+    classes, accepted = decision.get("classes"), decision.get("accepted")
+    if not (isinstance(classes, list) and classes and all(isinstance(c, str) for c in classes)):
+        return False
+    if not (isinstance(accepted, list) and accepted):
+        return False
+    for item in accepted:
+        records = item.get("records") if isinstance(item, dict) else None
+        if not (isinstance(item.get("requirement"), str) and isinstance(records, list) and records):
+            return False
+        for raw in records:
+            try:
+                record = EvidenceRecord.from_dict(raw)
+            except (ValueError, TypeError, AttributeError):
+                return False
+            if (record.conclusion, record.head_sha, record.policy) != ("success", subject["head_sha"], subject["policy"]):
+                return False
+    return True
 
 
 def _newest(
@@ -261,27 +290,32 @@ def _newest(
 ) -> dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]]:
     """Check name -> (entry, receipt, PRs) to show for this head.
 
-    The required check follows the newest decision of any mode, so a shadow
-    decision that supersedes a live one retires it; the shadow check follows
-    the newest shadow decision. PRs: every PR with such a decision on the head.
+    PRs: those whose latest decision is about this head (a PR that moved to
+    another commit no longer counts). The required check follows the newest
+    of their decisions in any mode, so a shadow decision that supersedes a
+    live one retires it; the shadow check follows the newest shadow one.
     """
-    found: dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]] = {}
+    decisions: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for entry in entries:
+        if not DECISION_ID.fullmatch(entry["decision_id"]):
+            continue  # not a decision (the drill's records share the ledger)
         name = f"{entry['decision_id']}/{entry['receipt_revision']}"
         try:
             receipt = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])
         except ValueError:
             raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is not JSON") from None
-        if not isinstance(receipt, dict) or receipt.get("schema_version") != SCHEMA_VERSION:
-            continue  # another schema sharing the ledger (the drill's): not a decision
-        if not _well_formed(receipt):
-            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is malformed")
+        if not isinstance(receipt, dict) or not _well_formed(receipt):
+            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is malformed or of an unsupported schema")
+        if receipt["subject"]["repository"] == repo:
+            decisions.append((entry, receipt))
+    latest = {receipt["subject"]["pull_request"]: receipt for _, receipt in decisions}
+    prs = sorted(pr for pr, receipt in latest.items() if receipt["subject"]["head_sha"] == head)
+    found: dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]] = {}
+    for entry, receipt in decisions:
         s = receipt["subject"]
-        about, enforcement, pr = (s["repository"], s["head_sha"]), s["enforcement"], s["pull_request"]
-        if about == (repo, head):
-            names = [CHECK_NAME] + ([SHADOW_CHECK_NAME] if enforcement == SHADOW else [])
+        if s["head_sha"] == head and s["pull_request"] in prs:
+            names = [CHECK_NAME] + ([SHADOW_CHECK_NAME] if s["enforcement"] == SHADOW else [])
             for name in names:
-                prs = sorted({*found.get(name, ({}, {}, []))[2], pr})
                 found[name] = (entry, receipt, prs)
     return found
 

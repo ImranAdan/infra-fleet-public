@@ -137,17 +137,22 @@ through `ledger.append()` (KAN-26).
     required name, because GitHub counts `neutral` as passing a required
     check. A shadow decision that supersedes a live one fails the existing
     required check run, and a head with only shadow decisions gets no required check run.
-  - **Shared head:** checks belong to a commit, so if two PRs have decisions
-    on the same head, the check fails closed. The title gives the count (it
+  - **Shared head:** checks belong to a commit, so if two PRs whose latest
+    decisions are about the same head both have decisions there, the check
+    fails closed. A PR that moved to another commit no longer counts. The title gives the count (it
     is limited to 255 characters) and the summary lists the PRs.
   - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
   - **Other receipts:** receipts of another schema in the same ledger (the
     drill's) are skipped. A receipt that claims this schema gives
     `LEDGER_INVALID` if it lacks a field reconciliation reads, or if it isn't
     one `decide()` could produce: unregistered reasons, an outcome other than
-    the worst of its reasons, or an identity that isn't its subject's (the ID
+    the worst of its reasons, an identity that isn't its subject's (the ID
     and digest must recompute from the subject, and the decision inside must
-    be about the same head, base and policy). `record()` refuses such a receipt as
+    be about the same head, base and policy), an unsupported schema, or an
+    AUTHORIZE without the classes and accepted evidence `decide()` requires.
+    That evidence must be valid, successful records about this head and
+    policy. A receipt records a decision; re-deriving it from its inputs is
+    historical replay (KAN-27). `record()` refuses such a receipt as
     `CONTRACT_ERROR`.
   - **Fail closed:** if anything stops the reconcile showing the current
     decision (an unreadable ledger or receipt, a provider error, nothing

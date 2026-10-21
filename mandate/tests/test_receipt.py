@@ -34,9 +34,22 @@ APP = 5336871  # the publisher App; runs from other Apps are never touched
 ENF = "sha256:" + "e" * 64  # a live enforcement snapshot
 
 
+def proof(subject: e.Subject) -> e.EvidenceRecord:
+    """A successful intent-gate record about exactly this subject."""
+    return e.EvidenceRecord(
+        version=e.VERSION, check="Intent gate / Declared intent", conclusion="success",
+        app_id=e.ACTIONS_APP_ID, app_slug="github-actions", check_run_id=70, check_suite_id=700,
+        run_id=7, run_attempt=1, workflow=".github/workflows/intent-gate.yml", event="pull_request",
+        head_branch="x", repository=subject.repository, head_sha=subject.head_sha,
+        base_sha=subject.base_sha, policy=subject.policy, started_at=None, completed_at=None,
+    )
+
+
 def decision(outcome: str = "AUTHORIZE", subject: e.Subject = SUBJECT) -> m.Decision:
-    reasons = () if outcome == "AUTHORIZE" else (m.reason("UNCLASSIFIED", "x.py"),)
-    return m.Decision(outcome, reasons, (), (), POLICY, subject)
+    """What decide() returns: AUTHORIZE names its classes and accepted evidence."""
+    if outcome == "AUTHORIZE":
+        return m.Decision(outcome, (), ("docs",), (("intent-gate", (proof(subject),)),), POLICY, subject)
+    return m.Decision(outcome, (m.reason("UNCLASSIFIED", "x.py"),), (), (), POLICY, subject)
 
 
 def build(dec: m.Decision, at: str = "2026-10-21T00:00:00Z", enforcement: str = "shadow") -> dict:
@@ -289,6 +302,15 @@ def main() -> int:
         r.record(shared, REPO, REF, r.build(decision(), n, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
     r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP)
     assert len(ck_s.runs[0]["output"]["title"]) <= 255 and "113 PRs" in ck_s.runs[0]["output"]["title"]
+    # A PR that moved to another commit no longer shares this head.
+    r.record(shared, REPO, REF, r.build(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY)), 8, ENF,
+                                         versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
+    for n in range(9, 120):
+        r.record(shared, REPO, REF, r.build(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY)), n, ENF,
+                                             versions=VERSIONS, actors=ACTORS, evaluated_at="t"))
+    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP)
+    assert visible(ck_s) == [("success", "AUTHORIZE (r1)")], visible(ck_s)
+
     # A shadow decision that supersedes a live AUTHORIZE retires the required
     # check: shadow grants nothing, so mandate/decision must not stay green.
     to_shadow, ck_ts = FakeGit(), FakeChecks()
@@ -329,7 +351,7 @@ def main() -> int:
             l.append(gone, REPO, REF, odd_receipt["decision_id"], "r2", l.canonical(odd_receipt),
                      odd_receipt["subject_digest"], "ESCALATE", "t")
         else:
-            l.append(gone, REPO, REF, "d-x", "r1", b"not json", l.digest(b"s"), "BLOCK", "t")
+            l.append(gone, REPO, REF, "d-" + "a" * 64, "r1", b"not json", l.digest(b"s"), "BLOCK", "t")
         refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_g, gone), REPO, REF, HEAD, app_id=APP))
         assert visible(ck_g) == [("failure", "LEDGER_INVALID")], (raw, visible(ck_g))
     # A provider error while showing a newer ESCALATE still fails the green run.
@@ -383,6 +405,23 @@ def main() -> int:
     l.append(graft, REPO, REF, planted["decision_id"], "r1", l.canonical(planted), planted["subject_digest"], "AUTHORIZE", "t")
     refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_gr, graft), REPO, REF, HEAD, app_id=APP))
     assert visible(ck_gr) == [("failure", "LEDGER_INVALID")], visible(ck_gr)
+    # An AUTHORIZE decide() could not have produced: reasons deleted (no class,
+    # no evidence), or evidence about another head. And an unsupported
+    # decision schema is refused, never skipped in favour of an older receipt.
+    fabricated = enforced(decision("ESCALATE"))
+    fabricated["decision"] = {**fabricated["decision"], "outcome": "AUTHORIZE", "reasons": []}
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, fabricated)
+    elsewhere = enforced(decision())
+    elsewhere["decision"]["accepted"][0]["records"][0]["head_sha"] = "f" * 40
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, elsewhere)
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, {**enforced(decision("ESCALATE")), "schema_version": 2})
+    future, ck_fu = FakeGit(), FakeChecks()
+    r.record(future, REPO, REF, enforced(decision()))
+    r.reconcile_check(both(ck_fu, future), REPO, REF, HEAD, app_id=APP)
+    v2 = {**enforced(decision("ESCALATE"), at="later"), "schema_version": 2, "receipt_revision": "r2"}
+    l.append(future, REPO, REF, v2["decision_id"], "r2", l.canonical(v2), v2["subject_digest"], "ESCALATE", "t")
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_fu, future), REPO, REF, HEAD, app_id=APP))
+    assert visible(ck_fu) == [("failure", "LEDGER_INVALID")], visible(ck_fu)
     # A ledger reset to empty leaves nothing authorizing this head: fail closed.
     reset, ck_re = FakeGit(), FakeChecks()
     r.record(reset, REPO, REF, enforced(decision()))
