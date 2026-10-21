@@ -165,6 +165,13 @@ def publish_check(
     existing = next((x for x in runs if x.get("external_id") == did), None)
     if existing is None:
         return api("POST", f"repos/{repo}/check-runs", {**payload, "head_sha": head})
+    # Never move the check back to a superseded revision. ponytail: the Checks
+    # API has no compare-and-swap, so a GET/PATCH race can still land a stale
+    # revision; consumers must take the latest revision from the ledger, as
+    # trailers() does with a fresh decision, never from this check alone.
+    shown_revision = re.search(rf"`{re.escape(did)}/r(\d+)`", (existing.get("output") or {}).get("summary") or "")
+    if shown_revision and int(shown_revision.group(1)) > int(revision.removeprefix("r")):
+        return existing
     shown = existing.get("output") or {}
     if existing.get("conclusion") == conclusion and all(
         shown.get(k) == v for k, v in payload["output"].items()

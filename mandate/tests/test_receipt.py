@@ -144,6 +144,9 @@ def main() -> int:
     r.publish_check(checks, REPO, build(decision("ESCALATE")), second, second["entry_digest"], shadow=False)
     assert checks.writes == 2 and len(checks.runs) == 1
     assert checks.runs[0]["conclusion"] == "failure" and "r2" in checks.runs[0]["output"]["title"]
+    # A delayed publisher of a superseded revision never replaces the newer one.
+    r.publish_check(checks, REPO, receipt, first, head1, shadow=False)
+    assert checks.writes == 2 and "r2" in checks.runs[0]["output"]["title"], checks.runs[0]
 
     # The summary stays within GitHub's 65535-character output limit.
     many = m.Decision(

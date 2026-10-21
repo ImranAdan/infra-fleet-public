@@ -127,7 +127,10 @@ through `ledger.append()` (KAN-26).
   same revision makes it re-read and take the next.
 - **Check run:** `publish_check()` keeps one `mandate/decision` check run per
   decision ID showing the latest revision. It writes nothing when that is
-  already shown, and its conclusion is `neutral` in shadow mode.
+  already shown, and its conclusion is `neutral` in shadow mode. It never
+  moves the check back to an older revision. The Checks API has no
+  compare-and-swap, though, so the ledger, not the check, is the authority
+  for which revision is latest.
 - **Merge trailers:** `trailers()` gives `Mandate-Decision`,
   `Mandate-Receipt-Digest` and `Mandate-Chain-Head`. It does so only for an
   AUTHORIZE receipt whose bytes are the recorded revision and which a fresh
