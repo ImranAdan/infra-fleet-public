@@ -330,6 +330,12 @@ def main() -> int:
     refused("CONTRACT_ERROR", lambda: r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert all(c == "failure" for c, _ in visible(ck_s)), visible(ck_s)
     ck_s.open_prs = set(range(1, 200))
+    # A PR reopened while a reconcile runs is seen before it returns.
+    ck_s.open_prs = {7}
+    ck_s.before_write = lambda: ck_s.open_prs.add(8)
+    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    assert visible(ck_s) == [("failure", "AUTHORIZE (r1), head shared by 2 PRs")], visible(ck_s)
+    ck_s.open_prs = set(range(1, 200))
     # A PR that moved to another commit no longer shares this head.
     r.record(shared, REPO, REF, r.build(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY)), 8, ENF,
                                          versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
@@ -515,6 +521,16 @@ def main() -> int:
     old_registry["decision"]["registry_version"] = 1
     refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, old_registry, DELEG)
 
+    # Each receipt is bound to its index entry: an old AUTHORIZE re-appended
+    # under an entry that names another revision and ESCALATE cannot win.
+    rebound, ck_rb = FakeGit(), FakeChecks()
+    first_ok, _, _ = r.record(rebound, REPO, REF, enforced(decision()), DELEG)
+    r.record(rebound, REPO, REF, enforced(decision("ESCALATE")), DELEG)
+    r.reconcile_check(both(ck_rb, rebound), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    old_bytes = receipts(rebound)[l.receipt_path(first_ok["decision_id"], "r1")]
+    l.append(rebound, REPO, REF, first_ok["decision_id"], "r3", old_bytes, first_ok["subject_digest"], "ESCALATE", "t")
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_rb, rebound), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
+    assert visible(ck_rb) == [("failure", "LEDGER_INVALID")], visible(ck_rb)
     # A ledger reset to empty leaves nothing authorizing this head: fail closed.
     reset, ck_re = FakeGit(), FakeChecks()
     r.record(reset, REPO, REF, enforced(decision()), DELEG)

@@ -140,9 +140,15 @@ through `ledger.append()` (KAN-26).
   - **Shared head:** checks belong to a commit, so if two open PRs whose
     latest decisions are about the same head both have decisions there, the
     check fails closed. A PR that moved to another commit no longer counts,
-    and neither does one GitHub no longer lists as open on the commit. The title gives the count (it
+    and neither does one GitHub no longer lists as open on the commit. PR
+    state changes outside the writer group, so the reconcile re-reads it
+    before returning. The live workflow (KAN-28) must also run on PR open,
+    reopen and close events. The title gives the count (it
     is limited to 255 characters) and the summary lists the PRs.
   - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
+  - **Index binding:** each receipt's decision ID, revision, subject digest
+    and outcome must equal its index entry's, so an old receipt re-appended
+    under another entry gives `LEDGER_INVALID`.
   - **Other receipts:** receipts of another schema in the same ledger (the
     drill's) are skipped. A receipt that claims this schema gives
     `LEDGER_INVALID` if it lacks a field reconciliation reads, or if it isn't

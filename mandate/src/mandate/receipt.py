@@ -353,6 +353,11 @@ def _newest(
             raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is not JSON") from None
         if not isinstance(receipt, dict) or not _well_formed(receipt):
             raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is malformed or of an unsupported schema")
+        # The index orders decisions and the receipt carries them: they must agree.
+        if (entry["decision_id"], entry["receipt_revision"], entry["subject_digest"], entry["outcome"]) != (
+            receipt["decision_id"], receipt.get("receipt_revision"), receipt["subject_digest"], receipt["decision"]["outcome"]
+        ):
+            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} does not match its index entry")
         if receipt["subject"]["repository"] == repo:
             decisions.append((entry, receipt))
     latest = {receipt["subject"]["pull_request"]: receipt for _, receipt in decisions}
@@ -457,8 +462,9 @@ def _reconcile(
                 # Never pass a required check on an AUTHORIZE its delegation does not support.
                 raise l.LedgerError("LEDGER_INVALID", f"AUTHORIZE {entry['decision_id']} does not hold under its delegation")
             _show(api, repo, name, receipt, entry, entries[-1]["entry_digest"], app_id, prs)
-        now = _newest(*_verified(api, repo, ref), repo, head, open_prs)
-        if {k: v[0] for k, v in now.items()} == {k: v[0] for k, v in shown.items()}:
+        # PR state is outside the writer group: re-read it with the ledger.
+        now = _newest(*_verified(api, repo, ref), repo, head, _open_prs(api, repo, head))
+        if {k: (v[0], v[2]) for k, v in now.items()} == {k: (v[0], v[2]) for k, v in shown.items()}:
             return {k: v[0] for k, v in shown.items()}
     raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {repo}@{head}")
 
