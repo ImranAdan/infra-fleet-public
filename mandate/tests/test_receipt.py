@@ -360,6 +360,29 @@ def main() -> int:
     l.append(liar, REPO, REF, lie["decision_id"], "r2", l.canonical(lie), lie["subject_digest"], "AUTHORIZE", "t")
     refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_li, liar), REPO, REF, HEAD, app_id=APP))
     assert visible(ck_li) == [("failure", "LEDGER_INVALID")], visible(ck_li)
+    # A receipt whose outer subject was changed (its ID, digest and decision
+    # still name the decided head) cannot move an authorization to another head.
+    moved_receipt = enforced(decision())
+    moved_receipt["subject"] = {**moved_receipt["subject"], "head_sha": "f" * 40}
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, moved_receipt)
+    # ... even with its ID and digest recomputed for the new head (the
+    # decision inside is still about the old one) ...
+    regrafted = {**moved_receipt, "subject_digest": l.digest(l.canonical(moved_receipt["subject"]))}
+    regrafted["decision_id"] = "d-" + regrafted["subject_digest"].removeprefix("sha256:")
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, regrafted)
+    # ... and an ID that is not its subject's is refused on its own.
+    renamed = {**enforced(decision()), "decision_id": "d-" + "0" * 64}
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, renamed)
+    forged = {**enforced(decision()), "subject_digest": "sha256:" + "1" * 64, "decision_id": "d-" + "1" * 64}
+    refused("CONTRACT_ERROR", r.record, FakeGit(), REPO, REF, forged)
+    graft, ck_gr = FakeGit(), FakeChecks()
+    r.record(graft, REPO, REF, enforced(decision("ESCALATE")))
+    r.reconcile_check(both(ck_gr, graft), REPO, REF, HEAD, app_id=APP)
+    planted = {**enforced(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY))), "receipt_revision": "r1"}
+    planted["subject"] = {**planted["subject"], "head_sha": HEAD}
+    l.append(graft, REPO, REF, planted["decision_id"], "r1", l.canonical(planted), planted["subject_digest"], "AUTHORIZE", "t")
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_gr, graft), REPO, REF, HEAD, app_id=APP))
+    assert visible(ck_gr) == [("failure", "LEDGER_INVALID")], visible(ck_gr)
     # A ledger reset to empty leaves nothing authorizing this head: fail closed.
     reset, ck_re = FakeGit(), FakeChecks()
     r.record(reset, REPO, REF, enforced(decision()))
@@ -424,6 +447,8 @@ def main() -> int:
         "comment.yml": (wf(a="    # this job never writes checks: write\n    steps: []\n"), []),
         "merge-key.yml": (wf(a="    permissions:\n      <<: *perms\n"), ["merge-key.yml:a"]),
         "quoted-hash.yml": (wf(a="    permissions: {name: 'x #', checks: write}\n"), ["quoted-hash.yml:a"]),
+        "direct-api.yml": (wf(a="    steps:\n      - run: gh api -X POST repos/o/r/check-runs -f name=x\n"), ["direct-api.yml:a"]),
+        "graphql.yml": (wf(a="    steps:\n      - run: gh api graphql -f query='mutation { createCheckRun(input: {}) { clientMutationId } }'\n"), ["graphql.yml:a"]),
         "quoted-input.yml": (
             wf(a="    steps:\n      - with: {note: 'a #', permission-checks: write}\n"),
             ["quoted-input.yml:a"],

@@ -203,6 +203,7 @@ policies/               Shared and profile-specific Kyverno policies
 scripts/                Lifecycle, rendering, validation and onboarding tools
 ops/                    Operational verification
 tests/profiles/         Profile and application-contract tests
+mandate/                Merge decision engine: delegation, evidence, receipts (mandate/README.md)
 docs/                   Operating guides and design records
 .github/workflows/      Validation, release and deployment automation
 ```

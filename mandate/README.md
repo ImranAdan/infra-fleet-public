@@ -144,8 +144,10 @@ through `ledger.append()` (KAN-26).
   - **Other receipts:** receipts of another schema in the same ledger (the
     drill's) are skipped. A receipt that claims this schema gives
     `LEDGER_INVALID` if it lacks a field reconciliation reads, or if it isn't
-    one `decide()` could produce: unregistered reasons, or an outcome other
-    than the worst of its reasons. `record()` refuses such a receipt as
+    one `decide()` could produce: unregistered reasons, an outcome other than
+    the worst of its reasons, or an identity that isn't its subject's (the ID
+    and digest must recompute from the subject, and the decision inside must
+    be about the same head, base and policy). `record()` refuses such a receipt as
     `CONTRACT_ERROR`.
   - **Fail closed:** if anything stops the reconcile showing the current
     decision (an unreadable ledger or receipt, a provider error, nothing
@@ -181,6 +183,8 @@ through `ledger.append()` (KAN-26).
   - a line mentions `checks` other than as `checks: read` or `checks: none`
     (so `checks: write`, `permission-checks: write`, flow mappings and quoted
     values all count);
+  - it calls the Checks API directly (`check-runs`, `createCheckRun`,
+    `updateCheckRun`), whatever token it uses;
   - an inline `permissions:` value is anything but `read-all` or `{}` (so
     `write-all`);
   - it uses a YAML alias or merge key;

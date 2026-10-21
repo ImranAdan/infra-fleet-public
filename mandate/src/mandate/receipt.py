@@ -247,6 +247,12 @@ def _well_formed(receipt: dict[str, Any]) -> bool:
             REGISTRY.get(x["code"].split(":", 1)[0]) == (x["outcome"], x["owner"]) for x in decision["reasons"]
         )
         and decision["outcome"] == worst([x["outcome"] for x in decision["reasons"]])
+        # Its identity is its subject: the ID and digest recompute from it, and
+        # the decision inside is about the same head, base and policy.
+        and receipt.get("subject_digest") == l.digest(l.canonical(subject))
+        and receipt["decision_id"] == "d-" + receipt["subject_digest"].removeprefix("sha256:")
+        and decision.get("subject") == {k: subject[k] for k in ("repository", "head_sha", "base_sha", "policy")}
+        and decision.get("policy") == subject["policy"]
     )
 
 
@@ -366,7 +372,8 @@ def _may_write_checks(block: str) -> bool:
     line (so blank lines or nesting hide nothing) and failing closed.
 
     A line can write checks if, outside comments, it mentions ``checks`` other
-    than as ``checks: read|none``, or sets ``permissions:`` inline to anything
+    than as ``checks: read|none``, calls the Checks API directly (``check-runs``,
+    ``createCheckRun``), or sets ``permissions:`` inline to anything
     but ``read-all`` or ``{}`` (so ``write-all``), or uses a YAML alias or
     merge key. An App token step without ``permission-*`` inputs also counts:
     it carries every App permission, and the Mandate App has checks: write.
@@ -380,6 +387,8 @@ def _may_write_checks(block: str) -> bool:
         line = raw if ("'" in raw or '"' in raw) else re.sub(r"\s#.*", "", raw)  # a quoted # stays
         if re.search(r"\bchecks\b", line) and not re.fullmatch(r" *checks: *(read|none) *", line):
             return True
+        if re.search(r"check-runs|check_runs|(?i:createCheckRun|updateCheckRun)", line):
+            return True  # a direct Checks API call, whatever token it uses
         if re.search(r"<<:|(?:^|[:\-])\s+\*[\w-]+\s*$", line):
             return True
         inline = re.fullmatch(r" *permissions:[ \t]*(.*?)[ \t]*", line)
