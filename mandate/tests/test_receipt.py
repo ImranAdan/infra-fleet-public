@@ -185,6 +185,12 @@ def main() -> int:
     ck0 = FakeChecks()
     r.reconcile_check(both(ck0, live), REPO, REF, did, app_id=APP)
     assert visible(ck0) == [("success", "AUTHORIZE (r1)")], visible(ck0)
+    # Only a live sha256 snapshot can pass; any other enforcement fails closed.
+    odd = FakeGit()
+    odd_id = r.record(odd, REPO, REF, build(decision(), enforcement="live"))[0]["decision_id"]
+    ck_odd = FakeChecks()
+    r.reconcile_check(both(ck_odd, odd), REPO, REF, odd_id, app_id=APP)
+    assert visible(ck_odd) == [("failure", "AUTHORIZE (r1)")], visible(ck_odd)
 
     # A run from another App with the same name and external_id is not ours:
     # we publish our own and never touch it.
@@ -239,6 +245,10 @@ def main() -> int:
     serial = f"    concurrency:\n      group: {group}\n      cancel-in-progress: false\n"
     write = "    steps:\n      - run: python3 -m mandate.receipt reconcile\n"
     top = f"concurrency:\n  group: '{group}'\n  cancel-in-progress: false\n"
+    token = (
+        "    steps:\n      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1\n"
+        "        with:\n          client-id: x\n"
+    )
     cases = {
         "job.yml": (wf(writer=serial + write), []),
         "top.yml": (wf(top, writer=write), []),
@@ -252,6 +262,16 @@ def main() -> int:
         "app.yml": (wf(a="    steps:\n      - with:\n          permission-checks: write\n"), ["app.yml:a"]),
         "path.yml": (wf(a="    steps:\n      - run: python3 mandate/src/mandate/receipt.py\n"), ["path.yml:a"]),
         "read.yml": (wf("permissions:\n  checks: read\n", a="    steps: []\n"), []),
+        "write-all.yml": (wf("permissions: write-all\n", a="    steps: []\n"), ["write-all.yml:a"]),
+        "job-write-all.yml": (wf(a="    permissions: write-all\n"), ["job-write-all.yml:a"]),
+        # An App token minted without permission inputs carries every App
+        # permission, which for the Mandate App includes checks: write.
+        "token.yml": (wf(a=token), ["token.yml:a"]),
+        "scoped.yml": (wf(a=token + "          permission-contents: write\n"), []),
+        "two-tokens.yml": (
+            wf(a=token + "          permission-contents: write\n" + token.replace("    steps:\n", "")),
+            ["two-tokens.yml:a"],
+        ),
         "tests.yml": (wf(a="    steps:\n      - run: python3 mandate/tests/test_receipt.py\n"), []),
         "odd.yml": ("jobs:\n    a:\n        steps:\n          - run: python3 -m mandate.receipt\n", ["odd.yml:?"]),
     }

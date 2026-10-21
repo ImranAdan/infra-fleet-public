@@ -131,7 +131,8 @@ through `ledger.append()` (KAN-26).
   publisher App* for that decision show the latest revision; another App's run
   with the same name is never touched. It writes nothing when that is already
   shown. The conclusion comes from the receipt's recorded enforcement, never a
-  caller flag: a shadow receipt is always `neutral`. The summary is capped at
+  caller flag. Only a live `sha256:` snapshot can pass, a shadow receipt is
+  always `neutral`, and any other value fails. The summary is capped at
   65,535 UTF-8 bytes, cut on a character boundary.
 - **One writer per pull request:** GitHub's ruleset reads the check's
   conclusion, and the Checks API has no compare-and-swap. So every job that
@@ -140,7 +141,19 @@ through `ledger.append()` (KAN-26).
   `cancel-in-progress: false`. That means writers are workflows called with a
   `pr` input, so every caller computes the same group.
   `serial_violations()` checks this per job over `.github/workflows/` in the
-  tests, and fails closed on a workflow it can't parse.
+  tests, and fails closed on a workflow it can't parse. A job counts as a
+  writer if it:
+  - uses `mandate.receipt`;
+  - grants `checks: write` or `write-all`;
+  - mints an App token with `permission-checks: write`;
+  - mints an App token with no `permission-*` inputs at all, because that
+    token carries all of the App's permissions, and the Mandate App has
+    `checks: write`.
+
+  Jobs that declare no permissions get the repository default, which is
+  `read` (`gh api repos/ImranAdan/infra-fleet-public/actions/permissions/workflow`
+  → `"default_workflow_permissions":"read"`). Changing that default to
+  `write` would bypass this check.
   - **Why it's safe:** GitHub runs at most one job in a group at a time. A
     newer pending run replaces an older pending one, and because it
     reconciles from the ledger, it loses nothing.

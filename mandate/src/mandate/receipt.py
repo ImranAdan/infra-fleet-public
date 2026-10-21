@@ -37,7 +37,8 @@ LIVE = re.compile(r"^sha256:[0-9a-f]{64}$")  # a real enforcement snapshot diges
 # so every caller computes this same group.
 CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.pr }}"
 _WRITES = re.compile(
-    r"(?m)mandate(\.| import )receipt|src/mandate/receipt\.py|^\s*(permission-)?checks:\s*write\b"
+    r"(?m)mandate(\.| import )receipt|src/mandate/receipt\.py"
+    r"|^\s*(permission-)?checks:\s*write\b|^\s*permissions:\s*write-all\b"
 )
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
 _TRAILER = re.compile(rf"(?m)^({'|'.join(TRAILERS)}): (\S+)$")
@@ -150,9 +151,12 @@ def _show(
     """Make every ``mandate/decision`` run of ours for this decision show this revision."""
     head, did = receipt["subject"]["head_sha"], receipt["decision_id"]
     outcome, revision = receipt["decision"]["outcome"], entry["receipt_revision"]
-    # From the recorded snapshot, never a caller flag: shadow can't be made to pass.
-    shadow = receipt["subject"]["enforcement"] == SHADOW
-    conclusion = "neutral" if shadow else ("success" if outcome == "AUTHORIZE" else "failure")
+    # From the recorded snapshot, never a caller flag: only a live sha256
+    # snapshot can pass, shadow is neutral, anything else fails closed.
+    enforcement = receipt["subject"]["enforcement"]
+    shadow = enforcement == SHADOW
+    passes = outcome == "AUTHORIZE" and bool(LIVE.match(enforcement))
+    conclusion = "neutral" if shadow else ("success" if passes else "failure")
     reasons = "".join(
         f"\n- `{x['code']}` ({x['outcome']}, {x['owner']}): {x['detail'][:200]}"
         for x in receipt["decision"]["reasons"]
@@ -240,6 +244,15 @@ def _serialized(block: str) -> bool:
     )
 
 
+def _unscoped_token(block: str) -> bool:
+    """An App token step without permission inputs carries every App
+    permission (the Mandate App has checks: write), so it counts as a writer."""
+    return any(
+        "create-github-app-token" in step and not re.search(r"(?m)^\s*permission-[\w-]+:", step)
+        for step in re.split(r"(?m)^(?= *- )", block)
+    )
+
+
 def serial_violations(workflows: dict[str, str]) -> list[str]:
     """``file:job`` for each job that records receipts or can write checks
     outside the canonical per-PR concurrency group."""
@@ -250,7 +263,7 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
         if not jobs and _WRITES.search(text):
             bad.append(f"{name}:?")  # writes, but no job this parser can read: fail closed
         for job, block in jobs:
-            writes = _WRITES.search(header) or _WRITES.search(block)
+            writes = _WRITES.search(header) or _WRITES.search(block) or _unscoped_token(block)
             if writes and not (_serialized(header) or _serialized(block)):
                 bad.append(f"{name}:{job}")
     return bad
