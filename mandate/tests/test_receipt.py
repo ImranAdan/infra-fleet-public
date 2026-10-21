@@ -263,6 +263,15 @@ def main() -> int:
         "path.yml": (wf(a="    steps:\n      - run: python3 mandate/src/mandate/receipt.py\n"), ["path.yml:a"]),
         "read.yml": (wf("permissions:\n  checks: read\n", a="    steps: []\n"), []),
         "write-all.yml": (wf("permissions: write-all\n", a="    steps: []\n"), ["write-all.yml:a"]),
+        # Only canonical permissions are read; any other YAML form fails closed.
+        "flow.yml": (wf("permissions: {checks: write}\n", a="    steps: []\n"), ["flow.yml:a"]),
+        "quoted.yml": (wf(a="    permissions:\n      checks: 'write'\n"), ["quoted.yml:a"]),
+        "alias.yml": (wf(a="    permissions: *perms\n"), ["alias.yml:a"]),
+        "empty.yml": (wf("permissions: {}\n", a="    steps: []\n"), []),
+        "read-all.yml": (wf("permissions: read-all\n", a="    steps: []\n"), []),
+        "block.yml": (wf(a="    permissions:\n      contents: read  # just reads\n      checks: none\n"), []),
+        "token-quoted.yml": (wf(a=token + "          permission-checks: 'write'\n"), ["token-quoted.yml:a"]),
+        "token-checks.yml": (wf(a=token + "          permission-checks: write\n"), ["token-checks.yml:a"]),
         "job-write-all.yml": (wf(a="    permissions: write-all\n"), ["job-write-all.yml:a"]),
         # An App token minted without permission inputs carries every App
         # permission, which for the Mandate App includes checks: write.

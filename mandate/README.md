@@ -141,14 +141,16 @@ through `ledger.append()` (KAN-26).
   `cancel-in-progress: false`. That means writers are workflows called with a
   `pr` input, so every caller computes the same group.
   `serial_violations()` checks this per job over `.github/workflows/` in the
-  tests, and fails closed on a workflow it can't parse. A job counts as a
-  writer if it:
+  tests, and fails closed: a workflow it can't split into jobs, and any
+  permissions it can't read, count as writing. A job counts as a writer if it:
   - uses `mandate.receipt`;
-  - grants `checks: write` or `write-all`;
-  - mints an App token with `permission-checks: write`;
-  - mints an App token with no `permission-*` inputs at all, because that
-    token carries all of the App's permissions, and the Mandate App has
-    `checks: write`.
+  - can write checks: `checks: write` or `write-all`, or an App token input
+    `permission-checks: write`;
+  - mints an App token with no `permission-*` inputs, because that token
+    carries every App permission and the Mandate App has `checks: write`;
+  - writes permissions in any form other than the canonical ones:
+    `read-all`, `{}`, a block of unquoted `key: read|write|none`, or unquoted
+    token inputs. Flow mappings, quoted values and aliases all count.
 
   Jobs that declare no permissions get the repository default, which is
   `read` (`gh api repos/ImranAdan/infra-fleet-public/actions/permissions/workflow`

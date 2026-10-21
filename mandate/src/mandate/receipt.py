@@ -36,10 +36,8 @@ LIVE = re.compile(r"^sha256:[0-9a-f]{64}$")  # a real enforcement snapshot diges
 # One writer per pull request: writers are workflows called with a ``pr`` input,
 # so every caller computes this same group.
 CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.pr }}"
-_WRITES = re.compile(
-    r"(?m)mandate(\.| import )receipt|src/mandate/receipt\.py"
-    r"|^\s*(permission-)?checks:\s*write\b|^\s*permissions:\s*write-all\b"
-)
+_USES_RECEIPTS = re.compile(r"mandate(\.| import )receipt|src/mandate/receipt\.py")
+_ACCESS = ("read", "write", "none")
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
 _TRAILER = re.compile(rf"(?m)^({'|'.join(TRAILERS)}): (\S+)$")
 _CLOCK = ("evaluated_at", "receipt_revision")
@@ -244,13 +242,34 @@ def _serialized(block: str) -> bool:
     )
 
 
-def _unscoped_token(block: str) -> bool:
-    """An App token step without permission inputs carries every App
-    permission (the Mandate App has checks: write), so it counts as a writer."""
-    return any(
-        "create-github-app-token" in step and not re.search(r"(?m)^\s*permission-[\w-]+:", step)
-        for step in re.split(r"(?m)^(?= *- )", block)
-    )
+def _may_write_checks(block: str) -> bool:
+    """Whether a workflow header or job block can write checks.
+
+    Only canonical forms are read: ``permissions:`` as ``read-all``,
+    ``write-all`` or ``{}``, or a block of unquoted ``key: read|write|none``
+    lines; App token ``permission-*`` inputs as unquoted ``read|write``. Any
+    other YAML form (flow mappings, quotes, aliases) counts as a writer, and so
+    does an App token step without permission inputs, which carries every App
+    permission (the Mandate App has checks: write).
+    """
+    for found in re.finditer(r"(?m)^( *)permissions:[ \t]*([^#\n]*?)[ \t]*(?:#.*)?$", block):
+        indent, inline = found.group(1), found.group(2)
+        if inline:
+            if inline not in ("read-all", "{}"):
+                return True  # write-all, or a form this reader does not accept
+            continue
+        children = re.match(rf"((?:{indent} +\S.*\n?)*)", block[found.end() + 1 :]).group(1)
+        for line in children.splitlines():
+            pair = re.fullmatch(r" +([a-z-]+): *([a-z-]+) *(?:#.*)?", line)
+            if not pair or pair.group(2) not in _ACCESS or pair.groups() == ("checks", "write"):
+                return True
+    for step in re.split(r"(?m)^(?= *- )", block):
+        inputs = re.findall(r"(?m)^ *permission-([\w-]+):[ \t]*(.*?)[ \t]*(?:#.*)?$", step)
+        if "create-github-app-token" in step and not inputs:
+            return True
+        if any(v not in ("read", "write") or (k, v) == ("checks", "write") for k, v in inputs):
+            return True
+    return False
 
 
 def serial_violations(workflows: dict[str, str]) -> list[str]:
@@ -260,10 +279,14 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
     for name, text in sorted(workflows.items()):
         header, _, body = text.partition("\njobs:\n")
         jobs = re.findall(r"(?m)^  ([\w-]+):[ \t]*\n((?:(?:    .*)?\n?)*)", body)
-        if not jobs and _WRITES.search(text):
+        if not jobs and (_USES_RECEIPTS.search(text) or _may_write_checks(text)):
             bad.append(f"{name}:?")  # writes, but no job this parser can read: fail closed
         for job, block in jobs:
-            writes = _WRITES.search(header) or _WRITES.search(block) or _unscoped_token(block)
+            writes = (
+                _USES_RECEIPTS.search(header + block)
+                or _may_write_checks(header)
+                or _may_write_checks(block)
+            )
             if writes and not (_serialized(header) or _serialized(block)):
                 bad.append(f"{name}:{job}")
     return bad
