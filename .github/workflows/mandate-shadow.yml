@@ -1,0 +1,58 @@
+name: Mandate shadow decision
+
+# Runs the Mandate decision (mandate/src/mandate/shadow.py) on a pull request
+# once its declared-intent evidence exists, and records the outcome in the job
+# summary and a decision.json artifact. Shadow mode: it reads only and grants
+# nothing; the merge gate still decides READY/PARK until enforcement (G4).
+# The code and this workflow come from the default branch (workflow_run), so a
+# pull request cannot change how its own shadow decision is computed.
+
+on:
+  workflow_run:
+    # Not the retarget variant: every delegation class requires the ordinary
+    # intent-gate producer, so a retargeted PR could only ever VERIFY here.
+    # Accepting either producer is a delegation-semantics change (Codex).
+    workflows: [Intent Gate]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: read
+
+concurrency:
+  group: mandate-shadow-${{ inputs.pr || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  # The owner's delegation (ImranAdan/mandate-delegation), pinned to one commit.
+  MANDATE_DELEGATION_SHA: da6db52b465c99d955e07809bdf135104db3bc7f
+
+jobs:
+  shadow:
+    name: Shadow decision
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.pull_requests[0].number
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Decide in shadow mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr || github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          PYTHONPATH=mandate/src python3 -m mandate.shadow "$GITHUB_REPOSITORY" "$PR" \
+            --delegation-sha "$MANDATE_DELEGATION_SHA" --summary "$GITHUB_STEP_SUMMARY" > decision.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: mandate-shadow-decision
+          path: decision.json
+          retention-days: 90

@@ -129,7 +129,10 @@ def main() -> int:
         e.normalize(check(), {**run(), "repository": {"full_name": "ImranAdan/fork"}}, SUBJECT),
         e.normalize(check(), run(), e.Subject(REPO, HEAD, BASE, POLICY.replace("d" * 40, "e" * 40))),
     ):
-        assert codes([stale]) == ["EVIDENCE_REQUIRED:intent-gate"], (stale, codes([stale]))
+        assert codes([stale]) == ["EVIDENCE_NOT_APPLICABLE:intent-gate"], (stale, codes([stale]))
+    # D-21: the rejection names the provider IDs and the mismatched subject fields.
+    detail = dict(e.evaluate(DELEGATION, ("intent-gate",), [e.normalize(check(), run(base=OTHER), SUBJECT)], SUBJECT).failures)
+    assert detail["EVIDENCE_NOT_APPLICABLE:intent-gate"] == "'Intent gate / Declared intent' check run 70 (run 7) is about another BASE", detail
     assert e.applicability(good, SUBJECT) == ()
     assert e.applicability(e.normalize(check(), run(base=OTHER), SUBJECT), SUBJECT) == ("BASE",)
 

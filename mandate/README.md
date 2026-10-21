@@ -65,7 +65,7 @@ axes and returns typed failures, never an outcome:
 | Axis | Fails when | Failure |
 | --- | --- | --- |
 | Authenticity | The check name matches but the App, workflow path, event or dispatch branch is not the declared producer's | `CHECK_WRONG_SOURCE` |
-| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_REQUIRED:<name>` if nothing current remains |
+| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY, D-21) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields |
 | Sufficiency | The required producer is absent, running, failed, or reports conflicting or unattributable results | `EVIDENCE_REQUIRED`, `EVIDENCE_PENDING`, `EVIDENCE_FAILED:<name>`, `EVIDENCE_CONFLICT` |
 
 A rerun supersedes earlier attempts of the same workflow run; every result of
@@ -91,6 +91,52 @@ Fleet's live gate still decides `READY`/`PARK`. `LEGACY` maps its verdicts
 (`PARK`/`JUDGE` → ESCALATE, `BLOCKED` → BLOCK, `READY` → recompute), and none
 maps to AUTHORIZE.
 
+## Ledger
+
+`mandate.ledger` keeps receipts on a protected branch (KAN-4 page 09, D-20).
+The layout is immutable `v1/receipts/<decision_id>/<revision>.json` files plus
+a hash-chained `v1/ledger.jsonl`.
+
+- **Append:** `append()` is a compare-and-swap. It makes one commit whose only
+  parent is the tip it read, then does a non-force ref update. A concurrent
+  writer is refused and retries.
+- **Retries and collisions:** an identical retry appends nothing. Different
+  bytes at one revision give `RECEIPT_COLLISION`.
+- **Failures:** a broken chain gives `LEDGER_INVALID`. An exhausted race or a
+  provider error gives `LEDGER_UNAVAILABLE`.
+- **Verify:** `verify()` catches middle deletion on its own. It catches tail
+  truncation and full rewrite only while an anchor (merge trailer, unexpired
+  check or owner copy) still names a later head.
+- **Topology check:** `python3 -m mandate.ledger rulesets <repo> <ref> <app>`
+  checks the two-ruleset layout read-only.
+
+The live drill is in `drill/ledger/README.md`.
+
+## Shadow decisions
+
+`mandate.shadow` turns one live pull request into a `DecisionInput` and runs
+`decide()` on it (the KAN-27 adapter; D-23: it adds no outcome or reason). The
+input is built from:
+
+- **Findings:** the engine classifies each file from its own diff, plus
+  reserved surfaces read at the trusted base. A file that appears in the diff
+  but not in the API's file list still counts.
+- **Evidence:** the head's check runs, each correlated to its workflow run.
+- **Policy:** the owner's delegation at a pinned commit.
+
+Facts such as permission deltas aren't computed yet, so classes that need them
+never match. Mechanical refusals belong to the executor (KAN-28).
+
+`.github/workflows/mandate-shadow.yml` runs it from the default branch after
+each Intent Gate run (not the retarget variant, whose producer no class
+requires yet). It writes the outcome to the job summary and a
+`decision.json` artifact. It reads only and grants nothing.
+
+```bash
+PYTHONPATH=mandate/src python3 -m mandate.shadow ImranAdan/infra-fleet-public 222 \
+  --delegation-sha da6db52b465c99d955e07809bdf135104db3bc7f
+```
+
 Test it through the entry point, the way the merge worker runs it:
 
 ```bash
@@ -99,4 +145,6 @@ python3 .claude/skills/merge-gate/judge.py --self-test
 python3 mandate/tests/test_delegation.py
 python3 mandate/tests/test_evidence.py
 python3 mandate/tests/test_decision.py
+python3 mandate/tests/test_shadow.py
+python3 mandate/tests/test_ledger.py
 ```

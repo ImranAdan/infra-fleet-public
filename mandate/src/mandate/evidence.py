@@ -9,6 +9,7 @@ three independent axes, and a green conclusion never shortcuts another:
   path, event, and head branch for dispatches). A ruleset's source binding
   only names the App, which every workflow in the repository shares.
 - applicability: it is about this subject (repository, head, base, policy).
+  Genuine evidence about another subject is EVIDENCE_NOT_APPLICABLE (D-21).
 - sufficiency: the class's named requirements each have one consistent,
   completed, successful result.
 
@@ -193,10 +194,23 @@ def evaluate(
                     f"{'/'.join(authenticity(record, producer))} binding",
                 )
             )
-        current = _latest_attempts(
+        genuine = _latest_attempts(
             [r for r in named if r.run_id is not None and not authenticity(r, producer)]
         )
-        current = [r for r in current if not applicability(r, subject)]
+        current = [r for r in genuine if not applicability(r, subject)]
+        if not current and genuine:
+            # D-21: still obtainable (rerun on this subject), but say why it was refused.
+            failures.append(
+                (
+                    f"EVIDENCE_NOT_APPLICABLE:{name}",
+                    "; ".join(
+                        f"{producer.check!r} check run {r.check_run_id} (run {r.run_id}) is about another "
+                        f"{'/'.join(applicability(r, subject))}"
+                        for r in sorted(genuine, key=lambda r: r.check_run_id)
+                    ),
+                )
+            )
+            continue
         if not current:
             failures.append((f"EVIDENCE_REQUIRED:{name}", f"no current {producer.check!r} from its producer"))
             continue
