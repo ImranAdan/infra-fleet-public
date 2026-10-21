@@ -141,6 +141,22 @@ def record(
     raise l.LedgerError("LEDGER_UNAVAILABLE", f"lost the revision race {l.RETRIES} times")
 
 
+def _runs(api: l.Api, repo: str, head: str, name: str, app_id: int) -> list[dict[str, Any]]:
+    """Every run named ``name`` on ``head`` created by the publisher App."""
+    runs: list[dict[str, Any]] = []
+    for page in range(1, 1000):  # filter=all: the default lists only the newest run
+        data = api(
+            "GET",
+            f"repos/{repo}/commits/{head}/check-runs?check_name={quote(name)}"
+            f"&filter=all&per_page=100&page={page}",
+            None,
+        )
+        runs += data["check_runs"]
+        if not data["check_runs"] or len(runs) >= data["total_count"]:
+            break
+    return [x for x in runs if (x.get("app") or {}).get("id") == app_id]
+
+
 def _show(
     api: l.Api,
     repo: str,
@@ -197,18 +213,7 @@ def _show(
             "summary": summary,
         },
     }
-    runs: list[dict[str, Any]] = []
-    for page in range(1, 1000):  # filter=all: the default lists only the newest run
-        data = api(
-            "GET",
-            f"repos/{repo}/commits/{head}/check-runs?check_name={quote(name)}"
-            f"&filter=all&per_page=100&page={page}",
-            None,
-        )
-        runs += data["check_runs"]
-        if not data["check_runs"] or len(runs) >= data["total_count"]:
-            break
-    mine = [x for x in runs if (x.get("app") or {}).get("id") == app_id]
+    mine = _runs(api, repo, head, name, app_id)
     if not mine and not (shadow and name == CHECK_NAME):  # never open a required run for shadow
         api("POST", f"repos/{repo}/check-runs", {**payload, "head_sha": head})
     for run in mine:  # a past race or an older decision ID; each must show this
@@ -217,6 +222,24 @@ def _show(
             shown.get(k) != v for k, v in payload["output"].items()
         ):  # GitHub adds text and annotation fields we never send
             api("PATCH", f"repos/{repo}/check-runs/{run['id']}", payload)
+
+
+def _well_formed(receipt: dict[str, Any]) -> bool:
+    """Every field reconciliation reads, at its type. (Any outcome but
+    AUTHORIZE already fails, so the outcome itself needs no check.)"""
+    subject, decision = receipt.get("subject"), receipt.get("decision")
+    return (
+        isinstance(receipt.get("decision_id"), str)
+        and isinstance(subject, dict)
+        and all(isinstance(subject.get(k), str) for k in ("repository", "head_sha", "base_sha", "policy", "enforcement"))
+        and type(subject.get("pull_request")) is int
+        and isinstance(decision, dict)
+        and isinstance(decision.get("reasons"), list)
+        and all(
+            isinstance(x, dict) and all(isinstance(x.get(k), str) for k in ("code", "outcome", "owner", "detail"))
+            for x in decision["reasons"]
+        )
+    )
 
 
 def _newest(
@@ -233,14 +256,12 @@ def _newest(
         receipt = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])
         if not isinstance(receipt, dict) or receipt.get("schema_version") != SCHEMA_VERSION:
             continue  # another schema sharing the ledger (the drill's): not a decision
-        try:
-            s = receipt["subject"]
-            about, enforcement, pr = (s["repository"], s["head_sha"]), s["enforcement"], s["pull_request"]
-            _outcome = receipt["decision"]["outcome"]  # _show() reads it
-        except (KeyError, TypeError):
+        if not _well_formed(receipt):
             raise l.LedgerError(
                 "LEDGER_INVALID", f"receipt {entry['decision_id']}/{entry['receipt_revision']} is malformed"
-            ) from None
+            )
+        s = receipt["subject"]
+        about, enforcement, pr = (s["repository"], s["head_sha"]), s["enforcement"], s["pull_request"]
         if about == (repo, head):
             names = [CHECK_NAME] + ([SHADOW_CHECK_NAME] if enforcement == SHADOW else [])
             for name in names:
@@ -271,9 +292,38 @@ def reconcile_check(api: l.Api, repo: str, ref: str, head: str, *, app_id: int) 
       bypassed), it shows the newer decision before returning.
 
     Only runs created by ``app_id`` (the publisher App) are ours. The
-    conclusion follows the receipt's recorded enforcement. Returns check name
-    -> the ledger entry it left on display.
+    conclusion follows the receipt's recorded enforcement. If the ledger or a
+    receipt can't be read, every required run of ours on the head fails
+    before the error is raised. Returns check name -> the ledger entry it
+    left on display.
     """
+    try:
+        return _reconcile(api, repo, ref, head, app_id)
+    except l.LedgerError as exc:
+        if exc.code in ("LEDGER_INVALID", "LEDGER_UNAVAILABLE"):
+            _fail_closed(api, repo, head, app_id, exc)
+        raise
+
+
+def _fail_closed(api: l.Api, repo: str, head: str, app_id: int, exc: l.LedgerError) -> None:
+    """The ledger can't say what is current: fail every required run of ours
+    on this head, so an earlier success never outlives it. Best effort: if the
+    provider is down too, the original error is what the caller sees."""
+    payload = {
+        "name": CHECK_NAME,
+        "status": "completed",
+        "conclusion": "failure",
+        "output": {"title": exc.code, "summary": str(exc)[:1000]},
+    }
+    try:
+        for run in _runs(api, repo, head, CHECK_NAME, app_id):
+            if run.get("conclusion") != "failure" or (run.get("output") or {}).get("title") != exc.code:
+                api("PATCH", f"repos/{repo}/check-runs/{run['id']}", payload)
+    except (l.ApiError, KeyError, TypeError):
+        pass
+
+
+def _reconcile(api: l.Api, repo: str, ref: str, head: str, app_id: int) -> dict[str, dict[str, Any]]:
     for _attempt in range(l.RETRIES):
         entries, stored = _verified(api, repo, ref)
         shown = _newest(entries, stored, repo, head)

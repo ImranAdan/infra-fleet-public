@@ -300,9 +300,21 @@ def main() -> int:
     r.record(drilled, REPO, REF, enforced(decision()))
     r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP)
     assert visible(ck_d) == [("success", "AUTHORIZE (r1)")], visible(ck_d)
-    l.append(drilled, REPO, REF, "d-bad", "r1", l.canonical({"schema_version": 1}),
-             l.digest(b"subject"), "AUTHORIZE", "t")
+    # A newer receipt for this head that claims the schema but lacks a field
+    # _show() reads (here: reasons) is refused, and the required check that
+    # was green fails closed rather than staying green.
+    bad = enforced(decision("ESCALATE"), at="later")
+    del bad["decision"]["reasons"]
+    r.record(drilled, REPO, REF, bad)
     refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP))
+    assert [(x["conclusion"], x["output"]["title"]) for x in ck_d.runs] == [("failure", "LEDGER_INVALID")], ck_d.runs
+    # The same when the ledger itself cannot be verified.
+    broken, ck_b = FakeGit(), FakeChecks()
+    r.record(broken, REPO, REF, enforced(decision()))
+    r.reconcile_check(both(ck_b, broken), REPO, REF, HEAD, app_id=APP)
+    broken.objects[broken.objects[broken.refs[REF]]["tree"]]["files"][l.LEDGER] = b'{"seq":5}\n'
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_b, broken), REPO, REF, HEAD, app_id=APP))
+    assert visible(ck_b) == [("failure", "LEDGER_INVALID")], visible(ck_b)
 
     # A receipt about another repository's commit is never shown here.
     foreign, ck_f = FakeGit(), FakeChecks()
