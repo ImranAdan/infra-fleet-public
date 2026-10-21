@@ -291,6 +291,19 @@ def main() -> int:
     # A head that only ever had shadow decisions gets no required-name run.
     assert {x["name"] for x in checks.runs} == {r.SHADOW_CHECK_NAME}
 
+    # Other receipt schemas in the ledger (the drill's) are not decisions:
+    # skipped, never a crash that leaves an old check standing. A receipt that
+    # claims this schema but is malformed is refused as an invalid ledger.
+    drilled, ck_d = FakeGit(), FakeChecks()
+    l.append(drilled, REPO, REF, "drill-1", "r1", l.canonical({"drill": "1", "outcome": "AUTHORIZE"}),
+             l.digest(b"subject"), "AUTHORIZE", "t")
+    r.record(drilled, REPO, REF, enforced(decision()))
+    r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP)
+    assert visible(ck_d) == [("success", "AUTHORIZE (r1)")], visible(ck_d)
+    l.append(drilled, REPO, REF, "d-bad", "r1", l.canonical({"schema_version": 1}),
+             l.digest(b"subject"), "AUTHORIZE", "t")
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_d, drilled), REPO, REF, HEAD, app_id=APP))
+
     # A receipt about another repository's commit is never shown here.
     foreign, ck_f = FakeGit(), FakeChecks()
     r.record(foreign, REPO, REF, enforced(decision()))
@@ -350,6 +363,11 @@ def main() -> int:
         "flow-job.yml": (
             wf(reader="    steps: []\n") + "  writer: {runs-on: x, permissions: {checks: write}, steps: []}\n",
             ["flow-job.yml:?"],
+        ),
+        "key-comment.yml": (
+            wf(reader="    steps: []\n") + "  writer:  # reconciles\n    steps:\n"
+            "      - run: python3 -m mandate.receipt reconcile\n",
+            ["key-comment.yml:writer"],
         ),
         "after-jobs.yml": (wf(reader="    steps: []\n") + "permissions:\n  checks: write\n", ["after-jobs.yml:?"]),
         # Only workflow- or job-level concurrency serializes; a nested mapping does not.

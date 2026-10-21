@@ -231,11 +231,20 @@ def _newest(
     found: dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]] = {}
     for entry in entries:
         receipt = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])
-        s = receipt["subject"]
-        if (s["repository"], s["head_sha"]) == (repo, head):
-            names = [CHECK_NAME] + ([SHADOW_CHECK_NAME] if s["enforcement"] == SHADOW else [])
+        if not isinstance(receipt, dict) or receipt.get("schema_version") != SCHEMA_VERSION:
+            continue  # another schema sharing the ledger (the drill's): not a decision
+        try:
+            s = receipt["subject"]
+            about, enforcement, pr = (s["repository"], s["head_sha"]), s["enforcement"], s["pull_request"]
+            _outcome = receipt["decision"]["outcome"]  # _show() reads it
+        except (KeyError, TypeError):
+            raise l.LedgerError(
+                "LEDGER_INVALID", f"receipt {entry['decision_id']}/{entry['receipt_revision']} is malformed"
+            ) from None
+        if about == (repo, head):
+            names = [CHECK_NAME] + ([SHADOW_CHECK_NAME] if enforcement == SHADOW else [])
             for name in names:
-                prs = sorted({*found.get(name, ({}, {}, []))[2], s["pull_request"]})
+                prs = sorted({*found.get(name, ({}, {}, []))[2], pr})
                 found[name] = (entry, receipt, prs)
     return found
 
@@ -328,7 +337,7 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
     bad = []
     for name, text in sorted(workflows.items()):
         header, _, body = text.partition("\njobs:\n")
-        jobs = re.findall(r"(?m)^  ([\w-]+):[ \t]*\n((?:(?:    .*)?\n?)*)", body)
+        jobs = re.findall(r"(?m)^  ([\w-]+):[ \t]*(?:#.*)?\n((?:(?:    .*)?\n?)*)", body)
         # Every line of jobs: must be a job key or nested under one; anything
         # else (a flow-mapping job, keys after jobs:) was not read: fail closed.
         unread = any(

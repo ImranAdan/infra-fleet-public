@@ -141,6 +141,9 @@ through `ledger.append()` (KAN-26).
     on the same head, the check fails closed. The title gives the count (it
     is limited to 255 characters) and the summary lists the PRs.
   - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
+  - **Other receipts:** receipts of another schema in the same ledger (the
+    drill's) are skipped. A receipt that claims this schema but is malformed
+    gives `LEDGER_INVALID`.
 - **One writer per head commit:** GitHub's ruleset reads the check's
   conclusion, and the Checks API has no compare-and-swap. So every job that
   records receipts or writes checks must run in the one canonical group,
