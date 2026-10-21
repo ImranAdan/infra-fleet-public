@@ -72,7 +72,14 @@ class EvidenceRecord:
             raise ValueError(f"evidence record fields differ: {sorted(set(data) ^ names)}")
         if type(data["version"]) is not int or data["version"] != VERSION:
             raise ValueError(f"unsupported evidence record version {data['version']!r}")
+        for f in fields(cls):  # annotations are not enforced at runtime: check them
+            allowed = _TYPES[f.type]
+            if type(data[f.name]) not in allowed:  # type(): a bool is not an int here
+                raise ValueError(f"evidence record field {f.name} is {type(data[f.name]).__name__}, not {f.type}")
         return cls(**data)
+
+
+_TYPES = {"int": (int,), "str": (str,), "int | None": (int, type(None)), "str | None": (str, type(None))}
 
 
 @dataclass(frozen=True)

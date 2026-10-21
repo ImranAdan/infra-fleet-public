@@ -85,7 +85,8 @@ class FakeChecks:
         self.shown: list[tuple[str, str]] = []  # every (conclusion, title) ever written
         self.before_write = None  # a concurrent publisher, run once
         self.fail_writes = 0  # provider errors on the next writes
-        self.open_prs = set(range(1, 200))  # PRs GitHub lists as open on the commit
+        self.open_prs = {7}  # PRs GitHub lists as open on the commit
+        self.pr_heads: dict[int, str] = {}  # a PR whose current head moved elsewhere
 
     def __call__(self, method: str, path: str, payload):
         if method == "GET":
@@ -126,9 +127,13 @@ def both(checks: FakeChecks, git: FakeGit):
     to its open set, the rest to Git."""
 
     def api(method, path, payload):
-        if "/pulls" in path:  # paged like GitHub: 100 per page
+        if "/pulls" in path:  # PRs associated with the commit, paged like GitHub
+            commit = re.search(r"/commits/([0-9a-f]+)/pulls", path).group(1)
             page = int(re.search(r"[?&]page=(\d+)", path).group(1))
-            listed = [{"number": n, "state": "open"} for n in sorted(checks.open_prs)]
+            listed = [
+                {"number": n, "state": "open", "head": {"sha": checks.pr_heads.get(n, commit)}}
+                for n in sorted(checks.open_prs)
+            ]
             return listed[(page - 1) * 100 : page * 100]
         return (checks if "check-runs" in path else git)(method, path, payload)
 
@@ -306,45 +311,51 @@ def main() -> int:
     assert ("success", "AUTHORIZE (r2)") in ck_rm.shown, ck_rm.shown
     assert visible(ck_rm) == [("failure", "ESCALATE (r1)")], visible(ck_rm)
 
-    # Checks belong to a commit: two PRs on one head share one check, which
-    # cannot represent both, so it fails closed while both have decisions.
+    # Checks belong to a commit: every PR GitHub lists as open with this commit
+    # as its current head shares the one check, decided or not. More than one
+    # cannot be represented by one check, so it fails closed.
     shared, ck_s = FakeGit(), FakeChecks()
-    r.record(shared, REPO, REF, enforced(decision()), DELEG)
-    r.record(shared, REPO, REF, r.build(decision(), 8, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
-    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    r.record(shared, REPO, REF, enforced(decision()), DELEG)  # only #7 is decided
+
+    def reconcile_shared() -> None:
+        r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+
+    # Codex R2-F1: #8 is open on the same head with no receipt: never green.
+    ck_s.open_prs = {7, 8}
+    reconcile_shared()
     assert visible(ck_s) == [("failure", "AUTHORIZE (r1), head shared by 2 PRs")], visible(ck_s)
     assert "#7, #8" in ck_s.runs[0]["output"]["summary"]
-    # Many PRs: the title stays within GitHub's 255 characters.
-    for n in range(9, 120):
-        r.record(shared, REPO, REF, r.build(decision(), n, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
-    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
-    assert len(ck_s.runs[0]["output"]["title"]) <= 255 and "113 PRs" in ck_s.runs[0]["output"]["title"]
-    # A closed PR no longer shares the head either.
+    # #8 closes: #7 alone again.
     ck_s.open_prs = {7}
-    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    reconcile_shared()
     assert visible(ck_s) == [("success", "AUTHORIZE (r1)")], visible(ck_s)
-    ck_s.open_prs = set(range(1, 200))
-    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
-    # If the only PR with a decision closed, nothing is shown as current: fail closed.
-    ck_s.open_prs = set()
-    refused("CONTRACT_ERROR", lambda: r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
-    assert all(c == "failure" for c, _ in visible(ck_s)), visible(ck_s)
-    ck_s.open_prs = set(range(1, 200))
+    # #8 is listed for the commit but its current head moved (no newer receipt): not sharing.
+    ck_s.open_prs, ck_s.pr_heads = {7, 8}, {8: "f" * 40}
+    reconcile_shared()
+    assert visible(ck_s) == [("success", "AUTHORIZE (r1)")], visible(ck_s)
+    ck_s.pr_heads = {}
+    # Both decided and open: still fails closed.
+    r.record(shared, REPO, REF, r.build(decision(), 8, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
+    reconcile_shared()
+    assert visible(ck_s) == [("failure", "AUTHORIZE (r1), head shared by 2 PRs")], visible(ck_s)
+    # Many PRs: the title stays within GitHub's 255 characters.
+    ck_s.open_prs = set(range(7, 120))
+    reconcile_shared()
+    assert len(ck_s.runs[0]["output"]["title"]) <= 255 and "113 PRs" in ck_s.runs[0]["output"]["title"]
     # A PR reopened while a reconcile runs is seen before it returns.
     # (#7 reopens: its receipt is older than #8's, so only the PR set changes.)
     ck_s.open_prs = {8}
     ck_s.before_write = lambda: ck_s.open_prs.add(7)
-    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    reconcile_shared()
     assert visible(ck_s) == [("failure", "AUTHORIZE (r1), head shared by 2 PRs")], visible(ck_s)
-    ck_s.open_prs = set(range(1, 200))
-    # A PR that moved to another commit no longer shares this head.
-    r.record(shared, REPO, REF, r.build(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY)), 8, ENF,
-                                         versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
-    for n in range(9, 120):
-        r.record(shared, REPO, REF, r.build(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY)), n, ENF,
-                                             versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
-    r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
-    assert visible(ck_s) == [("success", "AUTHORIZE (r1)")], visible(ck_s)
+    # The only open PR has no decision: nothing is current, so fail closed.
+    ck_s.open_prs = {9}
+    refused("CONTRACT_ERROR", reconcile_shared)
+    assert all(c == "failure" for c, _ in visible(ck_s)), visible(ck_s)
+    # A PR whose latest decision is about another commit is not current here.
+    ck_s.open_prs = {7}
+    r.record(shared, REPO, REF, enforced(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY))), DELEG)
+    refused("CONTRACT_ERROR", reconcile_shared)
 
     # A shadow decision that supersedes a live AUTHORIZE retires the required
     # check: shadow grants nothing, so mandate/decision must not stay green.
@@ -532,6 +543,39 @@ def main() -> int:
     l.append(rebound, REPO, REF, first_ok["decision_id"], "r3", old_bytes, first_ok["subject_digest"], "ESCALATE", "t")
     refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_rb, rebound), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert visible(ck_rb) == [("failure", "LEDGER_INVALID")], visible(ck_rb)
+    # Codex R2-F2: declared types are exact. Each mutation of an otherwise
+    # valid AUTHORIZE is refused by record() ...
+    def first_record(x: dict) -> dict:
+        return x["decision"]["accepted"][0]["records"][0]
+
+    for label, mutate in (
+        ("boolean schema_version", lambda x: x.update(schema_version=True)),
+        ("float schema_version", lambda x: x.update(schema_version=1.0)),
+        ("boolean registry_version", lambda x: x["decision"].update(registry_version=True)),
+        ("float registry_version", lambda x: x["decision"].update(registry_version=float(m.REGISTRY_VERSION))),
+        ("null check_run_id", lambda x: first_record(x).update(check_run_id=None)),
+        ("string run_id", lambda x: first_record(x).update(run_id="not-a-run-id")),
+        ("boolean app_id", lambda x: first_record(x).update(app_id=True)),
+        ("string pull_request", lambda x: x["subject"].update(pull_request="7")),
+    ):
+        typed = enforced(decision())
+        mutate(typed)
+        try:
+            r.record(FakeGit(), REPO, REF, typed, DELEG)
+        except l.LedgerError as exc:
+            assert exc.code == "CONTRACT_ERROR", (label, exc)
+        else:
+            raise AssertionError(f"recorded a receipt with {label}")
+    # ... and planted below record() after a green run, it retires that run.
+    typed_git, ck_ty = FakeGit(), FakeChecks()
+    r.record(typed_git, REPO, REF, enforced(decision()), DELEG)
+    r.reconcile_check(both(ck_ty, typed_git), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    nulled = {**enforced(decision(), at="later"), "receipt_revision": "r2"}
+    first_record(nulled)["check_run_id"] = None
+    l.append(typed_git, REPO, REF, nulled["decision_id"], "r2", l.canonical(nulled), nulled["subject_digest"], "AUTHORIZE", "t")
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_ty, typed_git), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
+    assert visible(ck_ty) == [("failure", "LEDGER_INVALID")], visible(ck_ty)
+
     # A ledger reset to empty leaves nothing authorizing this head: fail closed.
     reset, ck_re = FakeGit(), FakeChecks()
     r.record(reset, REPO, REF, enforced(decision()), DELEG)

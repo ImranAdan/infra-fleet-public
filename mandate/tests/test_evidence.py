@@ -99,6 +99,16 @@ def main() -> int:
             pass
         else:
             raise AssertionError(f"from_dict accepted version {version!r}")
+    # Every declared type is enforced; nullable fields still accept None.
+    assert e.EvidenceRecord.from_dict({**data, "run_id": None, "conclusion": None}).run_id is None
+    for field, value in (("check_run_id", None), ("run_id", "not-a-run-id"), ("app_id", True),
+                         ("check", 7), ("head_sha", None), ("run_attempt", 1.0), ("policy", None)):
+        try:
+            e.EvidenceRecord.from_dict({**data, field: value})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"from_dict accepted {field}={value!r}")
 
     # A-24 / A-5: the same check name from another workflow, event or App.
     for wrong in (

@@ -271,7 +271,7 @@ def _well_formed(receipt: dict[str, Any]) -> bool:
     if not (
         set(receipt) - {"receipt_revision"} == _RECEIPT_KEYS
         and (revision is None or (isinstance(revision, str) and l.ID.fullmatch(revision)))
-        and receipt["schema_version"] == SCHEMA_VERSION
+        and type(receipt["schema_version"]) is int and receipt["schema_version"] == SCHEMA_VERSION
         and isinstance(receipt["decision_id"], str)
         and isinstance(receipt["evaluated_at"], str)
         and all(isinstance(receipt[k], dict) and all(isinstance(x, str) for x in receipt[k]) for k in ("versions", "actors"))
@@ -279,7 +279,7 @@ def _well_formed(receipt: dict[str, Any]) -> bool:
         and all(isinstance(subject[k], str) for k in _SUBJECT_KEYS - {"pull_request"})
         and type(subject["pull_request"]) is int
         and isinstance(decision, dict) and set(decision) == _DECISION_KEYS
-        and decision["registry_version"] == REGISTRY_VERSION
+        and type(decision["registry_version"]) is int and decision["registry_version"] == REGISTRY_VERSION
         and isinstance(decision["outcome"], str)
         and isinstance(decision["classes"], list) and all(isinstance(c, str) for c in decision["classes"])
         and _records(decision["accepted"]) is not None
@@ -337,8 +337,9 @@ def _newest(
 ) -> dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]]:
     """Check name -> (entry, receipt, PRs) to show for this head.
 
-    PRs: open ones whose latest decision is about this head (a PR that moved
-    to another commit, or closed, no longer counts). The required check follows the newest
+    PRs: every open PR whose current head is this commit (``open_prs``),
+    decided or not, since they all share the commit's one check. Candidates:
+    their decisions on this head, where it is still their latest decision. The required check follows the newest
     of their decisions in any mode, so a shadow decision that supersedes a
     live one retires it; the shadow check follows the newest shadow one.
     """
@@ -361,11 +362,12 @@ def _newest(
         if receipt["subject"]["repository"] == repo:
             decisions.append((entry, receipt))
     latest = {receipt["subject"]["pull_request"]: receipt for _, receipt in decisions}
-    prs = sorted(pr for pr, receipt in latest.items() if receipt["subject"]["head_sha"] == head and pr in open_prs)
+    prs = sorted(open_prs)
+    current = {pr for pr, receipt in latest.items() if receipt["subject"]["head_sha"] == head and pr in open_prs}
     found: dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]] = {}
     for entry, receipt in decisions:
         s = receipt["subject"]
-        if s["head_sha"] == head and s["pull_request"] in prs:
+        if s["head_sha"] == head and s["pull_request"] in current:
             names = [CHECK_NAME] + ([SHADOW_CHECK_NAME] if s["enforcement"] == SHADOW else [])
             for name in names:
                 found[name] = (entry, receipt, prs)
@@ -436,11 +438,12 @@ def _fail_closed(api: l.Api, repo: str, head: str, app_id: int, exc: Exception) 
 
 
 def _open_prs(api: l.Api, repo: str, head: str) -> set[int]:
-    """PRs GitHub lists as open on this commit; a closed PR's decision is not current."""
+    """Open PRs whose current head is this commit. GitHub lists PRs associated
+    with a commit, not only those it still heads, so filter on head.sha."""
     found: set[int] = set()
     for page in range(1, 1000):
         batch = api("GET", f"repos/{repo}/commits/{head}/pulls?per_page=100&page={page}", None)
-        found |= {p["number"] for p in batch if p.get("state") == "open"}
+        found |= {p["number"] for p in batch if p.get("state") == "open" and (p.get("head") or {}).get("sha") == head}
         if len(batch) < 100:
             return found
     return found

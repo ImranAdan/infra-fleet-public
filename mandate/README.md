@@ -137,14 +137,20 @@ through `ledger.append()` (KAN-26).
     required name, because GitHub counts `neutral` as passing a required
     check. A shadow decision that supersedes a live one fails the existing
     required check run, and a head with only shadow decisions gets no required check run.
-  - **Shared head:** checks belong to a commit, so if two open PRs whose
-    latest decisions are about the same head both have decisions there, the
-    check fails closed. A PR that moved to another commit no longer counts,
-    and neither does one GitHub no longer lists as open on the commit. PR
-    state changes outside the writer group, so the reconcile re-reads it
-    before returning. The live workflow (KAN-28) must also run on PR open,
-    reopen and close events. The title gives the count (it
-    is limited to 255 characters) and the summary lists the PRs.
+  - **Shared head:** a check belongs to a commit, so it is shared by every PR
+    GitHub lists as open with that commit as its current `head.sha`, whether
+    or not Mandate has decided it. GitHub's commit-to-PR list includes PRs
+    that have moved on, which is why the head is checked.
+    - **More than one such PR:** the check fails closed, even if only one of
+      them has a decision.
+    - **Only one:** it shows that PR's decision on this commit, if that is
+      still its latest. Otherwise nothing is current and the check fails
+      closed.
+    - **PR state changes:** these happen outside the writer group, so the
+      reconcile re-reads PR state before returning. The live workflow
+      (KAN-28) must also run on PR open, reopen and close events.
+    - **Title:** gives the count (limited to 255 characters); the summary
+      lists the PRs.
   - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
   - **Index binding:** each receipt's decision ID, revision, subject digest
     and outcome must equal its index entry's, so an old receipt re-appended
@@ -170,11 +176,20 @@ through `ledger.append()` (KAN-26).
       producer, App, workflow, event, subject binding) on the claimed records
       must accept exactly them.
 
-    Two things stay unchecked here. Whether the classes should have matched
-    the PR's findings needs the inputs, which is historical replay (KAN-27).
-    Whether the check runs exist rests on the producer's word, as in
-    `decide()`. `record()` refuses such a receipt as
-    `CONTRACT_ERROR`.
+    `record()` refuses a receipt that fails any of these checks, or the exact
+    schema, as `CONTRACT_ERROR`. Evidence records must match their declared
+    field types exactly (`EvidenceRecord.from_dict`).
+
+    Two facts are left to the trusted collector, which `record()` can't
+    reject:
+    - whether the classes should have matched the PR's findings, which
+      needs the inputs (historical replay, KAN-27);
+    - whether the cited check runs exist, which rests on the producer's word,
+      as in `decide()`.
+
+    G4's live collector and executor must gather real GitHub facts,
+    recompute the decision from the actual PR changes, and revalidate before
+    merge.
   - **Fail closed:** if anything stops the reconcile showing the current
     decision (an unreadable ledger or receipt, a provider error, nothing
     recorded for the head, anything unexpected), every existing required check run
