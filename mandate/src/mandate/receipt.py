@@ -114,16 +114,35 @@ def _verified(api: l.Api, repo: str, ref: str) -> tuple[list[dict[str, Any]], di
     return [json.loads(x) for x in l._lines(state.text)], stored
 
 
+def _decisions(entries: list[dict[str, Any]], stored: dict[str, bytes]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Every decision's (entry, receipt), each exactly schema v1 and bound to
+    its index entry; anything else is LEDGER_INVALID. Other records (the
+    drill's share the ledger) are skipped."""
+    decisions = []
+    for entry in entries:
+        if not DECISION_ID.fullmatch(entry["decision_id"]):
+            continue
+        name = f"{entry['decision_id']}/{entry['receipt_revision']}"
+        try:
+            receipt = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])
+        except ValueError:
+            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is not JSON") from None
+        if not isinstance(receipt, dict) or not _well_formed(receipt):
+            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is malformed or of an unsupported schema")
+        # The index orders decisions and the receipt carries them: they must agree.
+        if (entry["decision_id"], entry["receipt_revision"], entry["subject_digest"], entry["outcome"]) != (
+            receipt["decision_id"], receipt.get("receipt_revision"), receipt["subject_digest"], receipt["decision"]["outcome"]
+        ):
+            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} does not match its index entry")
+        decisions.append((entry, receipt))
+    return decisions
+
+
 def _pr_latest(entries: list[dict[str, Any]], stored: dict[str, bytes], repository: str, pull_request: int) -> str | None:
     found = None
-    for entry in entries:
-        if DECISION_ID.fullmatch(entry["decision_id"]):
-            try:
-                s = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])["subject"]
-            except (ValueError, KeyError, TypeError):
-                raise l.LedgerError("LEDGER_INVALID", f"receipt {entry['decision_id']} has no readable subject") from None
-            if (s["repository"], s["pull_request"]) == (repository, pull_request):
-                found = entry["entry_digest"]
+    for entry, receipt in _decisions(entries, stored):
+        if (receipt["subject"]["repository"], receipt["subject"]["pull_request"]) == (repository, pull_request):
+            found = entry["entry_digest"]
     return found
 
 
@@ -388,24 +407,7 @@ def _newest(
     of their decisions in any mode, so a shadow decision that supersedes a
     live one retires it; the shadow check follows the newest shadow one.
     """
-    decisions: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for entry in entries:
-        if not DECISION_ID.fullmatch(entry["decision_id"]):
-            continue  # not a decision (the drill's records share the ledger)
-        name = f"{entry['decision_id']}/{entry['receipt_revision']}"
-        try:
-            receipt = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])
-        except ValueError:
-            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is not JSON") from None
-        if not isinstance(receipt, dict) or not _well_formed(receipt):
-            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} is malformed or of an unsupported schema")
-        # The index orders decisions and the receipt carries them: they must agree.
-        if (entry["decision_id"], entry["receipt_revision"], entry["subject_digest"], entry["outcome"]) != (
-            receipt["decision_id"], receipt.get("receipt_revision"), receipt["subject_digest"], receipt["decision"]["outcome"]
-        ):
-            raise l.LedgerError("LEDGER_INVALID", f"receipt {name} does not match its index entry")
-        if receipt["subject"]["repository"] == repo:
-            decisions.append((entry, receipt))
+    decisions = [(e, rc) for e, rc in _decisions(entries, stored) if rc["subject"]["repository"] == repo]
     latest = {receipt["subject"]["pull_request"]: receipt for _, receipt in decisions}
     prs = sorted(open_prs)
     current = {pr for pr, receipt in latest.items() if receipt["subject"]["head_sha"] == head and pr in open_prs}

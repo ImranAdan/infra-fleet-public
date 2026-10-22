@@ -137,7 +137,9 @@ through `ledger.append()` (KAN-26).
   as its latest revision is a no-op only while that revision is still the
   PR's latest; otherwise it passes the staleness check like any other.
   `trailers()` takes the same `after`, so a stale merge worker gets no
-  trailers.
+  trailers. The check reads receipts through the same validation as
+  reconciliation, so a malformed or rebound receipt fails it closed
+  (`LEDGER_INVALID`) rather than being skipped.
 - **Check run:** `reconcile_check(head_sha, app_id=…)` is the only publisher.
   The caller names a head commit, never a decision or revision. It shows the
   newest decision recorded for that head on every run of the publisher App,

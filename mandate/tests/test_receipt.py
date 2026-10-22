@@ -234,6 +234,16 @@ def main() -> int:
     refused("STALE_DECISION", lambda: r.trailers(moved, REPO, REF, enforced(decision())["subject"], enforced(decision()), DELEG, after=old_ok["entry_digest"]))
     again, _, appended = put(moved, enforced(decision()), DELEG)
     assert appended and again["receipt_revision"] == "r2", again
+    # Codex bot: the staleness check reads only validated receipts. A newer
+    # refusal grafted onto PR 8 (its ID no longer matches its subject) fails
+    # closed as LEDGER_INVALID, as reconciliation does; it is never skipped.
+    grafted = FakeGit()
+    first_auth, _, _ = put(grafted, enforced(decision()), DELEG)
+    refusal = {**enforced(decision("ESCALATE")), "receipt_revision": "r2"}
+    refusal["subject"] = {**refusal["subject"], "pull_request": 8}
+    l.append(grafted, REPO, REF, refusal["decision_id"], "r2", l.canonical(refusal), refusal["subject_digest"], "ESCALATE", "t")
+    refused("LEDGER_INVALID", lambda: r.trailers(grafted, REPO, REF, enforced(decision())["subject"], enforced(decision()), DELEG, after=first_auth["entry_digest"]))
+    refused("LEDGER_INVALID", r.pr_latest, grafted, REPO, REF, REPO, 7)
     # Another PR's later receipt leaves this PR's latest in place: still a no-op.
     put(moved, r.build(decision(), 8, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
     assert put(moved, enforced(decision()), DELEG)[2] is False
