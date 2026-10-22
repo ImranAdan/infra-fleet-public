@@ -728,7 +728,7 @@ def main() -> int:
 
     serial = f"    concurrency:\n      group: {group}\n      cancel-in-progress: false\n"
     command = 'PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile "$GITHUB_REPOSITORY" "$LEDGER_REF" "$HEAD" --app-id "$APP_ID"'
-    write = f"    steps:\n      - run: {command}\n"
+    write = f"    steps:\n      - run: {command}\n        shell: bash\n"
     top = f"concurrency:\n  group: '{group}'\n  cancel-in-progress: false\n"
     pub = "    permissions:\n      checks: write\n"
     rec = "    permissions:\n      contents: write\n"
@@ -777,14 +777,23 @@ def main() -> int:
                 ("empty-successor", "    steps: []\n"),
                 ("skipped-step", write + "        if: false\n"),
                 ("soft-step", write + "        continue-on-error: true\n"),
-                ("swallowed", write.rstrip("\n") + " || true\n"),
-                ("other-shell", write + "        shell: cat {0}\n"),
+                ("swallowed", write.replace(command, command + " || true")),
+                ("other-shell", write.replace("shell: bash", "shell: cat {0}")),
+                # Codex bot: the default shell depends on the runner (PowerShell
+                # on Windows), so bash is named on the step, on Ubuntu.
+                ("implicit-shell", write.replace("        shell: bash\n", "")),
                 ("other-path", write.replace("mandate/src", "/tmp/fake")),
                 ("mentions-only", "    steps:\n      - run: python3 -c 'import mandate.receipt'\n"),
-                ("default-shell", "    defaults:\n      run:\n        shell: cat {0}\n" + write),
+                ("default-shell", "    defaults:\n      run:\n        shell: cat {0}\n" + write.replace("        shell: bash\n", "")),
             )
         },
-        "bash-shell.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n    defaults:\n      run:\n        shell: cat {0}\n" + pub + serial + write + "        shell: bash\n"), []),
+        "windows.yml": (
+            wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write).replace(
+                "  publish:\n    runs-on: ubuntu-latest", "  publish:\n    runs-on: windows-latest"
+            ),
+            ["windows.yml:record"],
+        ),
+        "bash-shell.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n    defaults:\n      run:\n        shell: cat {0}\n" + pub + serial + write), []),
         "always-step.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write + "        if: always()\n"), []),
         "folded-step.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace(" --app-id", " \\\n          --app-id").replace("run: ", "run: |\n          ")), []),
         "ungrouped-after.yml": (

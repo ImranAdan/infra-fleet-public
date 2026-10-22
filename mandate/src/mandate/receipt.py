@@ -558,17 +558,18 @@ def _token_writes(job: dict[str, Any], scope: str) -> bool:
     return False
 
 
-def _reconciles(job: dict[str, Any], defaults: bool) -> bool:
+def _reconciles(job: dict[str, Any]) -> bool:
     """A step runs the supported reconciler: the one command, unconditionally,
-    in bash, failing the job if it fails. A bounded contract, not shell
-    analysis; ``defaults`` (job or workflow) could change the shell."""
-    return any(
+    failing the job if it fails, with ``shell: bash`` on the step and a
+    GitHub-hosted Ubuntu runner (the default shell and python3 depend on the
+    runner: PowerShell on Windows). A bounded contract, not shell analysis."""
+    return bool(re.fullmatch(r"ubuntu-[\w.-]+", str(job.get("runs-on")))) and any(
         isinstance(step, dict)
         and isinstance(step.get("run"), str)
         and bool(_RECONCILE.fullmatch(re.sub(r"\\\n\s*", " ", step["run"]).strip()))
         and str(step.get("if", "always()")).replace(" ", "") in _ALWAYS
         and step.get("continue-on-error", False) is False
-        and step.get("shell", None if defaults else "bash") == "bash"
+        and step.get("shell") == "bash"
         for step in job.get("steps") or []
     )
 
@@ -650,7 +651,7 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
             # It reconciles after exactly one job, whatever that job's result.
             after = [needs] if isinstance(needs, str) else needs
             always = str(job.get("if", "")).replace(" ", "") in _ALWAYS
-            reconciles = _reconciles(job, "defaults" in doc or "defaults" in job)
+            reconciles = _reconciles(job)
             info[job_name] = (publishes, canonical, records, uses, after if always and reconciles else None)
         for job_name, (publishes, canonical, records, uses, _) in info.items():
             job = jobs[job_name]

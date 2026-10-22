@@ -258,8 +258,10 @@ through `ledger.append()` (KAN-26).
 
     The step must be exactly that one command (arguments are free, but no
     shell operators or second command), with no step `if` other than
-    `always()`, no `continue-on-error`, and bash as its shell (a `defaults`
-    block counts only if the step names `shell: bash`). This is a bounded
+    `always()`, no `continue-on-error`, and `shell: bash` on the step
+    itself, in a job on a GitHub-hosted Ubuntu runner (`runs-on: ubuntu-…`).
+    The default shell and `python3` depend on the runner: Windows runs an
+    unspecified `run` in PowerShell. This is a bounded
     workflow contract, not shell analysis. The command exits 1 when it
     refuses, after the check has failed closed. `serial_violations()`
     enforces all of this. A pending reconcile that
