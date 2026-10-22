@@ -123,8 +123,18 @@ through `ledger.append()` (KAN-26).
 - **Revisions:** `record()` appends `r1`, `r2` and so on under one ID. It
   appends only when the latest revision says something different, ignoring the
   clock. Rerunning identical inputs is a no-op. Flipping back to an earlier
-  result is a new revision, never a reuse. A concurrent writer that takes the
-  same revision makes it re-read and take the next.
+  result is a new revision, never a reuse. Another PR's concurrent append
+  makes it re-read and retry.
+- **Stale decisions:** recorders run outside any concurrency group, so they
+  can finish out of order. A recorder reads `pr_latest()` before the inputs it
+  decides from and passes it to `record(…, after=…)`. If the PR has gained a
+  receipt since, whatever its decision ID, the decision may be stale:
+  `record()` refuses it with `STALE_DECISION`, and the recorder decides again.
+  The check runs inside the ledger append's compare-and-swap loop (its
+  `precondition`), so it holds atomically with the append. Each PR's receipts
+  are therefore ordered by when their inputs were read, and a delayed
+  AUTHORIZE can't land over a newer refusal. A concurrent decision that means
+  the same as the latest is a no-op. `trailers()` takes the same `after`.
 - **Check run:** `reconcile_check(head_sha, app_id=…)` is the only publisher.
   The caller names a head commit, never a decision or revision. It shows the
   newest decision recorded for that head on every run of the publisher App,

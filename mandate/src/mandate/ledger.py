@@ -252,13 +252,19 @@ def append(
     subject_digest: str,
     outcome: str,
     created_at: str,
+    precondition: Callable[[str, dict[str, bytes]], None] | None = None,
 ) -> dict[str, Any] | None:
-    """Append one receipt; None when identical bytes are already recorded."""
+    """Append one receipt; None when identical bytes are already recorded.
+
+    ``precondition(index, receipts)`` runs on every attempt's verified state
+    just before a new entry is built, so a check that raises holds atomically
+    with the append (a lost race re-reads and runs it again)."""
     path = receipt_path(decision_id, revision)
     for _attempt in range(RETRIES):
         try:
             state = read(api, repo, ref)
-            failures = verify(state.text, _receipts(api, repo, state))
+            receipts = _receipts(api, repo, state)
+            failures = verify(state.text, receipts)
             if failures:
                 raise LedgerError("LEDGER_INVALID", "; ".join(failures))
             lines = _lines(state.text)
@@ -289,6 +295,8 @@ def append(
                         f"{path} is recorded with another subject or outcome",
                     )
                 return None
+            if precondition is not None:
+                precondition(state.text, receipts)
             prev = json.loads(lines[-1]) if lines else None
             item = entry(
                 prev,

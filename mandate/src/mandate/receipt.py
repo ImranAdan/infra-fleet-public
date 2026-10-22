@@ -9,7 +9,8 @@ and flipping back to an earlier result is a new revision, never a reuse.
 
 reconcile_check() is the only check publisher: it shows the ledger's latest
 revision, and publishers run as one serialized job per head commit. Recording
-needs no group: ledger appends are compare-and-swap.
+needs no group: ledger appends are compare-and-swap, and record() refuses a
+decision whose PR gained a receipt after it read its inputs (``after``).
 
 The merge commit is the anchor: trailers() records a fresh AUTHORIZE decision
 for the subject the worker acted on and names that latest revision's receipt
@@ -113,13 +114,44 @@ def _verified(api: l.Api, repo: str, ref: str) -> tuple[list[dict[str, Any]], di
     return [json.loads(x) for x in l._lines(state.text)], stored
 
 
+def _pr_latest(entries: list[dict[str, Any]], stored: dict[str, bytes], repository: str, pull_request: int) -> str | None:
+    found = None
+    for entry in entries:
+        if DECISION_ID.fullmatch(entry["decision_id"]):
+            try:
+                s = json.loads(stored[l.receipt_path(entry["decision_id"], entry["receipt_revision"])])["subject"]
+            except (ValueError, KeyError, TypeError):
+                raise l.LedgerError("LEDGER_INVALID", f"receipt {entry['decision_id']} has no readable subject") from None
+            if (s["repository"], s["pull_request"]) == (repository, pull_request):
+                found = entry["entry_digest"]
+    return found
+
+
+def pr_latest(api: l.Api, repo: str, ref: str, repository: str, pull_request: int) -> str | None:
+    """Entry digest of the PR's latest receipt, or None. A recorder reads it
+    before the state it decides from and passes it to record() as ``after``."""
+    return _pr_latest(*_verified(api, repo, ref), repository, pull_request)
+
+
 def record(
-    api: l.Api, repo: str, ref: str, receipt: dict[str, Any], delegation: Delegation | None = None
+    api: l.Api,
+    repo: str,
+    ref: str,
+    receipt: dict[str, Any],
+    delegation: Delegation | None = None,
+    *,
+    after: str | None,
 ) -> tuple[dict[str, Any], str, bool]:
     """(ledger entry for this decision's latest revision, chain head, appended).
 
     ``delegation`` is the pinned delegation the decision was taken under; an
-    AUTHORIZE is recorded only if it holds under it (_authorized)."""
+    AUTHORIZE is recorded only if it holds under it (_authorized).
+
+    ``after`` is pr_latest() as read before the decision's inputs. Recorders
+    run outside any concurrency group, so they can finish out of order: if
+    the PR gained a receipt since, this decision may be stale and is refused
+    with STALE_DECISION (decide again), atomically with the append. So the
+    ledger orders each PR's receipts by when their inputs were read."""
     did = receipt.get("decision_id")
     if not isinstance(receipt, dict) or not _well_formed(receipt):
         raise l.LedgerError("CONTRACT_ERROR", f"receipt for {did} is not exactly schema v{SCHEMA_VERSION}")
@@ -135,6 +167,14 @@ def record(
             if semantic(latest) == semantic(receipt):
                 return mine[-1], entries[-1]["entry_digest"], False
         revision = f"r{len(mine) + 1}"
+
+        def unchanged(index: str, receipts: dict[str, bytes]) -> None:
+            entries_now = [json.loads(line) for line in index.splitlines() if line]
+            s = receipt["subject"]
+            now = _pr_latest(entries_now, receipts, s["repository"], s["pull_request"])
+            if now != after:
+                raise l.LedgerError("STALE_DECISION", f"PR {s['pull_request']} has a newer receipt than {did} saw: decide again")
+
         try:
             item = l.append(
                 api,
@@ -146,6 +186,7 @@ def record(
                 receipt["subject_digest"],
                 receipt["decision"]["outcome"],
                 receipt["evaluated_at"],
+                unchanged,
             )
         except l.LedgerError as exc:
             if exc.code == "RECEIPT_COLLISION":
@@ -558,7 +599,14 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
 
 
 def trailers(
-    api: l.Api, repo: str, ref: str, subject: dict[str, Any], fresh: dict[str, Any], delegation: Delegation
+    api: l.Api,
+    repo: str,
+    ref: str,
+    subject: dict[str, Any],
+    fresh: dict[str, Any],
+    delegation: Delegation,
+    *,
+    after: str | None,
 ) -> str:
     """Merge-commit trailers after final revalidation.
 
@@ -566,7 +614,8 @@ def trailers(
     a decision taken just now. It must still be about that subject and
     AUTHORIZE. It is then recorded (a no-op when it is already the latest
     revision), so the trailers always name this decision's latest revision,
-    never a superseded one a stale worker still holds.
+    never a superseded one a stale worker still holds. ``after`` is
+    pr_latest() as read before deciding ``fresh`` (see record()).
     """
     for field, code in (
         ("head_sha", "HEAD_CHANGED"),
@@ -583,7 +632,7 @@ def trailers(
         )
     if fresh["decision"]["outcome"] != "AUTHORIZE":
         raise l.LedgerError("CONTRACT_ERROR", f"fresh outcome is {fresh['decision']['outcome']}")
-    entry, chain_head, _ = record(api, repo, ref, fresh, delegation)
+    entry, chain_head, _ = record(api, repo, ref, fresh, delegation, after=after)
     values = (entry["decision_id"], entry["receipt_digest"], chain_head)
     return "\n".join(f"{k}: {v}" for k, v in zip(TRAILERS, values))
 
