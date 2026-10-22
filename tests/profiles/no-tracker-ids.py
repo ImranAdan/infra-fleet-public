@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 IDS = re.compile(r"\b(?:KAN-\d+|G[0-4]|D-\d+|A-\d+|TDR-\d+|R\d-F\d)\b|Codex (?:bot|F\d|R\d)")
-SKIP = ("applications/",)  # SVG path data (M12, A-1...) in the app templates
+SKIP = ("applications/",)  # the app templates' SVG path data looks like IDs
 
 
 def main() -> int:
