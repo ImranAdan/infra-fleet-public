@@ -96,6 +96,7 @@ jobs:
           retention-days: 1
 
   propose:
+    # mandate: no-receipts (it opens remediation PRs; mandate/README.md)
     needs: plan
     if: needs.plan.outputs.changed == 'true'
     runs-on: ubuntu-latest

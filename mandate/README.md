@@ -226,9 +226,14 @@ through `ledger.append()` (KAN-26).
     ([GitHub](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)).
     A recording job replaced while pending would lose its receipt, which
     could be a newer refusal. Ledger appends are compare-and-swap, so
-    recording needs no group. A job that uses `mandate.receipt` with
-    contents write must not mention `concurrency` at any level, so a job
-    can't both record and publish.
+    recording needs no group. A job that can write contents counts as a
+    recorder and must not mention `concurrency` at any level, so a job can't
+    both record and publish. A wrapper script could hide the receipt import,
+    so this holds unless the job states `# mandate: no-receipts` (on a line of
+    its own block) and doesn't itself use `mandate.receipt`. Today
+    `advisor-remediation` `propose`, `autonomous-merge` `merge` and
+    `ledger-drill` `drill` state it. KAN-28 must drop the line from the merge
+    worker before that worker records.
   - **Record, then publish:** a recorder queues a reconcile after its append
     (for example a `needs:` job in the group). A pending reconcile that gets
     replaced loses nothing: its replacement was queued later and reads the

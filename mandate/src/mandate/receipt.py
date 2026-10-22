@@ -562,9 +562,10 @@ def _may_write(block: str, scope: str) -> bool:
 def serial_violations(workflows: dict[str, str]) -> list[str]:
     """``file:job`` for each job that breaks the writer boundary: one that can
     write checks outside the canonical per-head job concurrency group, one
-    that can record receipts (uses them with contents write) inside any
-    concurrency group, where GitHub can replace it while pending, or one that
-    uses receipts without declaring its permissions."""
+    that can record receipts (contents write, unless the job states
+    ``# mandate: no-receipts`` and doesn't use them) inside any concurrency
+    group, where GitHub can replace it while pending, or one that uses
+    receipts without declaring its permissions."""
     bad = []
     for name, text in sorted(workflows.items()):
         header, _, body = text.partition("\njobs:\n")
@@ -580,7 +581,10 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
         for job, block in jobs:
             uses = _USES_RECEIPTS.search(header + block)
             publishes = _may_write(header, "checks") or _may_write(block, "checks")
-            records = uses and (_may_write(header, "contents") or _may_write(block, "contents"))
+            # A wrapper script can hide the import, so a job that can write
+            # contents records unless it states it doesn't (and doesn't use them).
+            no_receipts = re.search(r"(?m)^    +# mandate: no-receipts\b", block) and not uses
+            records = (_may_write(header, "contents") or _may_write(block, "contents")) and not no_receipts
             if (
                 (publishes and not _serialized(block))
                 or (records and re.search(r"\bconcurrency\b", header + block))

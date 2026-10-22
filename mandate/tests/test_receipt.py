@@ -696,6 +696,14 @@ def main() -> int:
         ),
         "direct-publisher.yml": (wf(a=pub + serial + write + "      - run: gh api repos/o/r/check-runs\n"), []),
         "token-recorder.yml": (wf(a=serial + token + "          permission-contents: write\n" + record), ["token-recorder.yml:a"]),
+        # Codex bot: a wrapper script hides the receipt import, so any job that
+        # can write contents in a group counts as a recorder unless it states
+        # it records none; a job that does use receipts can't state that.
+        "wrapper.yml": (wf(top, a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n"), ["wrapper.yml:a"]),
+        "wrapper-ungrouped.yml": (wf(a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n"), []),
+        "attested.yml": (wf(top, a=rec + "    # mandate: no-receipts (opens PRs)\n    steps:\n      - run: python3 scripts/open-pr.py\n"), []),
+        "attested-uses.yml": (wf(top, a=rec + "    # mandate: no-receipts\n" + record), ["attested-uses.yml:a"]),
+        "attested-elsewhere.yml": (wf(top, b="    # mandate: no-receipts\n    steps: []\n", a=rec + "    steps: []\n"), ["attested-elsewhere.yml:a"]),
         # A receipt user must declare permissions rather than trust the default.
         "undeclared.yml": (wf(a=serial + write), ["undeclared.yml:a"]),
         # Quoted or explicit permission keys are read as anything (Codex bot).
