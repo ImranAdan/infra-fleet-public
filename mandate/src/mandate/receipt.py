@@ -510,89 +510,111 @@ def _reconcile(
     raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {repo}@{head}")
 
 
-def _serialized(block: str) -> bool:
-    """Whether the job's own ``concurrency`` names the canonical group without
-    cancelling. Workflow-level concurrency serializes runs, not the jobs or
-    matrix legs of one run, so it never counts; nor does a nested mapping."""
-    found = re.search(r"(?m)^    concurrency:[ \t]*\n((?:     +\S.*\n?)+)", block)
-    if not found:
+def _grants(perms: Any, scope: str) -> bool:
+    """Whether a parsed ``permissions`` value grants ``scope`` write. Absent
+    means the repository default (read); any form but read-all, {} or a
+    mapping of read/write/none fails closed (so write-all)."""
+    if perms is None or perms == "read-all":
         return False
-    keys = dict(re.findall(r"(?m)^      ([\w-]+):[ \t]*(.*?)[ \t]*$", found.group(1)))
-    return (
-        keys.get("group", "").strip("'\"") == CANONICAL_GROUP
-        and keys.get("cancel-in-progress") == "false"
-    )
+    if isinstance(perms, dict) and all(isinstance(k, str) and v in ("read", "write", "none") for k, v in perms.items()):
+        return perms.get(scope) == "write"
+    return True
 
 
-def _may_write(block: str, scope: str) -> bool:
-    """Whether a workflow header or job block can write ``scope`` (``checks``
-    or ``contents``), scanning every line (so blank lines or nesting hide
-    nothing) and failing closed.
-
-    A line can write it if, outside comments, it mentions the scope other than
-    as ``<scope>: read|none``, calls the Checks API directly (``check-runs``,
-    ``createCheckRun``; checks only), has a ``permissions`` key other than a
-    block key or ``permissions: read-all|{}`` (so ``write-all``, quoted or
-    explicit keys), or uses a YAML alias or merge key. An App token step
-    without ``permission-*`` inputs also counts: it carries every App
-    permission, and the Mandate App has checks and contents write.
-
-    It guards against mistakes, not an adversary who can edit workflows:
-    workflow changes are themselves owner decisions at the merge gate.
-    """
-    for raw in block.splitlines():
-        if raw.lstrip().startswith("#"):
-            continue  # a whole-line comment
-        line = raw if ("'" in raw or '"' in raw) else re.sub(r"\s#.*", "", raw)  # a quoted # stays
-        if re.search(rf"\b{scope}\b", line) and not re.fullmatch(rf" *{scope}: *(read|none) *", line):
+def _token_writes(job: dict[str, Any], scope: str) -> bool:
+    """Whether a step's inputs request ``scope`` write: a ``permission-<scope>``
+    input other than read/none, or an App token with no ``permission-*``
+    inputs, which carries every App permission (the Mandate App has checks
+    and contents write). An unreadable step fails closed."""
+    steps = job.get("steps") or []
+    if not isinstance(steps, list):
+        return True
+    for step in steps:
+        inputs = step.get("with") or {} if isinstance(step, dict) else None
+        if not isinstance(inputs, dict):
             return True
-        if scope == "checks" and re.search(r"check-runs|check_runs|(?i:createCheckRun|updateCheckRun)", line):
-            return True  # a direct Checks API call, whatever token it uses
-        if re.search(r"<<:|(?:^|[:\-])\s+\*[\w-]+\s*$", line):
+        asked = {k: v for k, v in inputs.items() if isinstance(k, str) and k.startswith("permission-")}
+        if "create-github-app-token" in str(step.get("uses", "")) and not asked:
             return True
-        key = re.search(r"""\bpermissions\b["']?\s*:|\?\s*["']?permissions\b""", line)
-        if key and not re.fullmatch(r" *permissions:[ \t]*(read-all|\{\})?[ \t]*", line):
-            return True
-    for step in re.split(r"(?m)^(?= *- )", block):
-        if "create-github-app-token" in step and not re.search(r"(?m)^ *permission-[\w-]+:", step):
+        if asked.get(f"permission-{scope}") not in (None, "read", "none"):
             return True
     return False
 
 
+def _workflow(text: str) -> tuple[dict[str, Any], dict[str, list[str]]]:
+    """The parsed workflow and, per job, its raw lines at the job's own
+    indentation (comments, which parsing drops). Duplicate and merge keys
+    raise: what they mean depends on the parser."""
+    import yaml  # ponytail: test-time scan only; CI has PyYAML through yamllint
+
+    class Strict(yaml.SafeLoader):
+        def construct_mapping(self, node: Any, deep: bool = False) -> Any:
+            # A merge key (<<) has no constructor here, so building it raises.
+            keys = [repr(self.construct_object(k, deep=True)) for k, _ in node.value]
+            if len(keys) != len(set(keys)):
+                raise ValueError("duplicate key")
+            return super().construct_mapping(node, deep)
+
+    doc = yaml.load(text, Loader=Strict)  # noqa: S506 (SafeLoader subclass)
+    root = yaml.compose(text, Loader=Strict)
+    lines = text.splitlines()
+    jobs_node = next(v for k, v in root.value if k.value == "jobs")
+    own = {}
+    for k, v in jobs_node.value:
+        column = v.start_mark.column
+        own[k.value] = [x for x in lines[k.start_mark.line : v.end_mark.line] if x[:column].strip() == "" and x[column : column + 1] != " "]
+    if not isinstance(doc, dict) or not isinstance(doc.get("jobs"), dict):
+        raise ValueError("no jobs")
+    return doc, own
+
+
 def serial_violations(workflows: dict[str, str]) -> list[str]:
-    """``file:job`` for each job that breaks the writer boundary: one that can
+    """``file:job`` for each job that breaks the writer boundary, read from the
+    parsed YAML (so quoting, aliases and comments hide nothing): one that can
     write checks outside the canonical per-head job concurrency group, one
     that can record receipts (contents write, unless the job states
-    ``# mandate: no-receipts`` and doesn't use them) inside any concurrency
-    group, where GitHub can replace it while pending, or one that uses
-    receipts without declaring its permissions."""
+    ``# mandate: no-receipts`` at its own indentation and doesn't use them)
+    inside any concurrency group, where GitHub can replace it while pending,
+    or one that uses receipts without declaring its permissions. A file that
+    doesn't parse to jobs, or has duplicate or merge keys, is ``file:?``."""
+    import yaml  # noqa: F401  a missing parser is an error, never "every file unreadable"
+
     bad = []
     for name, text in sorted(workflows.items()):
-        key = re.search(r"(?m)^jobs:[ \t]*(?:#.*)?\n", text)
-        header, body = (text[: key.start()], text[key.end() :]) if key else (text, "")
-        jobs = re.findall(r"(?m)^  ([\w-]+):[ \t]*(?:#.*)?\n((?:(?:    .*)?\n?)*)", body)
-        # Every line of jobs: must be a job key or nested under one; anything
-        # else (a flow-mapping job, keys after jobs:) was not read: fail closed.
-        unread = any(
-            not re.fullmatch(r"\s*(#.*)?|  [\w-]+:[ \t]*(#.*)?|    .*", line)
-            for line in body.splitlines()
-        )
-        if unread or (not jobs and (_USES_RECEIPTS.search(text) or _may_write(text, "checks") or _may_write(text, "contents"))):
+        try:
+            doc, own = _workflow(text)
+            jobs = doc["jobs"]
+            if not all(isinstance(job, dict) for job in jobs.values()):
+                raise ValueError("unreadable job")
+        except Exception:  # anything this scan can't read fails closed
             bad.append(f"{name}:?")
-        for job, block in jobs:
-            uses = _USES_RECEIPTS.search(header + block)
-            publishes = _may_write(header, "checks") or _may_write(block, "checks")
+            continue
+        header = {k: v for k, v in doc.items() if k != "jobs"}
+        for job_name, job in jobs.items():
+            blob = json.dumps([header, job], default=str)
+            uses = _USES_RECEIPTS.search(blob)
+            perms = [doc.get("permissions"), job.get("permissions")]
+            publishes = (
+                any(_grants(x, "checks") for x in perms)
+                or _token_writes(job, "checks")
+                or re.search(r"check-runs|check_runs|(?i:createCheckRun|updateCheckRun)", blob)
+            )
+            concurrency = job.get("concurrency")
+            canonical = (
+                isinstance(concurrency, dict)
+                and concurrency.get("group") == CANONICAL_GROUP
+                and concurrency.get("cancel-in-progress") is False
+            )
             # A wrapper script can hide the import, so a job that can write
             # contents records unless it states it doesn't (and doesn't use them).
-            # At the job's own indentation only: deeper, it may be a script's text.
-            no_receipts = re.search(r"(?m)^    # mandate: no-receipts\b", block) and not uses
-            records = (_may_write(header, "contents") or _may_write(block, "contents")) and not no_receipts
+            stated = any(re.fullmatch(r" *# mandate: no-receipts\b.*", x) for x in own.get(job_name, []))
+            records = (any(_grants(x, "contents") for x in perms) or _token_writes(job, "contents")) and not (stated and not uses)
             if (
-                (publishes and not _serialized(block))
-                or (records and re.search(r"\bconcurrency\b", header + block))
-                or (uses and not re.search(r"(?m)^ *permissions:", header + block))
+                (publishes and not canonical)
+                or (records and ("concurrency" in doc or "concurrency" in job))
+                or (uses and "permissions" not in doc and "permissions" not in job)
             ):
-                bad.append(f"{name}:{job}")
+                bad.append(f"{name}:{job_name}")
     return bad
 
 

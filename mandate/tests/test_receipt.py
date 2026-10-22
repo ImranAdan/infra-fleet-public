@@ -695,7 +695,10 @@ def main() -> int:
             ["both.yml:a"],
         ),
         "direct-publisher.yml": (wf(a=pub + serial + write + "      - run: gh api repos/o/r/check-runs\n"), []),
-        "token-recorder.yml": (wf(a=serial + token + "          permission-contents: write\n" + record), ["token-recorder.yml:a"]),
+        "token-recorder.yml": (
+            wf(a=serial + token + "          permission-contents: write\n" + record.replace("    steps:\n", "")),
+            ["token-recorder.yml:a"],
+        ),
         # Codex bot: a wrapper script hides the receipt import, so any job that
         # can write contents in a group counts as a recorder unless it states
         # it records none; a job that does use receipts can't state that.
@@ -716,8 +719,24 @@ def main() -> int:
         ),
         "quoted-jobs.yml": (
             wf(top, a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n").replace("jobs:\n", '"jobs":\n'),
-            ["quoted-jobs.yml:?"],
+            ["quoted-jobs.yml:a"],
         ),
+        # Codex bot: an alias may be a key; YAML resolves it to checks: write.
+        "alias-key.yml": (
+            wf(a="    env:\n      NAME: &scope checks\n    steps: []\n",
+               b="    permissions:\n      *scope : write\n    steps: []\n"),
+            ["alias-key.yml:b"],
+        ),
+        "list-value.yml": (wf(a="    permissions:\n      checks: [write]\n    steps: []\n"), ["list-value.yml:a"]),
+        "merge-defined.yml": (
+            wf(a="    env: &p {X: y}\n    steps: []\n", b="    permissions:\n      <<: *p\n    steps: []\n"),
+            ["merge-defined.yml:?"],
+        ),
+        "no-cancel.yml": (wf(writer=pub + serial.replace("      cancel-in-progress: false\n", "") + write), ["no-cancel.yml:writer"]),
+        "string-steps.yml": (wf(a="    steps: run-something\n"), ["string-steps.yml:a"]),
+        "string-step.yml": (wf(a="    steps:\n      - echo hi\n"), ["string-step.yml:a"]),
+        # A duplicate key means whatever the parser keeps: unreadable.
+        "duplicate-key.yml": (wf(a="    permissions:\n      checks: write\n      checks: read\n    steps: []\n"), ["duplicate-key.yml:?"]),
         # A receipt user must declare permissions rather than trust the default.
         "undeclared.yml": (wf(a=serial + write), ["undeclared.yml:a"]),
         # Quoted or explicit permission keys are read as anything (Codex bot).
@@ -737,16 +756,16 @@ def main() -> int:
         # Only canonical permissions are read; any other YAML form fails closed.
         "flow.yml": (wf("permissions: {checks: write}\n", a="    steps: []\n"), ["flow.yml:a"]),
         "quoted.yml": (wf(a="    permissions:\n      checks: 'write'\n"), ["quoted.yml:a"]),
-        "alias.yml": (wf(a="    permissions: *perms\n"), ["alias.yml:a"]),
+        "alias.yml": (wf(a="    permissions: *perms\n"), ["alias.yml:?"]),  # an undefined alias
         "empty.yml": (wf("permissions: {}\n", a="    steps: []\n"), []),
         "read-all.yml": (wf("permissions: read-all\n", a="    steps: []\n"), []),
         "block.yml": (wf(a="    permissions:\n      contents: read  # just reads\n      checks: none\n"), []),
         "blank.yml": (wf(a="    permissions:\n\n      checks: write\n"), ["blank.yml:a"]),
         "comment.yml": (wf(a="    # this job never writes checks: write\n    steps: []\n"), []),
-        "merge-key.yml": (wf(a="    permissions:\n      <<: *perms\n"), ["merge-key.yml:a"]),
+        "merge-key.yml": (wf(a="    permissions:\n      <<: *perms\n"), ["merge-key.yml:?"]),
         "quoted-hash.yml": (wf(a="    permissions: {name: 'x #', checks: write}\n"), ["quoted-hash.yml:a"]),
         "direct-api.yml": (wf(a="    steps:\n      - run: gh api -X POST repos/o/r/check-runs -f name=x\n"), ["direct-api.yml:a"]),
-        "graphql.yml": (wf(a="    steps:\n      - run: gh api graphql -f query='mutation { createCheckRun(input: {}) { clientMutationId } }'\n"), ["graphql.yml:a"]),
+        "graphql.yml": (wf(a="    steps:\n      - run: |\n          gh api graphql -f query='mutation { createCheckRun(input: {}) { clientMutationId } }'\n"), ["graphql.yml:a"]),
         "quoted-input.yml": (
             wf(a="    steps:\n      - with: {note: 'a #', permission-checks: write}\n"),
             ["quoted-input.yml:a"],
@@ -756,14 +775,14 @@ def main() -> int:
         # Any part of jobs: this parser did not consume fails closed.
         "flow-job.yml": (
             wf(reader="    steps: []\n") + "  writer: {runs-on: x, permissions: {checks: write}, steps: []}\n",
-            ["flow-job.yml:?"],
+            ["flow-job.yml:writer"],
         ),
         "key-comment.yml": (
             wf(reader="    steps: []\n") + "  writer:  # reconciles\n    steps:\n"
             "      - run: python3 -m mandate.receipt reconcile\n",
             ["key-comment.yml:writer"],
         ),
-        "after-jobs.yml": (wf(reader="    steps: []\n") + "permissions:\n  checks: write\n", ["after-jobs.yml:?"]),
+        "after-jobs.yml": (wf(reader="    steps: []\n") + "permissions:\n  checks: write\n", ["after-jobs.yml:reader"]),
         # Only workflow- or job-level concurrency serializes; a nested mapping does not.
         "nested.yml": (
             wf(writer="    permissions:\n      checks: write\n    strategy:\n      matrix:\n"
@@ -781,7 +800,7 @@ def main() -> int:
             ["two-tokens.yml:a"],
         ),
         "tests.yml": (wf(a="    steps:\n      - run: python3 mandate/tests/test_receipt.py\n"), []),
-        "odd.yml": ("jobs:\n    a:\n        steps:\n          - run: python3 -m mandate.receipt\n", ["odd.yml:?"]),
+        "odd.yml": ("jobs:\n    a:\n        steps:\n          - run: python3 -m mandate.receipt\n", ["odd.yml:a"]),
     }
     for name, (text, expected) in cases.items():
         assert r.serial_violations({name: text}) == expected, (name, r.serial_violations({name: text}))

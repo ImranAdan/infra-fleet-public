@@ -248,22 +248,21 @@ through `ledger.append()` (KAN-26).
     check with the same name could satisfy it.
 
   `serial_violations()` checks this per job over `.github/workflows/`
-  (`.yml` and `.yaml`) in the tests and fails closed. Any line under `jobs:`
-  it didn't read counts as writing. Within each job and the workflow header
-  it scans every line, so blank lines and nesting hide nothing. A job can
-  write a scope (`checks`, or `contents` for recording) if, outside
-  comments, any of these holds:
-  - a line mentions the scope other than as `<scope>: read` or
-    `<scope>: none` (so `checks: write`, `permission-checks: write`, flow
-    mappings and quoted values all count);
-  - for checks, it calls the Checks API directly (`check-runs`,
-    `createCheckRun`, `updateCheckRun`), whatever token it uses;
-  - a `permissions` key is anything but a block key, `read-all` or `{}` (so
-    `write-all`, and quoted or explicit `?` keys);
-  - it uses a YAML alias or merge key;
-  - it mints an App token with no `permission-*` inputs, because that token
+  (`.yml` and `.yaml`) in the tests. It reads the **parsed** YAML (PyYAML,
+  which `validate-workflows` installs with yamllint; imported only by this
+  function), so quoting, flow mappings, explicit `?` keys, aliases (also as
+  keys) and comments hide nothing. A file that doesn't parse to a `jobs`
+  mapping, or has duplicate or merge keys, is `file:?`. A job can write a
+  scope (`checks`, or `contents` for recording) if any of these holds:
+  - its workflow or job `permissions` grant it `write`, or are anything but
+    absent, `read-all`, `{}` or a mapping of `read`/`write`/`none` (so
+    `write-all`);
+  - a step asks for it (`permission-<scope>` other than `read`/`none`), or
+    mints an App token with no `permission-*` inputs, because that token
     carries every App permission and the Mandate App has checks and contents
-    write.
+    write; a step it can't read counts too;
+  - for checks, it calls the Checks API directly (`check-runs`,
+    `createCheckRun`, `updateCheckRun`), whatever token it uses.
 
   A job that uses `mandate.receipt` must also declare `permissions` at the
   job or workflow level rather than rely on the default.
