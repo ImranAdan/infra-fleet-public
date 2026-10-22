@@ -137,7 +137,13 @@ through `ledger.append()` (KAN-26).
   are therefore ordered by when their inputs were read, and a delayed
   AUTHORIZE can't land over a newer refusal.
   `trailers()` takes the same `after`, so a stale merge worker gets no
-  trailers. The check reads receipts through the same validation as
+  trailers.
+  - **Retries:** a `record()` retry with the `after` it first read is refused
+    with `STALE_DECISION` once its own receipt has landed, including when
+    the append's response was lost (`LEDGER_UNAVAILABLE`: it may or may not
+    have landed). The recorder then reads `pr_latest()` and its inputs
+    again and decides again, which records the next revision. KAN-28 must
+    never refresh only `after` around a cached decision. The check reads receipts through the same validation as
   reconciliation, so a malformed or rebound receipt fails it closed
   (`LEDGER_INVALID`) rather than being skipped.
 - **Check run:** `reconcile_check(head_sha, app_id=…)` is the only publisher.
@@ -158,9 +164,12 @@ through `ledger.append()` (KAN-26).
     that have moved on, which is why the head is checked.
     - **More than one such PR:** the check fails closed, even if only one of
       them has a decision.
-    - **Only one:** it shows that PR's decision on this commit, if that is
-      still its latest. Otherwise nothing is current and the check fails
-      closed.
+    - **Only one:** it shows that PR's decision on this commit at the PR's
+      current base (GitHub's `base.sha`), if that is still its latest.
+      Otherwise nothing is current and the check fails closed: the base
+      moved, the PR was retargeted, or GitHub gave no base. It stays failed
+      until a decision at the new base, and never falls back to an older
+      green receipt, even if the PR is retargeted back.
     - **PR state changes:** these happen outside the writer group, so the
       reconcile re-reads PR state before returning. The live workflow
       (KAN-28) must also run on PR open, reopen and close events.
@@ -221,11 +230,12 @@ through `ledger.append()` (KAN-26).
   concurrency doesn't count: it serializes runs, not the jobs or matrix legs
   of one run. That means publishers are workflows called with a `head_sha`
   input.
-  - **Recorders wait in no group.** A group holds one running and one
-    pending job, and a newer pending job cancels the older one
+  - **Recorders wait in no group.** By default a group holds one running
+    and one pending job, and a newer pending job cancels the older one;
+    `queue: max` allows up to 100 pending and cancels any more once full
     ([GitHub](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)).
-    A recording job replaced while pending would lose its receipt, which
-    could be a newer refusal. Ledger appends are compare-and-swap, so
+    Either way a pending recording job can be cancelled and lose its
+    receipt, which could be a newer refusal. Ledger appends are compare-and-swap, so
     recording needs no group. A job that can write contents counts as a
     recorder and must not mention `concurrency` at any level, so a job can't
     both record and publish. A wrapper script could hide the receipt import,
@@ -239,7 +249,20 @@ through `ledger.append()` (KAN-26).
     the canonical group that can write checks, `needs` exactly that recorder,
     and runs `if: always()`. It then runs even when the recorder appended and
     then failed or was cancelled, so a newer refusal never leaves an older
-    success showing. `serial_violations()` enforces this. A pending reconcile that
+    success showing. Permission to write checks is not reconciliation, so
+    that job must have a step that runs the supported entrypoint:
+
+    ```sh
+    PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile "$GITHUB_REPOSITORY" "$LEDGER_REF" "$HEAD" --app-id "$APP_ID"
+    ```
+
+    The step must be exactly that one command (arguments are free, but no
+    shell operators or second command), with no step `if` other than
+    `always()`, no `continue-on-error`, and bash as its shell (a `defaults`
+    block counts only if the step names `shell: bash`). This is a bounded
+    workflow contract, not shell analysis. The command exits 1 when it
+    refuses, after the check has failed closed. `serial_violations()`
+    enforces all of this. A pending reconcile that
     gets replaced loses nothing: its replacement was queued later and reads
     the ledger when it runs.
   - **Backstop:** if the ledger or the open PRs move during a reconcile, it

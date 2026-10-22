@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import functools
 import re
+import shlex
 import sys
 from pathlib import Path
 from urllib.parse import unquote
@@ -95,6 +96,7 @@ class FakeChecks:
         self.fail_writes = 0  # provider errors on the next writes
         self.open_prs = {7}  # PRs GitHub lists as open on the commit
         self.pr_heads: dict[int, str] = {}  # a PR whose current head moved elsewhere
+        self.pr_bases: dict[int, object] = {}  # a PR's raw base object, when not BASE
 
     def __call__(self, method: str, path: str, payload):
         if method == "GET":
@@ -139,7 +141,8 @@ def both(checks: FakeChecks, git: FakeGit):
             commit = re.search(r"/commits/([0-9a-f]+)/pulls", path).group(1)
             page = int(re.search(r"[?&]page=(\d+)", path).group(1))
             listed = [
-                {"number": n, "state": "open", "head": {"sha": checks.pr_heads.get(n, commit)}}
+                {"number": n, "state": "open", "head": {"sha": checks.pr_heads.get(n, commit)},
+                 "base": checks.pr_bases.get(n, {"sha": BASE})}
                 for n in sorted(checks.open_prs)
             ]
             return listed[(page - 1) * 100 : page * 100]
@@ -210,7 +213,7 @@ def main() -> int:
     # another (the head or base moved), the newer ESCALATE stays the latest.
     for later in (enforced(decision("ESCALATE")), enforced(decision("ESCALATE", subject=e.Subject(REPO, HEAD, "c" * 40, POLICY)))):
         same, checks = FakeGit(), FakeChecks()
-        checks.open_prs = {7}
+        checks.open_prs, checks.pr_bases = {7}, {7: {"sha": later["subject"]["base_sha"]}}
         same.before_advance = lambda later=later: put(same, later, DELEG)
         # This decision saw no receipt (after=None); the ESCALATE lands mid-append.
         refused("STALE_DECISION", lambda: r.record(same, REPO, REF, enforced(decision()), DELEG, after=None))
@@ -256,6 +259,27 @@ def main() -> int:
     refused("STALE_DECISION", lambda: r.record(pair, REPO, REF, enforced(decision(), at="2026-10-21T00:00:01Z"), DELEG, after=r1["entry_digest"]))
     r.reconcile_check(both(checks, pair), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(checks) == [("failure", "ESCALATE (r2)")], visible(checks)
+    # Codex 10183, retries: only ledger.append's retry at one path is
+    # idempotent. A byte-identical record() retry with the token it first
+    # read is stale once its own receipt landed, including when the append's
+    # response was lost; deciding again with a fresh token records r2.
+    retry = FakeGit()
+    landed, _, _ = r.record(retry, REPO, REF, enforced(decision()), DELEG, after=None)
+    refused("STALE_DECISION", lambda: r.record(retry, REPO, REF, enforced(decision()), DELEG, after=None))
+    again, _, appended = r.record(retry, REPO, REF, enforced(decision()), DELEG, after=landed["entry_digest"])
+    assert appended and again["receipt_revision"] == "r2", again
+    lost = FakeGit()
+
+    def lost_response(method, path, payload):
+        out = lost(method, path, payload)
+        if method == "PATCH":  # the ref moved, the response never arrived
+            raise l.ApiError(502, "response lost")
+        return out
+
+    refused("LEDGER_UNAVAILABLE", lambda: r.record(lost_response, REPO, REF, enforced(decision()), DELEG, after=None))
+    assert len(lost.files(REF)[l.LEDGER].splitlines()) == 1  # it landed
+    refused("STALE_DECISION", lambda: r.record(lost, REPO, REF, enforced(decision()), DELEG, after=None))
+    assert put(lost, enforced(decision()), DELEG)[0]["receipt_revision"] == "r2"
 
     # A tampered receipt fails closed, even when it still says the same thing
     # (re-serialized, so its digest differs).
@@ -350,6 +374,7 @@ def main() -> int:
     r.reconcile_check(api_m, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     new_base = enforced(decision("ESCALATE", subject=e.Subject(REPO, HEAD, "c" * 40, POLICY)))
     put(moved_base, new_base, DELEG)
+    ck_m.pr_bases = {7: {"sha": "c" * 40}}
     r.reconcile_check(api_m, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(ck_m) == [("failure", "ESCALATE (r1)")], visible(ck_m)
     assert ck_m.runs[0]["external_id"] == new_base["decision_id"]
@@ -360,6 +385,7 @@ def main() -> int:
     r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     put(race_m, enforced(decision()), DELEG)
     ck_rm.before_write = lambda: (
+        ck_rm.pr_bases.update({7: {"sha": "c" * 40}}),
         put(race_m, new_base, DELEG),
         r.reconcile_check(api_rm, REPO, REF, HEAD, app_id=APP, delegations=RESOLVE),
     )
@@ -412,6 +438,42 @@ def main() -> int:
     ck_s.open_prs = {7}
     put(shared, enforced(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY))), DELEG)
     refused("CONTRACT_ERROR", reconcile_shared)
+
+    # Codex bot R3-F1: a decision is bound to the PR's base. The base moves
+    # (or the PR is retargeted) under the same head: the old AUTHORIZE is not
+    # current, so the check fails closed until a decision at the new base.
+    rebased, ck_rb2 = FakeGit(), FakeChecks()
+    put(rebased, enforced(decision()), DELEG)
+
+    def reconcile_rebased() -> None:
+        r.reconcile_check(both(ck_rb2, rebased), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+
+    reconcile_rebased()
+    assert visible(ck_rb2) == [("success", "AUTHORIZE (r1)")], visible(ck_rb2)
+    ck_rb2.pr_bases = {7: {"sha": "c" * 40}}
+    refused("CONTRACT_ERROR", reconcile_rebased)
+    assert visible(ck_rb2) == [("failure", "CONTRACT_ERROR")], visible(ck_rb2)
+    # A fresh decision at the new base recovers ...
+    put(rebased, enforced(decision(subject=e.Subject(REPO, HEAD, "c" * 40, POLICY))), DELEG)
+    reconcile_rebased()
+    assert visible(ck_rb2) == [("success", "AUTHORIZE (r1)")], visible(ck_rb2)
+    # ... and retargeting back never falls back to the older green receipt.
+    ck_rb2.pr_bases = {}
+    refused("CONTRACT_ERROR", reconcile_rebased)
+    assert visible(ck_rb2) == [("failure", "CONTRACT_ERROR")], visible(ck_rb2)
+    # GitHub lists the PR without a usable base: nothing is current.
+    for raw in (None, {}, {"sha": None}):
+        ck_rb2.pr_bases = {7: {"sha": "c" * 40}}
+        reconcile_rebased()
+        ck_rb2.pr_bases = {7: raw}
+        refused("CONTRACT_ERROR", reconcile_rebased)
+        assert visible(ck_rb2) == [("failure", "CONTRACT_ERROR")], (raw, visible(ck_rb2))
+    # The base moves while a reconcile runs: seen before it returns.
+    moving, ck_mv = FakeGit(), FakeChecks()
+    put(moving, enforced(decision()), DELEG)
+    ck_mv.before_write = lambda: ck_mv.pr_bases.update({7: {"sha": "c" * 40}})
+    refused("CONTRACT_ERROR", lambda: r.reconcile_check(both(ck_mv, moving), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
+    assert ck_mv.shown == [("success", "AUTHORIZE (r1)"), ("failure", "CONTRACT_ERROR")], ck_mv.shown
 
     # A shadow decision that supersedes a live AUTHORIZE retires the required
     # check: shadow grants nothing, so mandate/decision must not stay green.
@@ -665,7 +727,8 @@ def main() -> int:
         )
 
     serial = f"    concurrency:\n      group: {group}\n      cancel-in-progress: false\n"
-    write = "    steps:\n      - run: python3 -m mandate.receipt reconcile\n"
+    command = 'PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile "$GITHUB_REPOSITORY" "$LEDGER_REF" "$HEAD" --app-id "$APP_ID"'
+    write = f"    steps:\n      - run: {command}\n"
     top = f"concurrency:\n  group: '{group}'\n  cancel-in-progress: false\n"
     pub = "    permissions:\n      checks: write\n"
     rec = "    permissions:\n      contents: write\n"
@@ -701,6 +764,29 @@ def main() -> int:
             ["extra-needs.yml:record"],
         ),
         "unordered.yml": (wf(record=rec + record, publish=pub + serial + write), ["unordered.yml:record"]),
+        # Codex bot R3-F2: the follower must run the supported reconciler,
+        # unconditionally and failing the job if it fails, not merely be able
+        # to write checks.
+        **{
+            f"{label}.yml": (
+                wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + steps),
+                [f"{label}.yml:record"],
+            )
+            for label, steps in (
+                ("noop-successor", "    steps:\n      - run: echo no-reconciliation\n"),
+                ("empty-successor", "    steps: []\n"),
+                ("skipped-step", write + "        if: false\n"),
+                ("soft-step", write + "        continue-on-error: true\n"),
+                ("swallowed", write.rstrip("\n") + " || true\n"),
+                ("other-shell", write + "        shell: cat {0}\n"),
+                ("other-path", write.replace("mandate/src", "/tmp/fake")),
+                ("mentions-only", "    steps:\n      - run: python3 -c 'import mandate.receipt'\n"),
+                ("default-shell", "    defaults:\n      run:\n        shell: cat {0}\n" + write),
+            )
+        },
+        "bash-shell.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n    defaults:\n      run:\n        shell: cat {0}\n" + pub + serial + write + "        shell: bash\n"), []),
+        "always-step.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write + "        if: always()\n"), []),
+        "folded-step.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace(" --app-id", " \\\n          --app-id").replace("run: ", "run: |\n          ")), []),
         "ungrouped-after.yml": (
             wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + write),
             ["ungrouped-after.yml:record", "ungrouped-after.yml:publish"],
@@ -826,6 +912,28 @@ def main() -> int:
     folder = ROOT / ".github" / "workflows"
     workflows = {w.name: w.read_text() for w in [*folder.glob("*.yml"), *folder.glob("*.yaml")]}
     assert len(workflows) > 10 and r.serial_violations(workflows) == [], r.serial_violations(workflows)
+    # The command the scan requires is the real reconciler's entrypoint.
+    cli, ck_cli = FakeGit(), FakeChecks()
+    put(cli, enforced(decision()), DELEG)
+    env = {"$GITHUB_REPOSITORY": REPO, "$LEDGER_REF": REF, "$HEAD": HEAD, "$APP_ID": str(APP)}
+    argv = [env.get(x, x) for x in shlex.split(command)[4:]]
+    assert shlex.split(command)[:4] == ["PYTHONPATH=mandate/src", "python3", "-m", "mandate.receipt"]
+    assert r.main(argv, api=both(ck_cli, cli), delegations=RESOLVE) == 0
+    assert visible(ck_cli) == [("success", "AUTHORIZE (r1)")], visible(ck_cli)
+    put(cli, enforced(decision("ESCALATE")), DELEG)
+    assert r.main(argv, api=both(ck_cli, cli), delegations=RESOLVE) == 0
+    assert visible(ck_cli) == [("failure", "ESCALATE (r2)")], visible(ck_cli)
+    ck_cli.pr_bases = {7: {"sha": "c" * 40}}  # refused: exit 1, the check failed closed
+    assert r.main(argv, api=both(ck_cli, cli), delegations=RESOLVE) == 1
+    assert visible(ck_cli) == [("failure", "CONTRACT_ERROR")], visible(ck_cli)
+    # Production resolves the owner's delegation at the pinned commit; an
+    # unpinned policy is refused before any read.
+    try:
+        r._delegation(REPO, "ImranAdan/mandate-delegation@main:repositories/r.toml")
+    except d.DelegationError as exc:
+        assert "full commit SHA" in str(exc), exc
+    else:
+        raise AssertionError("resolved an unpinned delegation")
 
     # Codex F2: the summary fits GitHub's 65535-byte limit in UTF-8, cut on a
     # character boundary, with multibyte reason text. Shifting by 0-3 ASCII

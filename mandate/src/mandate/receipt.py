@@ -23,15 +23,17 @@ audit() reports as "not detectable with available anchor".
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
+import sys
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
 
 from mandate import ledger as l
 from mandate.decision import REGISTRY, REGISTRY_VERSION, Decision, worst
-from mandate.delegation import Delegation
+from mandate.delegation import Delegation, fetch
 from mandate.evidence import EvidenceRecord, Subject, evaluate
 
 SCHEMA_VERSION = 1
@@ -44,6 +46,9 @@ LIVE = re.compile(r"sha256:[0-9a-f]{64}")  # a real enforcement snapshot digest 
 # publishers are workflows called with a ``head_sha`` input, so every caller
 # computes this group.
 CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}"
+# The supported publisher step (main() below), as a recorder's follower must run it.
+_RECONCILE = re.compile(r"PYTHONPATH=mandate/src python3 -m mandate\.receipt reconcile(?: [^;&|<>`()\n\\]+)?")
+_ALWAYS = ("always()", "${{always()}}")
 _USES_RECEIPTS = re.compile(r"mandate(\.| import )receipt|src/mandate/receipt\.py")
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
 _TRAILER = re.compile(rf"(?m)^({'|'.join(TRAILERS)}): (\S+)$")
@@ -385,20 +390,25 @@ def _authorized(receipt: dict[str, Any], delegation: Delegation | None) -> bool:
 
 
 def _newest(
-    entries: list[dict[str, Any]], stored: dict[str, bytes], repo: str, head: str, open_prs: set[int]
+    entries: list[dict[str, Any]], stored: dict[str, bytes], repo: str, head: str, open_prs: dict[int, Any]
 ) -> dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]]:
     """Check name -> (entry, receipt, PRs) to show for this head.
 
-    PRs: every open PR whose current head is this commit (``open_prs``),
-    decided or not, since they all share the commit's one check. Candidates:
-    their decisions on this head, where it is still their latest decision. The required check follows the newest
+    PRs: every open PR whose current head is this commit (``open_prs``, PR ->
+    its current base), decided or not, since they all share the commit's one
+    check. Candidates: their decisions on this head and their current base,
+    where it is still their latest decision. The required check follows the newest
     of their decisions in any mode, so a shadow decision that supersedes a
     live one retires it; the shadow check follows the newest shadow one.
     """
     decisions = [(e, rc) for e, rc in _decisions(entries, stored) if rc["subject"]["repository"] == repo]
     latest = {receipt["subject"]["pull_request"]: receipt for _, receipt in decisions}
     prs = sorted(open_prs)
-    current = {pr for pr, receipt in latest.items() if receipt["subject"]["head_sha"] == head and pr in open_prs}
+    current = {
+        pr
+        for pr, receipt in latest.items()
+        if pr in open_prs and (receipt["subject"]["head_sha"], receipt["subject"]["base_sha"]) == (head, open_prs[pr])
+    }
     found: dict[str, tuple[dict[str, Any], dict[str, Any], list[int]]] = {}
     for entry, receipt in decisions:
         s = receipt["subject"]
@@ -423,6 +433,8 @@ def reconcile_check(
     The only check publisher. The caller names the head, never a decision or
     revision, so a delayed caller cannot choose a superseded one, including an
     older decision ID for the same head (base, policy or enforcement moved).
+    A decision is current only at its PR's live base: a moved or retargeted
+    base fails closed until a decision there.
     The required ``mandate/decision`` follows the newest decision of any mode
     and passes only for a live AUTHORIZE; shadow decisions show on
     ``mandate/shadow`` (GitHub counts neutral as passing, so never on the
@@ -475,13 +487,18 @@ def _fail_closed(api: l.Api, repo: str, head: str, app_id: int, exc: Exception) 
         pass
 
 
-def _open_prs(api: l.Api, repo: str, head: str) -> set[int]:
-    """Open PRs whose current head is this commit. GitHub lists PRs associated
-    with a commit, not only those it still heads, so filter on head.sha."""
-    found: set[int] = set()
+def _open_prs(api: l.Api, repo: str, head: str) -> dict[int, Any]:
+    """Open PR -> current base SHA, for PRs whose current head is this commit.
+    GitHub lists PRs associated with a commit, not only those it still heads,
+    so filter on head.sha. A missing base is None, which no receipt names."""
+    found: dict[int, Any] = {}
     for page in range(1, 1000):
         batch = api("GET", f"repos/{repo}/commits/{head}/pulls?per_page=100&page={page}", None)
-        found |= {p["number"] for p in batch if p.get("state") == "open" and (p.get("head") or {}).get("sha") == head}
+        found |= {
+            p["number"]: (p.get("base") or {}).get("sha")
+            for p in batch
+            if p.get("state") == "open" and (p.get("head") or {}).get("sha") == head
+        }
         if len(batch) < 100:
             return found
     return found
@@ -495,7 +512,7 @@ def _reconcile(
         open_prs = _open_prs(api, repo, head)
         shown = _newest(entries, stored, repo, head, open_prs)
         if not shown:
-            raise l.LedgerError("CONTRACT_ERROR", f"no receipt recorded for {repo}@{head}")
+            raise l.LedgerError("CONTRACT_ERROR", f"no receipt recorded for {repo}@{head} at its PR's current base")
         for name, (entry, receipt, prs) in shown.items():
             s = receipt["subject"]
             live = receipt["decision"]["outcome"] == "AUTHORIZE" and LIVE.fullmatch(s["enforcement"])
@@ -541,6 +558,21 @@ def _token_writes(job: dict[str, Any], scope: str) -> bool:
     return False
 
 
+def _reconciles(job: dict[str, Any], defaults: bool) -> bool:
+    """A step runs the supported reconciler: the one command, unconditionally,
+    in bash, failing the job if it fails. A bounded contract, not shell
+    analysis; ``defaults`` (job or workflow) could change the shell."""
+    return any(
+        isinstance(step, dict)
+        and isinstance(step.get("run"), str)
+        and bool(_RECONCILE.fullmatch(re.sub(r"\\\n\s*", " ", step["run"]).strip()))
+        and str(step.get("if", "always()")).replace(" ", "") in _ALWAYS
+        and step.get("continue-on-error", False) is False
+        and step.get("shell", None if defaults else "bash") == "bash"
+        for step in job.get("steps") or []
+    )
+
+
 def _workflow(text: str) -> tuple[dict[str, Any], dict[str, list[str]]]:
     """The parsed workflow and, per job, its raw lines at the job's own
     indentation (comments, which parsing drops). Duplicate and merge keys
@@ -575,8 +607,9 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
     that can record receipts (contents write, unless the job states
     ``# mandate: no-receipts`` at its own indentation and doesn't use them)
     inside any concurrency group, where GitHub can replace it while pending,
-    or that no grouped publisher follows (one that needs exactly it and runs
-    ``if: always()``), or one that uses receipts without declaring its
+    or that no grouped publisher follows (one that needs exactly it, runs
+    ``if: always()`` and has a step that runs the supported reconciler, main(),
+    as _reconciles() reads it), or one that uses receipts without declaring its
     permissions. A file that doesn't parse to jobs, or has duplicate or merge
     keys, is ``file:?``. It sees only what YAML shows: a script handed a
     credential is outside it (mandate/README.md, credentials)."""
@@ -616,20 +649,53 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
             needs = job.get("needs") or []
             # It reconciles after exactly one job, whatever that job's result.
             after = [needs] if isinstance(needs, str) else needs
-            always = str(job.get("if", "")).replace(" ", "") in ("always()", "${{always()}}")
-            info[job_name] = (publishes, canonical, records, uses, after if always else None)
+            always = str(job.get("if", "")).replace(" ", "") in _ALWAYS
+            reconciles = _reconciles(job, "defaults" in doc or "defaults" in job)
+            info[job_name] = (publishes, canonical, records, uses, after if always and reconciles else None)
         for job_name, (publishes, canonical, records, uses, _) in info.items():
             job = jobs[job_name]
             if (
                 (publishes and not canonical)
                 or (records and ("concurrency" in doc or "concurrency" in job))
                 # A recorder is followed by a grouped publisher that always
-                # runs after it, so a newer refusal never leaves an older success.
+                # runs after it and runs the reconciler, so a newer refusal
+                # never leaves an older success.
                 or (records and not any(p and c and follows == [job_name] for p, c, _, _, follows in info.values()))
                 or (uses and "permissions" not in doc and "permissions" not in job)
             ):
                 bad.append(f"{name}:{job_name}")
     return bad
+
+
+def _delegation(repository: str, policy: str) -> Delegation:
+    """The owner's delegation at the commit a receipt's policy pins. A policy
+    naming another delegation repository fails _authorized (its source differs)."""
+    return fetch(repository, policy.partition("@")[2].partition(":")[0])
+
+
+def main(
+    argv: list[str] | None = None,
+    api: l.Api = l.gh_api,
+    delegations: Callable[[str, str], Delegation] = _delegation,
+) -> int:
+    """The supported publisher entrypoint; a recorder's follower must run it
+    (serial_violations()): PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile ..."""
+    parser = argparse.ArgumentParser(description="Show a head commit's newest recorded decision on its checks")
+    sub = parser.add_subparsers(dest="command", required=True)
+    run = sub.add_parser("reconcile", help="reconcile_check(): the only check publisher")
+    run.add_argument("repository")
+    run.add_argument("ref", help="the ledger branch")
+    run.add_argument("head", help="the head commit SHA")
+    run.add_argument("--app-id", type=int, required=True, help="the publisher App; only its runs are touched")
+    args = parser.parse_args(argv)
+    try:
+        shown = reconcile_check(api, args.repository, args.ref, args.head, app_id=args.app_id, delegations=delegations)
+    except (l.LedgerError, l.ApiError, ValueError) as exc:  # the check already failed closed
+        print(f"refused: {exc}", file=sys.stderr)
+        return 1
+    for name, entry in shown.items():
+        print(f"{name}: {entry['decision_id']}/{entry['receipt_revision']}")
+    return 0
 
 
 def trailers(
@@ -720,3 +786,7 @@ def audit(
             "rewrite or forged appends (key compromise) after it are not detectable with available anchor"
         )
     return failures, limits
+
+
+if __name__ == "__main__":
+    sys.exit(main())
