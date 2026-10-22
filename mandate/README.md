@@ -197,21 +197,31 @@ through `ledger.append()` (KAN-26).
   - **Identifiers:** snapshots, receipt IDs, delegation names and commit
     SHAs are matched whole (`fullmatch`), so a trailing newline never
     passes.
-- **One writer per head commit:** GitHub's ruleset reads the check's
-  conclusion, and the Checks API has no compare-and-swap. So every job that
-  records receipts or writes checks must run in the one canonical group,
+- **One publisher per head commit; recorders outside the group:** GitHub's
+  ruleset reads the check's conclusion, and the Checks API has no
+  compare-and-swap. So every job that can write checks must run in the one
+  canonical group,
   `mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}`, with
   `cancel-in-progress: false`, set on the job itself. Workflow-level
   concurrency doesn't count: it serializes runs, not the jobs or matrix legs
-  of one run. That means writers are workflows called with a `head_sha`
+  of one run. That means publishers are workflows called with a `head_sha`
   input.
-  - **Why it's safe:** GitHub runs at most one job in a group at a time. A
-    newer pending run replaces an older pending one, and because it
-    reconciles from the ledger, it loses nothing.
-  - **Backstop:** if the ledger still moves during a reconcile (only possible
-    when the boundary is bypassed), the reconcile re-reads and shows the newer
-    decision before returning. It lists every run (`filter=all`, paged), so
-    duplicates from a past race are kept current.
+  - **Recorders wait in no group.** A group holds one running and one
+    pending job, and a newer pending job cancels the older one
+    ([GitHub](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)).
+    A recording job replaced while pending would lose its receipt, which
+    could be a newer refusal. Ledger appends are compare-and-swap, so
+    recording needs no group. A job that uses `mandate.receipt` with
+    contents write must not mention `concurrency` at any level, so a job
+    can't both record and publish.
+  - **Record, then publish:** a recorder queues a reconcile after its append
+    (for example a `needs:` job in the group). A pending reconcile that gets
+    replaced loses nothing: its replacement was queued later and reads the
+    ledger when it runs.
+  - **Backstop:** if the ledger or the open PRs move during a reconcile, it
+    re-reads and shows the newer decision before returning. It lists every
+    run (`filter=all`, paged), so duplicates from a past race are kept
+    current.
   - **G4 owner action:** the ruleset that requires `mandate/decision` must
     bind it to the publisher App. Otherwise a commit status or another App's
     check with the same name could satisfy it.
@@ -219,19 +229,23 @@ through `ledger.append()` (KAN-26).
   `serial_violations()` checks this per job over `.github/workflows/`
   (`.yml` and `.yaml`) in the tests and fails closed. Any line under `jobs:`
   it didn't read counts as writing. Within each job and the workflow header
-  it scans every line, so blank lines and nesting hide nothing. A job counts
-  as a writer if, outside comments, any of these holds:
-  - it uses `mandate.receipt`;
-  - a line mentions `checks` other than as `checks: read` or `checks: none`
-    (so `checks: write`, `permission-checks: write`, flow mappings and quoted
-    values all count);
-  - it calls the Checks API directly (`check-runs`, `createCheckRun`,
-    `updateCheckRun`), whatever token it uses;
-  - an inline `permissions:` value is anything but `read-all` or `{}` (so
-    `write-all`);
+  it scans every line, so blank lines and nesting hide nothing. A job can
+  write a scope (`checks`, or `contents` for recording) if, outside
+  comments, any of these holds:
+  - a line mentions the scope other than as `<scope>: read` or
+    `<scope>: none` (so `checks: write`, `permission-checks: write`, flow
+    mappings and quoted values all count);
+  - for checks, it calls the Checks API directly (`check-runs`,
+    `createCheckRun`, `updateCheckRun`), whatever token it uses;
+  - a `permissions` key is anything but a block key, `read-all` or `{}` (so
+    `write-all`, and quoted or explicit `?` keys);
   - it uses a YAML alias or merge key;
   - it mints an App token with no `permission-*` inputs, because that token
-    carries every App permission and the Mandate App has `checks: write`.
+    carries every App permission and the Mandate App has checks and contents
+    write.
+
+  A job that uses `mandate.receipt` must also declare `permissions` at the
+  job or workflow level rather than rely on the default.
 
   The check guards against mistakes, not against someone who can edit
   workflows: workflow changes are already owner decisions at the merge gate.

@@ -8,7 +8,8 @@ revision) differs from the latest, so rerunning identical inputs is a no-op,
 and flipping back to an earlier result is a new revision, never a reuse.
 
 reconcile_check() is the only check publisher: it shows the ledger's latest
-revision, and every writer runs as one serialized job per pull request.
+revision, and publishers run as one serialized job per head commit. Recording
+needs no group: ledger appends are compare-and-swap.
 
 The merge commit is the anchor: trailers() records a fresh AUTHORIZE decision
 for the subject the worker acted on and names that latest revision's receipt
@@ -38,8 +39,9 @@ CHECK_NAME = "mandate/decision"  # the required check: live decisions only
 SHADOW_CHECK_NAME = "mandate/shadow"  # never required; GitHub counts neutral as passing
 SHADOW = "shadow"  # the enforcement snapshot of a decision that grants nothing
 LIVE = re.compile(r"sha256:[0-9a-f]{64}")  # a real enforcement snapshot digest (fullmatch)
-# One writer per head commit (checks belong to a commit, not a PR): writers are
-# workflows called with a ``head_sha`` input, so every caller computes this group.
+# One check publisher per head commit (checks belong to a commit, not a PR):
+# publishers are workflows called with a ``head_sha`` input, so every caller
+# computes this group.
 CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}"
 _USES_RECEIPTS = re.compile(r"mandate(\.| import )receipt|src/mandate/receipt\.py")
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
@@ -397,11 +399,14 @@ def reconcile_check(
     The Checks API has no compare-and-swap, so two boundaries hold the checks
     to the ledger:
 
-    - one writer per head commit: every job that records receipts or writes
-      checks runs in CANONICAL_GROUP (job-level) without cancelling in progress
-      (serial_violations() enforces it over the workflows);
-    - if the ledger moved while this ran (only possible when that boundary is
-      bypassed), it shows the newer decision before returning.
+    - one publisher per head commit: every job that can write checks runs in
+      CANONICAL_GROUP (job-level) without cancelling in progress, and no job
+      that can record waits in a group, where GitHub could replace it while
+      pending (serial_violations() enforces both over the workflows);
+    - if the ledger or the open PRs moved while this ran (recorders run
+      outside the group), it shows the newer decision before returning. A
+      recorder queues a reconcile after its append, so a later reconcile
+      always reads it.
 
     Only runs created by ``app_id`` (the publisher App) are ours. The
     conclusion follows the receipt's recorded enforcement, and a passing one
@@ -486,16 +491,18 @@ def _serialized(block: str) -> bool:
     )
 
 
-def _may_write_checks(block: str) -> bool:
-    """Whether a workflow header or job block can write checks, scanning every
-    line (so blank lines or nesting hide nothing) and failing closed.
+def _may_write(block: str, scope: str) -> bool:
+    """Whether a workflow header or job block can write ``scope`` (``checks``
+    or ``contents``), scanning every line (so blank lines or nesting hide
+    nothing) and failing closed.
 
-    A line can write checks if, outside comments, it mentions ``checks`` other
-    than as ``checks: read|none``, calls the Checks API directly (``check-runs``,
-    ``createCheckRun``), or sets ``permissions:`` inline to anything
-    but ``read-all`` or ``{}`` (so ``write-all``), or uses a YAML alias or
-    merge key. An App token step without ``permission-*`` inputs also counts:
-    it carries every App permission, and the Mandate App has checks: write.
+    A line can write it if, outside comments, it mentions the scope other than
+    as ``<scope>: read|none``, calls the Checks API directly (``check-runs``,
+    ``createCheckRun``; checks only), has a ``permissions`` key other than a
+    block key or ``permissions: read-all|{}`` (so ``write-all``, quoted or
+    explicit keys), or uses a YAML alias or merge key. An App token step
+    without ``permission-*`` inputs also counts: it carries every App
+    permission, and the Mandate App has checks and contents write.
 
     It guards against mistakes, not an adversary who can edit workflows:
     workflow changes are themselves owner decisions at the merge gate.
@@ -504,14 +511,14 @@ def _may_write_checks(block: str) -> bool:
         if raw.lstrip().startswith("#"):
             continue  # a whole-line comment
         line = raw if ("'" in raw or '"' in raw) else re.sub(r"\s#.*", "", raw)  # a quoted # stays
-        if re.search(r"\bchecks\b", line) and not re.fullmatch(r" *checks: *(read|none) *", line):
+        if re.search(rf"\b{scope}\b", line) and not re.fullmatch(rf" *{scope}: *(read|none) *", line):
             return True
-        if re.search(r"check-runs|check_runs|(?i:createCheckRun|updateCheckRun)", line):
+        if scope == "checks" and re.search(r"check-runs|check_runs|(?i:createCheckRun|updateCheckRun)", line):
             return True  # a direct Checks API call, whatever token it uses
         if re.search(r"<<:|(?:^|[:\-])\s+\*[\w-]+\s*$", line):
             return True
-        inline = re.fullmatch(r" *permissions:[ \t]*(.*?)[ \t]*", line)
-        if inline and inline.group(1) not in ("", "read-all", "{}"):
+        key = re.search(r"""\bpermissions\b["']?\s*:|\?\s*["']?permissions\b""", line)
+        if key and not re.fullmatch(r" *permissions:[ \t]*(read-all|\{\})?[ \t]*", line):
             return True
     for step in re.split(r"(?m)^(?= *- )", block):
         if "create-github-app-token" in step and not re.search(r"(?m)^ *permission-[\w-]+:", step):
@@ -520,8 +527,11 @@ def _may_write_checks(block: str) -> bool:
 
 
 def serial_violations(workflows: dict[str, str]) -> list[str]:
-    """``file:job`` for each job that records receipts or can write checks
-    outside the canonical per-head job concurrency group."""
+    """``file:job`` for each job that breaks the writer boundary: one that can
+    write checks outside the canonical per-head job concurrency group, one
+    that can record receipts (uses them with contents write) inside any
+    concurrency group, where GitHub can replace it while pending, or one that
+    uses receipts without declaring its permissions."""
     bad = []
     for name, text in sorted(workflows.items()):
         header, _, body = text.partition("\njobs:\n")
@@ -532,15 +542,17 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
             not re.fullmatch(r"\s*(#.*)?|  [\w-]+:[ \t]*(#.*)?|    .*", line)
             for line in body.splitlines()
         )
-        if unread or (not jobs and (_USES_RECEIPTS.search(text) or _may_write_checks(text))):
+        if unread or (not jobs and (_USES_RECEIPTS.search(text) or _may_write(text, "checks"))):
             bad.append(f"{name}:?")
         for job, block in jobs:
-            writes = (
-                _USES_RECEIPTS.search(header + block)
-                or _may_write_checks(header)
-                or _may_write_checks(block)
-            )
-            if writes and not _serialized(block):
+            uses = _USES_RECEIPTS.search(header + block)
+            publishes = _may_write(header, "checks") or _may_write(block, "checks")
+            records = uses and (_may_write(header, "contents") or _may_write(block, "contents"))
+            if (
+                (publishes and not _serialized(block))
+                or (records and re.search(r"\bconcurrency\b", header + block))
+                or (uses and not re.search(r"(?m)^ *permissions:", header + block))
+            ):
                 bad.append(f"{name}:{job}")
     return bad
 

@@ -611,21 +611,44 @@ def main() -> int:
     serial = f"    concurrency:\n      group: {group}\n      cancel-in-progress: false\n"
     write = "    steps:\n      - run: python3 -m mandate.receipt reconcile\n"
     top = f"concurrency:\n  group: '{group}'\n  cancel-in-progress: false\n"
+    pub = "    permissions:\n      checks: write\n"
+    rec = "    permissions:\n      contents: write\n"
+    record = write.replace("reconcile", "record")
     token = (
         "    steps:\n      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1\n"
         "        with:\n          client-id: x\n"
     )
     cases = {
-        "job.yml": (wf(writer=serial + write), []),
+        "job.yml": (wf(writer=pub + serial + write), []),
         # Workflow-level concurrency serializes runs, not the jobs (or matrix
         # legs) of one run, so only job-level concurrency counts (Codex bot).
-        "top.yml": (wf(top, writer=write), ["top.yml:writer"]),
-        "two-writers.yml": (wf(top, a=write, b=write), ["two-writers.yml:a", "two-writers.yml:b"]),
-        "top-and-job.yml": (wf(top, writer=serial + write), []),
+        "top.yml": (wf(top, writer=pub + write), ["top.yml:writer"]),
+        "two-writers.yml": (wf(top, a=pub + write, b=pub + write), ["two-writers.yml:a", "two-writers.yml:b"]),
+        "top-and-job.yml": (wf(top, writer=pub + serial + write), []),
+        # A pending job in a group is replaced by a newer one, so a job that
+        # can record (contents: write) must not wait in any group; appends are
+        # compare-and-swap safe without one. Record, then publish (Codex bot).
+        "recorder.yml": (wf(a=rec + record), []),
+        "split.yml": (wf(record=rec + record, publish="    needs: record\n" + pub + serial + write), []),
+        "grouped-recorder.yml": (wf(a=rec + serial + record), ["grouped-recorder.yml:a"]),
+        "top-recorder.yml": (wf(top, a=rec + record), ["top-recorder.yml:a"]),
+        "header-recorder.yml": (wf("permissions:\n  contents: write\n", a=serial + record), ["header-recorder.yml:a"]),
+        "quoted-group-recorder.yml": (wf(a=rec + '    "concurrency": x\n' + record), ["quoted-group-recorder.yml:a"]),
+        "both.yml": (
+            wf(a="    permissions:\n      contents: write\n      checks: write\n" + serial + record),
+            ["both.yml:a"],
+        ),
+        "direct-publisher.yml": (wf(a=pub + serial + write + "      - run: gh api repos/o/r/check-runs\n"), []),
+        "token-recorder.yml": (wf(a=serial + token + "          permission-contents: write\n" + record), ["token-recorder.yml:a"]),
+        # A receipt user must declare permissions rather than trust the default.
+        "undeclared.yml": (wf(a=serial + write), ["undeclared.yml:a"]),
+        # Quoted or explicit permission keys are read as anything (Codex bot).
+        "quoted-key.yml": (wf(a='    "permissions": write-all\n'), ["quoted-key.yml:a"]),
+        "explicit-key.yml": (wf(a="    ? permissions\n    : write-all\n"), ["explicit-key.yml:a"]),
         "bare.yml": (wf(writer=write), ["bare.yml:writer"]),
         "other-job.yml": (wf(reader=serial, writer=write), ["other-job.yml:writer"]),
-        "suffix.yml": (wf(writer=serial.replace("inputs.head_sha", "inputs.pr") + write), ["suffix.yml:writer"]),
-        "cancel.yml": (wf(writer=serial.replace("false", "true") + write), ["cancel.yml:writer"]),
+        "suffix.yml": (wf(writer=pub + serial.replace("inputs.head_sha", "inputs.pr") + write), ["suffix.yml:writer"]),
+        "cancel.yml": (wf(writer=pub + serial.replace("false", "true") + write), ["cancel.yml:writer"]),
         "checks.yml": (wf("permissions:\n  checks: write\n", a="    steps: []\n"), ["checks.yml:a"]),
         "job-checks.yml": (wf(a="    permissions:\n      checks: write\n"), ["job-checks.yml:a"]),
         "inline.yml": (wf(a="    steps:\n      - run: python3 -c 'from mandate import receipt'\n"), ["inline.yml:a"]),
