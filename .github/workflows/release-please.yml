@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   release-please:
+    # mandate: no-receipts (release PRs and tags only; mandate/README.md)
     runs-on: ubuntu-latest
     env:
       # secrets cannot be referenced directly in a step-level `if`, so surface

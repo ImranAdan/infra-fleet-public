@@ -232,13 +232,15 @@ through `ledger.append()` (KAN-26).
     so this holds unless the job states `# mandate: no-receipts` (a comment
     at the job's own indentation, never inside a script) and doesn't itself
     use `mandate.receipt`. Today
-    `advisor-remediation` `propose`, `autonomous-merge` `merge` and
-    `ledger-drill` `drill` state it. KAN-28 must drop the line from the merge
+    `advisor-remediation` `propose`, `autonomous-merge` `merge`,
+    `ledger-drill` `drill` and `release-please` state it. KAN-28 must drop the line from the merge
     worker before that worker records.
-  - **Record, then publish:** a recorder queues a reconcile after its append
-    (for example a `needs:` job in the group). A pending reconcile that gets
-    replaced loses nothing: its replacement was queued later and reads the
-    ledger when it runs.
+  - **Record, then publish:** every recorder must be followed, through
+    `needs:` (transitively), by a job in the canonical group that can write
+    checks, so a newer refusal it appends never leaves an older success
+    showing. `serial_violations()` enforces this. A pending reconcile that
+    gets replaced loses nothing: its replacement was queued later and reads
+    the ledger when it runs.
   - **Backstop:** if the ledger or the open PRs move during a reconcile, it
     re-reads and shows the newer decision before returning. It lists every
     run (`filter=all`, paged), so duplicates from a past race are kept

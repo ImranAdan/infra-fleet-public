@@ -684,8 +684,19 @@ def main() -> int:
         # A pending job in a group is replaced by a newer one, so a job that
         # can record (contents: write) must not wait in any group; appends are
         # compare-and-swap safe without one. Record, then publish (Codex bot).
-        "recorder.yml": (wf(a=rec + record), []),
+        # Codex bot: a recorder must be followed (needs, transitively) by a
+        # grouped publisher, or a newer refusal could leave a stale green check.
+        "recorder.yml": (wf(a=rec + record), ["recorder.yml:a"]),
         "split.yml": (wf(record=rec + record, publish="    needs: record\n" + pub + serial + write), []),
+        "chain.yml": (
+            wf(record=rec + record, mid="    needs: record\n    steps: []\n", publish="    needs: [mid]\n" + pub + serial + write),
+            [],
+        ),
+        "unordered.yml": (wf(record=rec + record, publish=pub + serial + write), ["unordered.yml:record"]),
+        "ungrouped-after.yml": (
+            wf(record=rec + record, publish="    needs: record\n" + pub + write),
+            ["ungrouped-after.yml:record", "ungrouped-after.yml:publish"],
+        ),
         "grouped-recorder.yml": (wf(a=rec + serial + record), ["grouped-recorder.yml:a"]),
         "top-recorder.yml": (wf(top, a=rec + record), ["top-recorder.yml:a"]),
         "header-recorder.yml": (wf("permissions:\n  contents: write\n", a=serial + record), ["header-recorder.yml:a"]),
@@ -703,7 +714,7 @@ def main() -> int:
         # can write contents in a group counts as a recorder unless it states
         # it records none; a job that does use receipts can't state that.
         "wrapper.yml": (wf(top, a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n"), ["wrapper.yml:a"]),
-        "wrapper-ungrouped.yml": (wf(a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n"), []),
+        "wrapper-ungrouped.yml": (wf(a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n"), ["wrapper-ungrouped.yml:a"]),
         "attested.yml": (wf(top, a=rec + "    # mandate: no-receipts (opens PRs)\n    steps:\n      - run: python3 scripts/open-pr.py\n"), []),
         "attested-uses.yml": (wf(top, a=rec + "    # mandate: no-receipts\n" + record), ["attested-uses.yml:a"]),
         "attested-elsewhere.yml": (wf(top, b="    # mandate: no-receipts\n    steps: []\n", a=rec + "    steps: []\n"), ["attested-elsewhere.yml:a"]),
@@ -794,7 +805,7 @@ def main() -> int:
         # An App token minted without permission inputs carries every App
         # permission, which for the Mandate App includes checks: write.
         "token.yml": (wf(a=token), ["token.yml:a"]),
-        "scoped.yml": (wf(a=token + "          permission-contents: write\n"), []),
+        "scoped.yml": (wf(a="    # mandate: no-receipts\n" + token + "          permission-contents: write\n"), []),
         "two-tokens.yml": (
             wf(a=token + "          permission-contents: write\n" + token.replace("    steps:\n", "")),
             ["two-tokens.yml:a"],
