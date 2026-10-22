@@ -704,6 +704,20 @@ def main() -> int:
         "attested.yml": (wf(top, a=rec + "    # mandate: no-receipts (opens PRs)\n    steps:\n      - run: python3 scripts/open-pr.py\n"), []),
         "attested-uses.yml": (wf(top, a=rec + "    # mandate: no-receipts\n" + record), ["attested-uses.yml:a"]),
         "attested-elsewhere.yml": (wf(top, b="    # mandate: no-receipts\n    steps: []\n", a=rec + "    steps: []\n"), ["attested-elsewhere.yml:a"]),
+        # Codex bot: the marker counts only at the job's own indentation, never
+        # inside a run script; a commented or unreadable jobs key fails closed.
+        "marker-in-run.yml": (
+            wf(top, a=rec + "    steps:\n      - run: |\n          # mandate: no-receipts\n          python3 scripts/record-decision.py\n"),
+            ["marker-in-run.yml:a"],
+        ),
+        "jobs-comment.yml": (
+            wf(top, a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n").replace("jobs:\n", "jobs:  # all of them\n"),
+            ["jobs-comment.yml:a"],
+        ),
+        "quoted-jobs.yml": (
+            wf(top, a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n").replace("jobs:\n", '"jobs":\n'),
+            ["quoted-jobs.yml:?"],
+        ),
         # A receipt user must declare permissions rather than trust the default.
         "undeclared.yml": (wf(a=serial + write), ["undeclared.yml:a"]),
         # Quoted or explicit permission keys are read as anything (Codex bot).

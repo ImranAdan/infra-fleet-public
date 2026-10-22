@@ -568,7 +568,8 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
     receipts without declaring its permissions."""
     bad = []
     for name, text in sorted(workflows.items()):
-        header, _, body = text.partition("\njobs:\n")
+        key = re.search(r"(?m)^jobs:[ \t]*(?:#.*)?\n", text)
+        header, body = (text[: key.start()], text[key.end() :]) if key else (text, "")
         jobs = re.findall(r"(?m)^  ([\w-]+):[ \t]*(?:#.*)?\n((?:(?:    .*)?\n?)*)", body)
         # Every line of jobs: must be a job key or nested under one; anything
         # else (a flow-mapping job, keys after jobs:) was not read: fail closed.
@@ -576,14 +577,15 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
             not re.fullmatch(r"\s*(#.*)?|  [\w-]+:[ \t]*(#.*)?|    .*", line)
             for line in body.splitlines()
         )
-        if unread or (not jobs and (_USES_RECEIPTS.search(text) or _may_write(text, "checks"))):
+        if unread or (not jobs and (_USES_RECEIPTS.search(text) or _may_write(text, "checks") or _may_write(text, "contents"))):
             bad.append(f"{name}:?")
         for job, block in jobs:
             uses = _USES_RECEIPTS.search(header + block)
             publishes = _may_write(header, "checks") or _may_write(block, "checks")
             # A wrapper script can hide the import, so a job that can write
             # contents records unless it states it doesn't (and doesn't use them).
-            no_receipts = re.search(r"(?m)^    +# mandate: no-receipts\b", block) and not uses
+            # At the job's own indentation only: deeper, it may be a script's text.
+            no_receipts = re.search(r"(?m)^    # mandate: no-receipts\b", block) and not uses
             records = (_may_write(header, "contents") or _may_write(block, "contents")) and not no_receipts
             if (
                 (publishes and not _serialized(block))

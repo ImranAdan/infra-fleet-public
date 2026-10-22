@@ -229,8 +229,9 @@ through `ledger.append()` (KAN-26).
     recording needs no group. A job that can write contents counts as a
     recorder and must not mention `concurrency` at any level, so a job can't
     both record and publish. A wrapper script could hide the receipt import,
-    so this holds unless the job states `# mandate: no-receipts` (on a line of
-    its own block) and doesn't itself use `mandate.receipt`. Today
+    so this holds unless the job states `# mandate: no-receipts` (a comment
+    at the job's own indentation, never inside a script) and doesn't itself
+    use `mandate.receipt`. Today
     `advisor-remediation` `propose`, `autonomous-merge` `merge` and
     `ledger-drill` `drill` state it. KAN-28 must drop the line from the merge
     worker before that worker records.
