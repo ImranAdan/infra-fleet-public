@@ -2,10 +2,10 @@
 
 A ``decision_id`` names the immutable subject: repository, pull request,
 head, base, delegation revision and enforcement snapshot. Any drift is a new
-ID. Under one ID, receipts are revisions r1, r2, ...: record() appends the
-next one only when the decision's meaning (everything but the clock and the
-revision) differs from the latest, so rerunning identical inputs is a no-op,
-and flipping back to an earlier result is a new revision, never a reuse.
+ID. Under one ID, receipts are revisions r1, r2, ...: every evaluation
+record() accepts is the next revision, even one that means the same as the
+last (a no-op would leave no trace for the staleness check), and flipping back
+to an earlier result is a new revision, never a reuse.
 
 reconcile_check() is the only check publisher: it shows the ledger's latest
 revision, and publishers run as one serialized job per head commit. Recording
@@ -47,7 +47,6 @@ CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.head_sha
 _USES_RECEIPTS = re.compile(r"mandate(\.| import )receipt|src/mandate/receipt\.py")
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
 _TRAILER = re.compile(rf"(?m)^({'|'.join(TRAILERS)}): (\S+)$")
-_CLOCK = ("evaluated_at", "receipt_revision")
 SUMMARY_LIMIT = 65535  # GitHub's check-run output.summary maximum
 
 
@@ -94,11 +93,6 @@ def build(
         "actors": actors,
         "evaluated_at": evaluated_at,
     }
-
-
-def semantic(receipt: dict[str, Any]) -> dict[str, Any]:
-    """What the receipt says, without when it was said or its revision number."""
-    return {k: v for k, v in receipt.items() if k not in _CLOCK}
 
 
 def _verified(api: l.Api, repo: str, ref: str) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
@@ -182,12 +176,6 @@ def record(
         entries, stored = _verified(api, repo, ref)
         mine = [x for x in entries if x["decision_id"] == did]
         s = receipt["subject"]
-        # A no-op only while this decision is still the PR's latest: after a
-        # newer receipt under another ID it must pass the staleness check.
-        if mine and mine[-1]["entry_digest"] == _pr_latest(entries, stored, s["repository"], s["pull_request"]):
-            latest = json.loads(stored[l.receipt_path(did, mine[-1]["receipt_revision"])])
-            if semantic(latest) == semantic(receipt):
-                return mine[-1], entries[-1]["entry_digest"], False
         revision = f"r{len(mine) + 1}"
 
         def unchanged(index: str, receipts: dict[str, bytes]) -> None:
@@ -616,8 +604,8 @@ def trailers(
 
     ``subject`` is what the merge worker acted on; ``fresh`` is a receipt from
     a decision taken just now. It must still be about that subject and
-    AUTHORIZE. It is then recorded (a no-op when it is already the latest
-    revision), so the trailers always name this decision's latest revision,
+    AUTHORIZE. It is then recorded as a new revision, so the trailers always
+    name this decision's latest revision,
     never a superseded one a stale worker still holds. ``after`` is
     pr_latest() as read before deciding ``fresh`` (see record()).
     """

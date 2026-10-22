@@ -174,26 +174,27 @@ def main() -> int:
     }
     assert len(ids) == 6
 
-    # First record appends r1; a rerun of the same inputs (later clock) is a no-op.
+    # First record appends r1. Every evaluation is a revision, even one that
+    # means the same (Codex bot): a no-op would leave no trace, so an older
+    # recorder that read the same ``after`` could still land after it.
     git = FakeGit()
     first, head1, appended = put(git, receipt, DELEG)
     assert appended and first["receipt_revision"] == "r1" and first["seq"] == 0
     assert head1 == first["entry_digest"]
-    tip = git.refs[REF]
     again, head2, appended = put(git, build(decision(), at="2026-10-21T09:00:00Z"), DELEG)
-    assert not appended and again == first and head2 == head1 and git.refs[REF] == tip
+    assert appended and again["receipt_revision"] == "r2" and head2 == again["entry_digest"] != head1
 
     # A changed outcome under the same subject is the next revision, same ID;
-    # flipping back is a third revision, never a reuse of r1.
+    # flipping back is another revision, never a reuse of an earlier one.
     second, _, appended = put(git, build(decision("ESCALATE")), DELEG)
-    assert appended and second["receipt_revision"] == "r2"
+    assert appended and second["receipt_revision"] == "r3"
     assert second["decision_id"] == first["decision_id"]
     third, _, appended = put(git, build(decision()), DELEG)
-    assert appended and third["receipt_revision"] == "r3"
+    assert appended and third["receipt_revision"] == "r4"
 
     # Receipts are canonical, versioned and name their own revision.
-    stored = json.loads(receipts(git)[l.receipt_path(first["decision_id"], "r2")])
-    assert stored["receipt_revision"] == "r2" and stored["decision"]["outcome"] == "ESCALATE"
+    stored = json.loads(receipts(git)[l.receipt_path(first["decision_id"], "r3")])
+    assert stored["receipt_revision"] == "r3" and stored["decision"]["outcome"] == "ESCALATE"
     assert l.verify(git.files(REF)[l.LEDGER].decode(), receipts(git)) == []
 
     # Another PR's concurrent append: re-read and append after it.
@@ -223,10 +224,10 @@ def main() -> int:
     foreign_pr = FakeGit()
     foreign_pr.before_advance = lambda: put(foreign_pr, enforced(decision("ESCALATE", subject=e.Subject("x/y", HEAD, BASE, POLICY))))
     assert r.record(foreign_pr, REPO, REF, enforced(decision()), DELEG, after=None)[2]
-    # Codex bot: an identical decision is a no-op only while it is still the
-    # PR's latest. After a newer receipt under another ID (the base moved and
+    # Codex bot: after a newer receipt under another ID (the base moved and
     # the new decision is ESCALATE), a worker that saw only the old AUTHORIZE
-    # is stale: no no-op, no trailers. Observed afresh, it is a new revision.
+    # is stale, even though it means the same as its own decision's latest:
+    # no trailers. Observed afresh, it is a new revision.
     moved = FakeGit()
     old_ok, _, _ = put(moved, enforced(decision()), DELEG)
     put(moved, enforced(decision("ESCALATE", subject=e.Subject(REPO, HEAD, "c" * 40, POLICY))), DELEG)
@@ -244,17 +245,20 @@ def main() -> int:
     l.append(grafted, REPO, REF, refusal["decision_id"], "r2", l.canonical(refusal), refusal["subject_digest"], "ESCALATE", "t")
     refused("LEDGER_INVALID", lambda: r.trailers(grafted, REPO, REF, enforced(decision())["subject"], enforced(decision()), DELEG, after=first_auth["entry_digest"]))
     refused("LEDGER_INVALID", r.pr_latest, grafted, REPO, REF, REPO, 7)
-    # Another PR's later receipt leaves this PR's latest in place: still a no-op.
-    put(moved, r.build(decision(), 8, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
-    assert put(moved, enforced(decision()), DELEG)[2] is False
-    # A concurrent decision that means the same (only its clock differs) is a
-    # no-op, not stale: it changes nothing.
-    ident = FakeGit()
-    ident.before_advance = lambda: put(ident, enforced(decision()), DELEG)
-    assert r.record(ident, REPO, REF, enforced(decision(), at="2026-10-21T00:00:01Z"), DELEG, after=None)[2] is False
+    # Codex bot: r1 is ESCALATE. An older worker (AUTHORIZE) and a newer one
+    # (ESCALATE again) both read after=r1. The newer one records r2 though it
+    # means the same as r1, so the older one is stale, never r2 AUTHORIZE.
+    pair, checks = FakeGit(), FakeChecks()
+    checks.open_prs = {7}
+    r1, _, _ = put(pair, enforced(decision("ESCALATE")), DELEG)
+    newer, _, appended = r.record(pair, REPO, REF, enforced(decision("ESCALATE"), at="2026-10-21T00:00:02Z"), DELEG, after=r1["entry_digest"])
+    assert appended and newer["receipt_revision"] == "r2", newer
+    refused("STALE_DECISION", lambda: r.record(pair, REPO, REF, enforced(decision(), at="2026-10-21T00:00:01Z"), DELEG, after=r1["entry_digest"]))
+    r.reconcile_check(both(checks, pair), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
+    assert visible(checks) == [("failure", "ESCALATE (r2)")], visible(checks)
 
-    # A tampered receipt is never trusted for the no-op comparison, even when
-    # it still says the same thing (re-serialized, so its digest differs).
+    # A tampered receipt fails closed, even when it still says the same thing
+    # (re-serialized, so its digest differs).
     for tampered in (b'{"x":1}', json.dumps({**receipt, "receipt_revision": "r1"}, indent=1).encode()):
         bad = FakeGit()
         put(bad, receipt, DELEG)
@@ -274,7 +278,7 @@ def main() -> int:
     assert checks.writes == 1 and len(checks.runs) == 1
     run = checks.runs[0]
     assert run["name"] == r.SHADOW_CHECK_NAME == "mandate/shadow" != r.CHECK_NAME == "mandate/decision"
-    assert run["external_id"] == did and visible(checks) == [("neutral", "AUTHORIZE (r3)")]
+    assert run["external_id"] == did and visible(checks) == [("neutral", "AUTHORIZE (r4)")]
     assert third["receipt_digest"] in run["output"]["summary"]
 
     # A live receipt passes or fails on its outcome.
@@ -794,9 +798,11 @@ def main() -> int:
     authorized = json.loads(git.files(REF)[l.LEDGER].decode().splitlines()[-1])
     chain = authorized["entry_digest"]
     assert authorized["receipt_revision"] == "r1" and authorized["outcome"] == "AUTHORIZE"
-    tip = git.refs[REF]
-    assert r.trailers(git, REPO, REF, subject, enforced(decision(), at="2026-10-23T00:00:00Z"), DELEG, after=r.pr_latest(git, REPO, REF, REPO, 7)) == text
-    assert git.refs[REF] == tip, "already the latest revision: revalidation appends nothing"
+    # Every revalidation is its own revision, so it names a new receipt and head.
+    again_text = r.trailers(git, REPO, REF, subject, enforced(decision(), at="2026-10-23T00:00:00Z"), DELEG, after=r.pr_latest(git, REPO, REF, REPO, 7))
+    revalidated = json.loads(git.files(REF)[l.LEDGER].decode().splitlines()[-1])
+    assert revalidated["receipt_revision"] == "r2" and again_text != text
+    assert r.parse_trailers(again_text)["Mandate-Chain-Head"] == revalidated["entry_digest"]
     parsed = r.parse_trailers("Merge pull request #7\n\nbody\n\n" + text)
     assert parsed == {
         "Mandate-Decision": authorized["decision_id"],
@@ -835,7 +841,7 @@ def main() -> int:
     # Offline audit against merge-commit anchors only (checks may have expired).
     ledger_text = git.files(REF)[l.LEDGER].decode()
     stored_receipts = receipts(git)
-    anchor = r.parse_trailers(text)
+    anchor = r.parse_trailers(again_text)  # the latest revalidation
     # The anchor is the visible tip, yet a truncated tail after it would look
     # the same, so the limit is still stated.
     failures, limits = r.audit(ledger_text, stored_receipts, [anchor])

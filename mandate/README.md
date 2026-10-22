@@ -120,9 +120,11 @@ through `ledger.append()` (KAN-26).
 - **Decision ID:** `d-` plus the SHA-256 of the canonical subject. The subject
   is the repository, pull request, head, base, delegation revision and
   enforcement snapshot, so any drift gives a new ID.
-- **Revisions:** `record()` appends `r1`, `r2` and so on under one ID. It
-  appends only when the latest revision says something different, ignoring the
-  clock. Rerunning identical inputs is a no-op. Flipping back to an earlier
+- **Revisions:** `record()` appends `r1`, `r2` and so on under one ID.
+  Every evaluation is a new revision, even one that means the same as the
+  last: a no-op would leave no trace, so an older recorder that read the same
+  `after` could still land after it. Only a retried append of identical bytes
+  at the same path is a no-op (`ledger.append`). Flipping back to an earlier
   result is a new revision, never a reuse. Another PR's concurrent append
   makes it re-read and retry.
 - **Stale decisions:** recorders run outside any concurrency group, so they
@@ -133,9 +135,7 @@ through `ledger.append()` (KAN-26).
   The check runs inside the ledger append's compare-and-swap loop (its
   `precondition`), so it holds atomically with the append. Each PR's receipts
   are therefore ordered by when their inputs were read, and a delayed
-  AUTHORIZE can't land over a newer refusal. A decision that means the same
-  as its latest revision is a no-op only while that revision is still the
-  PR's latest; otherwise it passes the staleness check like any other.
+  AUTHORIZE can't land over a newer refusal.
   `trailers()` takes the same `after`, so a stale merge worker gets no
   trailers. The check reads receipts through the same validation as
   reconciliation, so a malformed or rebound receipt fails it closed
@@ -274,9 +274,8 @@ through `ledger.append()` (KAN-26).
   The fresh decision must be about the subject the merge worker acted on, must
   have a live enforcement snapshot (a `sha256:` digest; shadow grants
   nothing) and must AUTHORIZE. Otherwise it refuses with `HEAD_CHANGED`, `BASE_CHANGED`,
-  `ENFORCEMENT_DRIFT` or `CONTRACT_ERROR`. It then records that decision,
-  which is a no-op when it is already the latest revision, so the trailers
-  always name the latest revision. A stale worker holding a superseded
+  `ENFORCEMENT_DRIFT` or `CONTRACT_ERROR`. It then records that decision as
+  a new revision, so the trailers always name the latest revision. A stale worker holding a superseded
   AUTHORIZE can't anchor a merge to it.
 - **Audit:** `audit()` checks a ledger offline against merge-commit anchors.
   It reports middle deletion, tail truncation, full rewrite and an anchor whose
