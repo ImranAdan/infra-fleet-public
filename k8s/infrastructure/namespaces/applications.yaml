@@ -6,6 +6,12 @@ metadata:
   labels:
     name: applications
     managed-by: flux
+    # Admission rejects any application pod that is privileged, runs as root
+    # or uses host namespaces, even if its manifest regresses (advisor S-016).
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
 ---
 # ResourceQuota to prevent resource exhaustion
 # Caps total resource usage for all pods in the namespace
