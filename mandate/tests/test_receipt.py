@@ -223,6 +223,20 @@ def main() -> int:
     foreign_pr = FakeGit()
     foreign_pr.before_advance = lambda: put(foreign_pr, enforced(decision("ESCALATE", subject=e.Subject("x/y", HEAD, BASE, POLICY))))
     assert r.record(foreign_pr, REPO, REF, enforced(decision()), DELEG, after=None)[2]
+    # Codex bot: an identical decision is a no-op only while it is still the
+    # PR's latest. After a newer receipt under another ID (the base moved and
+    # the new decision is ESCALATE), a worker that saw only the old AUTHORIZE
+    # is stale: no no-op, no trailers. Observed afresh, it is a new revision.
+    moved = FakeGit()
+    old_ok, _, _ = put(moved, enforced(decision()), DELEG)
+    put(moved, enforced(decision("ESCALATE", subject=e.Subject(REPO, HEAD, "c" * 40, POLICY))), DELEG)
+    refused("STALE_DECISION", lambda: r.record(moved, REPO, REF, enforced(decision()), DELEG, after=old_ok["entry_digest"]))
+    refused("STALE_DECISION", lambda: r.trailers(moved, REPO, REF, enforced(decision())["subject"], enforced(decision()), DELEG, after=old_ok["entry_digest"]))
+    again, _, appended = put(moved, enforced(decision()), DELEG)
+    assert appended and again["receipt_revision"] == "r2", again
+    # Another PR's later receipt leaves this PR's latest in place: still a no-op.
+    put(moved, r.build(decision(), 8, ENF, versions=VERSIONS, actors=ACTORS, evaluated_at="t"), DELEG)
+    assert put(moved, enforced(decision()), DELEG)[2] is False
     # A concurrent decision that means the same (only its clock differs) is a
     # no-op, not stale: it changes nothing.
     ident = FakeGit()

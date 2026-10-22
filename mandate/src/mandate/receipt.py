@@ -162,7 +162,10 @@ def record(
     for _attempt in range(l.RETRIES):
         entries, stored = _verified(api, repo, ref)
         mine = [x for x in entries if x["decision_id"] == did]
-        if mine:
+        s = receipt["subject"]
+        # A no-op only while this decision is still the PR's latest: after a
+        # newer receipt under another ID it must pass the staleness check.
+        if mine and mine[-1]["entry_digest"] == _pr_latest(entries, stored, s["repository"], s["pull_request"]):
             latest = json.loads(stored[l.receipt_path(did, mine[-1]["receipt_revision"])])
             if semantic(latest) == semantic(receipt):
                 return mine[-1], entries[-1]["entry_digest"], False
@@ -170,7 +173,6 @@ def record(
 
         def unchanged(index: str, receipts: dict[str, bytes]) -> None:
             entries_now = [json.loads(line) for line in index.splitlines() if line]
-            s = receipt["subject"]
             now = _pr_latest(entries_now, receipts, s["repository"], s["pull_request"])
             if now != after:
                 raise l.LedgerError("STALE_DECISION", f"PR {s['pull_request']} has a newer receipt than {did} saw: decide again")

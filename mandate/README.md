@@ -133,8 +133,11 @@ through `ledger.append()` (KAN-26).
   The check runs inside the ledger append's compare-and-swap loop (its
   `precondition`), so it holds atomically with the append. Each PR's receipts
   are therefore ordered by when their inputs were read, and a delayed
-  AUTHORIZE can't land over a newer refusal. A concurrent decision that means
-  the same as the latest is a no-op. `trailers()` takes the same `after`.
+  AUTHORIZE can't land over a newer refusal. A decision that means the same
+  as its latest revision is a no-op only while that revision is still the
+  PR's latest; otherwise it passes the staleness check like any other.
+  `trailers()` takes the same `after`, so a stale merge worker gets no
+  trailers.
 - **Check run:** `reconcile_check(head_sha, app_id=…)` is the only publisher.
   The caller names a head commit, never a decision or revision. It shows the
   newest decision recorded for that head on every run of the publisher App,
