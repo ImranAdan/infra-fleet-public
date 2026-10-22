@@ -617,7 +617,11 @@ def main() -> int:
     )
     cases = {
         "job.yml": (wf(writer=serial + write), []),
-        "top.yml": (wf(top, writer=write), []),
+        # Workflow-level concurrency serializes runs, not the jobs (or matrix
+        # legs) of one run, so only job-level concurrency counts (Codex bot).
+        "top.yml": (wf(top, writer=write), ["top.yml:writer"]),
+        "two-writers.yml": (wf(top, a=write, b=write), ["two-writers.yml:a", "two-writers.yml:b"]),
+        "top-and-job.yml": (wf(top, writer=serial + write), []),
         "bare.yml": (wf(writer=write), ["bare.yml:writer"]),
         "other-job.yml": (wf(reader=serial, writer=write), ["other-job.yml:writer"]),
         "suffix.yml": (wf(writer=serial.replace("inputs.head_sha", "inputs.pr") + write), ["suffix.yml:writer"]),

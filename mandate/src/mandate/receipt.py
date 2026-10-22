@@ -398,7 +398,7 @@ def reconcile_check(
     to the ledger:
 
     - one writer per head commit: every job that records receipts or writes
-      checks runs in CANONICAL_GROUP without cancelling in progress
+      checks runs in CANONICAL_GROUP (job-level) without cancelling in progress
       (serial_violations() enforces it over the workflows);
     - if the ledger moved while this ran (only possible when that boundary is
       bypassed), it shows the newer decision before returning.
@@ -472,14 +472,14 @@ def _reconcile(
     raise l.LedgerError("LEDGER_UNAVAILABLE", f"the ledger kept moving under {repo}@{head}")
 
 
-def _serialized(block: str, indent: str) -> bool:
-    """Whether ``concurrency`` at exactly this level (workflow: "", job: four
-    spaces) names the canonical group without cancelling. GitHub applies no
-    other concurrency, so a nested mapping (a matrix value) never counts."""
-    found = re.search(rf"(?m)^{indent}concurrency:[ \t]*\n((?:{indent} +\S.*\n?)+)", block)
+def _serialized(block: str) -> bool:
+    """Whether the job's own ``concurrency`` names the canonical group without
+    cancelling. Workflow-level concurrency serializes runs, not the jobs or
+    matrix legs of one run, so it never counts; nor does a nested mapping."""
+    found = re.search(r"(?m)^    concurrency:[ \t]*\n((?:     +\S.*\n?)+)", block)
     if not found:
         return False
-    keys = dict(re.findall(rf"(?m)^{indent}  ([\w-]+):[ \t]*(.*?)[ \t]*$", found.group(1)))
+    keys = dict(re.findall(r"(?m)^      ([\w-]+):[ \t]*(.*?)[ \t]*$", found.group(1)))
     return (
         keys.get("group", "").strip("'\"") == CANONICAL_GROUP
         and keys.get("cancel-in-progress") == "false"
@@ -521,7 +521,7 @@ def _may_write_checks(block: str) -> bool:
 
 def serial_violations(workflows: dict[str, str]) -> list[str]:
     """``file:job`` for each job that records receipts or can write checks
-    outside the canonical per-PR concurrency group."""
+    outside the canonical per-head job concurrency group."""
     bad = []
     for name, text in sorted(workflows.items()):
         header, _, body = text.partition("\njobs:\n")
@@ -540,7 +540,7 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
                 or _may_write_checks(header)
                 or _may_write_checks(block)
             )
-            if writes and not (_serialized(header, "") or _serialized(block, "    ")):
+            if writes and not _serialized(block):
                 bad.append(f"{name}:{job}")
     return bad
 

@@ -201,9 +201,10 @@ through `ledger.append()` (KAN-26).
   conclusion, and the Checks API has no compare-and-swap. So every job that
   records receipts or writes checks must run in the one canonical group,
   `mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}`, with
-  `cancel-in-progress: false`, set at workflow or job level (GitHub applies
-  no other `concurrency`). That means writers are workflows called with a
-  `head_sha` input.
+  `cancel-in-progress: false`, set on the job itself. Workflow-level
+  concurrency doesn't count: it serializes runs, not the jobs or matrix legs
+  of one run. That means writers are workflows called with a `head_sha`
+  input.
   - **Why it's safe:** GitHub runs at most one job in a group at a time. A
     newer pending run replaces an older pending one, and because it
     reconciles from the ledger, it loses nothing.
