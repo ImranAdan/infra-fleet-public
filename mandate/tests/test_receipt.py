@@ -684,17 +684,25 @@ def main() -> int:
         # A pending job in a group is replaced by a newer one, so a job that
         # can record (contents: write) must not wait in any group; appends are
         # compare-and-swap safe without one. Record, then publish (Codex bot).
-        # Codex bot: a recorder must be followed (needs, transitively) by a
-        # grouped publisher, or a newer refusal could leave a stale green check.
+        # Codex bot: a recorder must be followed by a grouped publisher that
+        # needs exactly it and runs if: always(), so it runs even when the
+        # recorder appended and then failed; a skippable one doesn't count.
         "recorder.yml": (wf(a=rec + record), ["recorder.yml:a"]),
-        "split.yml": (wf(record=rec + record, publish="    needs: record\n" + pub + serial + write), []),
+        "split.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write), []),
+        "split-expr.yml": (wf(record=rec + record, publish="    needs: [record]\n    if: ${{ always() }}\n" + pub + serial + write), []),
         "chain.yml": (
-            wf(record=rec + record, mid="    needs: record\n    steps: []\n", publish="    needs: [mid]\n" + pub + serial + write),
-            [],
+            wf(record=rec + record, mid="    needs: record\n    steps: []\n", publish="    needs: [mid]\n    if: always()\n" + pub + serial + write),
+            ["chain.yml:record"],
+        ),
+        "if-false.yml": (wf(record=rec + record, publish="    needs: record\n    if: false\n" + pub + serial + write), ["if-false.yml:record"]),
+        "no-if.yml": (wf(record=rec + record, publish="    needs: record\n" + pub + serial + write), ["no-if.yml:record"]),
+        "extra-needs.yml": (
+            wf(record=rec + record, other="    if: false\n    steps: []\n", publish="    needs: [record, other]\n    if: always()\n" + pub + serial + write),
+            ["extra-needs.yml:record"],
         ),
         "unordered.yml": (wf(record=rec + record, publish=pub + serial + write), ["unordered.yml:record"]),
         "ungrouped-after.yml": (
-            wf(record=rec + record, publish="    needs: record\n" + pub + write),
+            wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + write),
             ["ungrouped-after.yml:record", "ungrouped-after.yml:publish"],
         ),
         "grouped-recorder.yml": (wf(a=rec + serial + record), ["grouped-recorder.yml:a"]),

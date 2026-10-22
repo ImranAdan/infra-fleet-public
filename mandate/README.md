@@ -235,10 +235,11 @@ through `ledger.append()` (KAN-26).
     `advisor-remediation` `propose`, `autonomous-merge` `merge`,
     `ledger-drill` `drill` and `release-please` state it. KAN-28 must drop the line from the merge
     worker before that worker records.
-  - **Record, then publish:** every recorder must be followed, through
-    `needs:` (transitively), by a job in the canonical group that can write
-    checks, so a newer refusal it appends never leaves an older success
-    showing. `serial_violations()` enforces this. A pending reconcile that
+  - **Record, then publish:** every recorder must be followed by a job in
+    the canonical group that can write checks, `needs` exactly that recorder,
+    and runs `if: always()`. It then runs even when the recorder appended and
+    then failed or was cancelled, so a newer refusal never leaves an older
+    success showing. `serial_violations()` enforces this. A pending reconcile that
     gets replaced loses nothing: its replacement was queued later and reads
     the ledger when it runs.
   - **Backstop:** if the ledger or the open PRs move during a reconcile, it
@@ -248,6 +249,15 @@ through `ledger.append()` (KAN-26).
   - **G4 owner action:** the ruleset that requires `mandate/decision` must
     bind it to the publisher App. Otherwise a commit status or another App's
     check with the same name could satisfy it.
+  - **Credentials are the real boundary (G4/KAN-31 owner action):** the scan
+    sees only what YAML shows: permissions, token inputs and API calls in
+    the workflow file. A script that is handed a credential (a secret) and
+    writes checks or receipts itself is invisible to it. So the publisher
+    App's key must be reachable only by the canonical publisher job, for
+    example as a secret of an environment that only that job declares.
+    Recording must use an identity that can't write checks; if both use one
+    App, any job holding its key can publish. Until then, the scan guards
+    against mistakes, not against credentialed scripts.
 
   `serial_violations()` checks this per job over `.github/workflows/`
   (`.yml` and `.yaml`) in the tests. It reads the **parsed** YAML (PyYAML,

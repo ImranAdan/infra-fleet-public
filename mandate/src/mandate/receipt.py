@@ -575,9 +575,11 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
     that can record receipts (contents write, unless the job states
     ``# mandate: no-receipts`` at its own indentation and doesn't use them)
     inside any concurrency group, where GitHub can replace it while pending,
-    or that no grouped publisher follows (needs, transitively), or one that
-    uses receipts without declaring its permissions. A file that
-    doesn't parse to jobs, or has duplicate or merge keys, is ``file:?``."""
+    or that no grouped publisher follows (one that needs exactly it and runs
+    ``if: always()``), or one that uses receipts without declaring its
+    permissions. A file that doesn't parse to jobs, or has duplicate or merge
+    keys, is ``file:?``. It sees only what YAML shows: a script handed a
+    credential is outside it (mandate/README.md, credentials)."""
     import yaml  # noqa: F401  a missing parser is an error, never "every file unreadable"
 
     bad = []
@@ -612,23 +614,18 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
             stated = any(re.fullmatch(r" *# mandate: no-receipts\b.*", x) for x in own.get(job_name, []))
             records = (any(_grants(x, "contents") for x in perms) or _token_writes(job, "contents")) and not (stated and not uses)
             needs = job.get("needs") or []
-            info[job_name] = (publishes, canonical, records, uses, [needs] if isinstance(needs, str) else list(needs))
+            # It reconciles after exactly one job, whatever that job's result.
+            after = [needs] if isinstance(needs, str) else needs
+            always = str(job.get("if", "")).replace(" ", "") in ("always()", "${{always()}}")
+            info[job_name] = (publishes, canonical, records, uses, after if always else None)
         for job_name, (publishes, canonical, records, uses, _) in info.items():
             job = jobs[job_name]
-            # Every job that runs after this one (needs, transitively).
-            later, todo = set(), [job_name]
-            while todo:
-                current = todo.pop()
-                for other, (*_, needs) in info.items():
-                    if current in needs and other not in later:
-                        later.add(other)
-                        todo.append(other)
             if (
                 (publishes and not canonical)
                 or (records and ("concurrency" in doc or "concurrency" in job))
-                # A recorder is followed by a grouped publisher, so a newer
-                # refusal it appends never leaves an older success showing.
-                or (records and not any(info[x][0] and info[x][1] for x in later))
+                # A recorder is followed by a grouped publisher that always
+                # runs after it, so a newer refusal never leaves an older success.
+                or (records and not any(p and c and follows == [job_name] for p, c, _, _, follows in info.values()))
                 or (uses and "permissions" not in doc and "permissions" not in job)
             ):
                 bad.append(f"{name}:{job_name}")
