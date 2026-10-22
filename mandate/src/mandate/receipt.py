@@ -46,8 +46,11 @@ LIVE = re.compile(r"sha256:[0-9a-f]{64}")  # a real enforcement snapshot digest 
 # publishers are workflows called with a ``head_sha`` input, so every caller
 # computes this group.
 CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}"
-# The supported publisher step (main() below), as a recorder's follower must run it.
-_RECONCILE = re.compile(r"PYTHONPATH=mandate/src python3 -m mandate\.receipt reconcile(?: [^;&|<>`()\n\\]+)?")
+# The supported publisher step (main() below), as a recorder's follower must
+# run it: every argument, each one word (or one double-quoted word), none an option.
+_WORD = r"(?!-)[^\s\"';&|<>`()\\]+"
+_ARG = rf'(?:{_WORD}|"{_WORD}")'
+_RECONCILE = re.compile(rf"PYTHONPATH=mandate/src python3 -m mandate\.receipt reconcile (?:{_ARG} ){{3}}--app-id {_ARG}")
 _ALWAYS = ("always()", "${{always()}}")
 _USES_RECEIPTS = re.compile(r"mandate(\.| import )receipt|src/mandate/receipt\.py")
 TRAILERS = ("Mandate-Decision", "Mandate-Receipt-Digest", "Mandate-Chain-Head")
@@ -566,7 +569,8 @@ def _reconciles(job: dict[str, Any]) -> bool:
     return bool(re.fullmatch(r"ubuntu-[\w.-]+", str(job.get("runs-on")))) and any(
         isinstance(step, dict)
         and isinstance(step.get("run"), str)
-        and bool(_RECONCILE.fullmatch(re.sub(r"\\\n\s*", " ", step["run"]).strip()))
+        # bash joins a backslash-newline; a bare newline is another command.
+        and bool(_RECONCILE.fullmatch(re.sub(r"[ \t]+", " ", re.sub(r"\\\n", " ", step["run"])).strip()))
         and str(step.get("if", "always()")).replace(" ", "") in _ALWAYS
         and step.get("continue-on-error", False) is False
         and step.get("shell") == "bash"
@@ -681,9 +685,10 @@ def main(
 ) -> int:
     """The supported publisher entrypoint; a recorder's follower must run it
     (serial_violations()): PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile ..."""
-    parser = argparse.ArgumentParser(description="Show a head commit's newest recorded decision on its checks")
+    # No help: every exit is a reconcile or a failure, never a success without one.
+    parser = argparse.ArgumentParser(description="Show a head commit's newest recorded decision on its checks", add_help=False)
     sub = parser.add_subparsers(dest="command", required=True)
-    run = sub.add_parser("reconcile", help="reconcile_check(): the only check publisher")
+    run = sub.add_parser("reconcile", add_help=False)
     run.add_argument("repository")
     run.add_argument("ref", help="the ledger branch")
     run.add_argument("head", help="the head commit SHA")

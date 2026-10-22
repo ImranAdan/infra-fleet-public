@@ -784,6 +784,16 @@ def main() -> int:
                 ("implicit-shell", write.replace("        shell: bash\n", "")),
                 ("other-path", write.replace("mandate/src", "/tmp/fake")),
                 ("mentions-only", "    steps:\n      - run: python3 -c 'import mandate.receipt'\n"),
+                # Codex bot: every argument, none an option (--help exits 0
+                # without reconciling).
+                ("help-only", write.replace(command, "PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile --help")),
+                ("no-app-id", write.replace(' --app-id "$APP_ID"', "")),
+                ("help-as-arg", write.replace('"$HEAD"', "--help")),
+                ("quoted-help", write.replace('"$HEAD"', '"--help"')),
+                # bash joins a backslash-newline, but a blank line after it or a
+                # bare newline starts another command.
+                ("blank-after-continuation", write.replace(" --app-id", " \\\n\n          --app-id").replace("run: ", "run: |\n          ")),
+                ("two-lines", write.replace(" --app-id", "\n          --app-id").replace("run: ", "run: |\n          ")),
                 ("default-shell", "    defaults:\n      run:\n        shell: cat {0}\n" + write.replace("        shell: bash\n", "")),
             )
         },
@@ -935,6 +945,14 @@ def main() -> int:
     ck_cli.pr_bases = {7: {"sha": "c" * 40}}  # refused: exit 1, the check failed closed
     assert r.main(argv, api=both(ck_cli, cli), delegations=RESOLVE) == 1
     assert visible(ck_cli) == [("failure", "CONTRACT_ERROR")], visible(ck_cli)
+    # No argument list reaches a successful exit without reconciling.
+    for bad in (["reconcile", "--help"], ["reconcile", REPO, REF, "--help", "--app-id", str(APP)], ["-h"]):
+        try:
+            r.main(bad, api=both(ck_cli, cli), delegations=RESOLVE)
+        except SystemExit as exc:
+            assert exc.code == 2, (bad, exc.code)
+        else:
+            raise AssertionError(f"{bad} returned")
     # Production resolves the owner's delegation at the pinned commit; an
     # unpinned policy is refused before any read.
     try:

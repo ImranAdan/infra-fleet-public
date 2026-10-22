@@ -256,14 +256,16 @@ through `ledger.append()` (KAN-26).
     PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile "$GITHUB_REPOSITORY" "$LEDGER_REF" "$HEAD" --app-id "$APP_ID"
     ```
 
-    The step must be exactly that one command (arguments are free, but no
-    shell operators or second command), with no step `if` other than
+    The step must be exactly that one command with all four arguments, each
+    one word or one double-quoted word that isn't an option (pass values
+    through `env`; no shell operators or second command), with no step `if` other than
     `always()`, no `continue-on-error`, and `shell: bash` on the step
     itself, in a job on a GitHub-hosted Ubuntu runner (`runs-on: ubuntu-…`).
     The default shell and `python3` depend on the runner: Windows runs an
     unspecified `run` in PowerShell. This is a bounded
     workflow contract, not shell analysis. The command exits 1 when it
-    refuses, after the check has failed closed. `serial_violations()`
+    refuses, after the check has failed closed, and has no `--help`, so it
+    never exits 0 without reconciling. `serial_violations()`
     enforces all of this. A pending reconcile that
     gets replaced loses nothing: its replacement was queued later and reads
     the ledger when it runs.
