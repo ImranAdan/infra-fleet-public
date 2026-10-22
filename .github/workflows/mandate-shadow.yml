@@ -3,7 +3,7 @@ name: Mandate shadow decision
 # Runs the Mandate decision (mandate/src/mandate/shadow.py) on a pull request
 # once its declared-intent evidence exists, and records the outcome in the job
 # summary and a decision.json artifact. Shadow mode: it reads only and grants
-# nothing; the merge gate still decides READY/PARK until enforcement (G4).
+# nothing; the merge gate still decides READY/PARK until enforcement.
 # The code and this workflow come from the default branch (workflow_run), so a
 # pull request cannot change how its own shadow decision is computed.
 
@@ -11,7 +11,7 @@ on:
   workflow_run:
     # Not the retarget variant: every delegation class requires the ordinary
     # intent-gate producer, so a retargeted PR could only ever VERIFY here.
-    # Accepting either producer is a delegation-semantics change (Codex).
+    # Accepting either producer is a delegation-semantics change.
     workflows: [Intent Gate]
     types: [completed]
   workflow_dispatch:

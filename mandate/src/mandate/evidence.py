@@ -9,12 +9,12 @@ three independent axes, and a green conclusion never shortcuts another:
   path, event, and head branch for dispatches). A ruleset's source binding
   only names the App, which every workflow in the repository shares.
 - applicability: it is about this subject (repository, head, base, policy).
-  Genuine evidence about another subject is EVIDENCE_NOT_APPLICABLE (D-21).
+  Genuine evidence about another subject is EVIDENCE_NOT_APPLICABLE.
 - sufficiency: the class's named requirements each have one consistent,
   completed, successful result.
 
 It returns failures, not outcomes. Outcome precedence and the public
-reason-code registry belong to the decision (KAN-24); this module never
+reason-code registry belong to the decision module; this module never
 authorizes anything. PR prose is not an input, so it can satisfy nothing.
 """
 
@@ -206,7 +206,7 @@ def evaluate(
         )
         current = [r for r in genuine if not applicability(r, subject)]
         if not current and genuine:
-            # D-21: still obtainable (rerun on this subject), but say why it was refused.
+            # Still obtainable (rerun on this subject), but say why it was refused.
             failures.append(
                 (
                     f"EVIDENCE_NOT_APPLICABLE:{name}",

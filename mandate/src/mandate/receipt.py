@@ -372,7 +372,7 @@ def _authorized(receipt: dict[str, Any], delegation: Delegation | None) -> bool:
     records with the production evidence rules (producer, App, workflow,
     event, subject binding) must accept exactly them. Whether the delegation
     should have matched the PR's findings needs the inputs: historical replay
-    (KAN-27). Whether the check runs exist is the producer's word, as in
+    (historical replay, not built yet). Whether the check runs exist is the producer's word, as in
     decide().
     """
     subject, decision = receipt["subject"], receipt["decision"]

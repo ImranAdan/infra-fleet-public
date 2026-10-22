@@ -42,8 +42,8 @@ concurrency:
 
 jobs:
   merge:
-    # mandate: no-receipts (it records no Mandate receipts yet; KAN-28 must
-    # drop this before the merge worker records, see mandate/README.md)
+    # mandate: no-receipts (it records no Mandate receipts yet; drop
+    # this before the merge worker records, see mandate/README.md)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

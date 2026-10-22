@@ -1,4 +1,4 @@
-"""Receipt checks (KAN-26). Run: python3 mandate/tests/test_receipt.py
+"""Receipt checks. Run: python3 mandate/tests/test_receipt.py
 
 Real decide() output becomes a versioned receipt, recorded through the real
 ledger.append() against the fast-forward-only FakeGit from test_ledger. The
@@ -178,7 +178,7 @@ def main() -> int:
     assert len(ids) == 6
 
     # First record appends r1. Every evaluation is a revision, even one that
-    # means the same (Codex bot): a no-op would leave no trace, so an older
+    # means the same: a no-op would leave no trace, so an older
     # recorder that read the same ``after`` could still land after it.
     git = FakeGit()
     first, head1, appended = put(git, receipt, DELEG)
@@ -207,7 +207,7 @@ def main() -> int:
     mine, _, appended = put(race, receipt, DELEG)
     assert appended and mine["seq"] == 1, mine
 
-    # Codex bot: recorders run outside the group, so they can finish out of
+    # Recorders run outside the group, so they can finish out of
     # order. A newer receipt for the same PR lands after this decision saw the
     # ledger: this one is stale, never appended over it. Same decision ID or
     # another (the head or base moved), the newer ESCALATE stays the latest.
@@ -227,7 +227,7 @@ def main() -> int:
     foreign_pr = FakeGit()
     foreign_pr.before_advance = lambda: put(foreign_pr, enforced(decision("ESCALATE", subject=e.Subject("x/y", HEAD, BASE, POLICY))))
     assert r.record(foreign_pr, REPO, REF, enforced(decision()), DELEG, after=None)[2]
-    # Codex bot: after a newer receipt under another ID (the base moved and
+    # After a newer receipt under another ID (the base moved and
     # the new decision is ESCALATE), a worker that saw only the old AUTHORIZE
     # is stale, even though it means the same as its own decision's latest:
     # no trailers. Observed afresh, it is a new revision.
@@ -238,7 +238,7 @@ def main() -> int:
     refused("STALE_DECISION", lambda: r.trailers(moved, REPO, REF, enforced(decision())["subject"], enforced(decision()), DELEG, after=old_ok["entry_digest"]))
     again, _, appended = put(moved, enforced(decision()), DELEG)
     assert appended and again["receipt_revision"] == "r2", again
-    # Codex bot: the staleness check reads only validated receipts. A newer
+    # The staleness check reads only validated receipts. A newer
     # refusal grafted onto PR 8 (its ID no longer matches its subject) fails
     # closed as LEDGER_INVALID, as reconciliation does; it is never skipped.
     grafted = FakeGit()
@@ -248,7 +248,7 @@ def main() -> int:
     l.append(grafted, REPO, REF, refusal["decision_id"], "r2", l.canonical(refusal), refusal["subject_digest"], "ESCALATE", "t")
     refused("LEDGER_INVALID", lambda: r.trailers(grafted, REPO, REF, enforced(decision())["subject"], enforced(decision()), DELEG, after=first_auth["entry_digest"]))
     refused("LEDGER_INVALID", r.pr_latest, grafted, REPO, REF, REPO, 7)
-    # Codex bot: r1 is ESCALATE. An older worker (AUTHORIZE) and a newer one
+    # r1 is ESCALATE. An older worker (AUTHORIZE) and a newer one
     # (ESCALATE again) both read after=r1. The newer one records r2 though it
     # means the same as r1, so the older one is stale, never r2 AUTHORIZE.
     pair, checks = FakeGit(), FakeChecks()
@@ -259,7 +259,7 @@ def main() -> int:
     refused("STALE_DECISION", lambda: r.record(pair, REPO, REF, enforced(decision(), at="2026-10-21T00:00:01Z"), DELEG, after=r1["entry_digest"]))
     r.reconcile_check(both(checks, pair), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert visible(checks) == [("failure", "ESCALATE (r2)")], visible(checks)
-    # Codex 10183, retries: only ledger.append's retry at one path is
+    # Retries: only ledger.append's retry at one path is
     # idempotent. A byte-identical record() retry with the token it first
     # read is stale once its own receipt landed, including when the append's
     # response was lost; deciding again with a fresh token records r2.
@@ -332,7 +332,7 @@ def main() -> int:
     r.reconcile_check(both(ck0, live), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
     assert [(x["app"]["id"], x["conclusion"]) for x in ck0.runs] == [(999, "failure"), (APP, "success")]
 
-    # Codex F1 interleaving: a delayed publisher read r2 AUTHORIZE; before its
+    # Interleaving: a delayed publisher read r2 AUTHORIZE; before its
     # write lands, r3 ESCALATE is recorded and shown. The delayed write happens
     # (stale success), then it re-reads the ledger and restores r3.
     lg, ck = FakeGit(), FakeChecks()
@@ -402,7 +402,7 @@ def main() -> int:
     def reconcile_shared() -> None:
         r.reconcile_check(both(ck_s, shared), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE)
 
-    # Codex R2-F1: #8 is open on the same head with no receipt: never green.
+    # #8 is open on the same head with no receipt: never green.
     ck_s.open_prs = {7, 8}
     reconcile_shared()
     assert visible(ck_s) == [("failure", "AUTHORIZE (r1), head shared by 2 PRs")], visible(ck_s)
@@ -439,7 +439,7 @@ def main() -> int:
     put(shared, enforced(decision(subject=e.Subject(REPO, "f" * 40, BASE, POLICY))), DELEG)
     refused("CONTRACT_ERROR", reconcile_shared)
 
-    # Codex bot R3-F1: a decision is bound to the PR's base. The base moves
+    # A decision is bound to the PR's base. The base moves
     # (or the PR is retargeted) under the same head: the old AUTHORIZE is not
     # current, so the check fails closed until a decision at the new base.
     rebased, ck_rb2 = FakeGit(), FakeChecks()
@@ -586,7 +586,7 @@ def main() -> int:
     l.append(future, REPO, REF, v2["decision_id"], "r2", l.canonical(v2), v2["subject_digest"], "ESCALATE", "t")
     refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_fu, future), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert visible(ck_fu) == [("failure", "LEDGER_INVALID")], visible(ck_fu)
-    # Codex F1 (10176): an AUTHORIZE whose class, requirement and evidence the
+    # An AUTHORIZE whose class, requirement and evidence the
     # pinned delegation never declared (App 0, no workflow) is refused, and no
     # successful required check can come of it.
     invented = enforced(decision("ESCALATE"))
@@ -638,7 +638,7 @@ def main() -> int:
         both(ck_w, wrong), REPO, REF, HEAD, app_id=APP, delegations=lambda repository, policy: other))
     assert ck_w.runs == [], ck_w.runs
 
-    # Codex F2 (10176): schema v1 is exact. Missing versions, actors,
+    # Schema v1 is exact. Missing versions, actors,
     # registry_version, classes or accepted, an unknown field, or an
     # unsupported registry version are each refused.
     for strip in (("versions",), ("actors",), ("decision", "registry_version"), ("decision", "classes"),
@@ -661,7 +661,7 @@ def main() -> int:
     l.append(rebound, REPO, REF, first_ok["decision_id"], "r3", old_bytes, first_ok["subject_digest"], "ESCALATE", "t")
     refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_rb, rebound), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert visible(ck_rb) == [("failure", "LEDGER_INVALID")], visible(ck_rb)
-    # Codex R2-F2: declared types are exact. Each mutation of an otherwise
+    # Declared types are exact. Each mutation of an otherwise
     # valid AUTHORIZE is refused by record() ...
     def first_record(x: dict) -> dict:
         return x["decision"]["accepted"][0]["records"][0]
@@ -740,14 +740,14 @@ def main() -> int:
     cases = {
         "job.yml": (wf(writer=pub + serial + write), []),
         # Workflow-level concurrency serializes runs, not the jobs (or matrix
-        # legs) of one run, so only job-level concurrency counts (Codex bot).
+        # legs) of one run, so only job-level concurrency counts.
         "top.yml": (wf(top, writer=pub + write), ["top.yml:writer"]),
         "two-writers.yml": (wf(top, a=pub + write, b=pub + write), ["two-writers.yml:a", "two-writers.yml:b"]),
         "top-and-job.yml": (wf(top, writer=pub + serial + write), []),
         # A pending job in a group is replaced by a newer one, so a job that
         # can record (contents: write) must not wait in any group; appends are
-        # compare-and-swap safe without one. Record, then publish (Codex bot).
-        # Codex bot: a recorder must be followed by a grouped publisher that
+        # compare-and-swap safe without one. Record, then publish.
+        # A recorder must be followed by a grouped publisher that
         # needs exactly it and runs if: always(), so it runs even when the
         # recorder appended and then failed; a skippable one doesn't count.
         "recorder.yml": (wf(a=rec + record), ["recorder.yml:a"]),
@@ -764,7 +764,7 @@ def main() -> int:
             ["extra-needs.yml:record"],
         ),
         "unordered.yml": (wf(record=rec + record, publish=pub + serial + write), ["unordered.yml:record"]),
-        # Codex bot R3-F2: the follower must run the supported reconciler,
+        # The follower must run the supported reconciler,
         # unconditionally and failing the job if it fails, not merely be able
         # to write checks.
         **{
@@ -779,12 +779,12 @@ def main() -> int:
                 ("soft-step", write + "        continue-on-error: true\n"),
                 ("swallowed", write.replace(command, command + " || true")),
                 ("other-shell", write.replace("shell: bash", "shell: cat {0}")),
-                # Codex bot: the default shell depends on the runner (PowerShell
+                # The default shell depends on the runner (PowerShell
                 # on Windows), so bash is named on the step, on Ubuntu.
                 ("implicit-shell", write.replace("        shell: bash\n", "")),
                 ("other-path", write.replace("mandate/src", "/tmp/fake")),
                 ("mentions-only", "    steps:\n      - run: python3 -c 'import mandate.receipt'\n"),
-                # Codex bot: every argument, none an option (--help exits 0
+                # Every argument, none an option (--help exits 0
                 # without reconciling).
                 ("help-only", write.replace(command, "PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile --help")),
                 ("no-app-id", write.replace(' --app-id "$APP_ID"', "")),
@@ -823,7 +823,7 @@ def main() -> int:
             wf(a=serial + token + "          permission-contents: write\n" + record.replace("    steps:\n", "")),
             ["token-recorder.yml:a"],
         ),
-        # Codex bot: a wrapper script hides the receipt import, so any job that
+        # A wrapper script hides the receipt import, so any job that
         # can write contents in a group counts as a recorder unless it states
         # it records none; a job that does use receipts can't state that.
         "wrapper.yml": (wf(top, a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n"), ["wrapper.yml:a"]),
@@ -831,7 +831,7 @@ def main() -> int:
         "attested.yml": (wf(top, a=rec + "    # mandate: no-receipts (opens PRs)\n    steps:\n      - run: python3 scripts/open-pr.py\n"), []),
         "attested-uses.yml": (wf(top, a=rec + "    # mandate: no-receipts\n" + record), ["attested-uses.yml:a"]),
         "attested-elsewhere.yml": (wf(top, b="    # mandate: no-receipts\n    steps: []\n", a=rec + "    steps: []\n"), ["attested-elsewhere.yml:a"]),
-        # Codex bot: the marker counts only at the job's own indentation, never
+        # The marker counts only at the job's own indentation, never
         # inside a run script; a commented or unreadable jobs key fails closed.
         "marker-in-run.yml": (
             wf(top, a=rec + "    steps:\n      - run: |\n          # mandate: no-receipts\n          python3 scripts/record-decision.py\n"),
@@ -845,7 +845,7 @@ def main() -> int:
             wf(top, a=rec + "    steps:\n      - run: python3 scripts/record-decision.py\n").replace("jobs:\n", '"jobs":\n'),
             ["quoted-jobs.yml:a"],
         ),
-        # Codex bot: an alias may be a key; YAML resolves it to checks: write.
+        # An alias may be a key; YAML resolves it to checks: write.
         "alias-key.yml": (
             wf(a="    env:\n      NAME: &scope checks\n    steps: []\n",
                b="    permissions:\n      *scope : write\n    steps: []\n"),
@@ -863,7 +863,7 @@ def main() -> int:
         "duplicate-key.yml": (wf(a="    permissions:\n      checks: write\n      checks: read\n    steps: []\n"), ["duplicate-key.yml:?"]),
         # A receipt user must declare permissions rather than trust the default.
         "undeclared.yml": (wf(a=serial + write), ["undeclared.yml:a"]),
-        # Quoted or explicit permission keys are read as anything (Codex bot).
+        # Quoted or explicit permission keys are read as anything.
         "quoted-key.yml": (wf(a='    "permissions": write-all\n'), ["quoted-key.yml:a"]),
         "explicit-key.yml": (wf(a="    ? permissions\n    : write-all\n"), ["explicit-key.yml:a"]),
         "bare.yml": (wf(writer=write), ["bare.yml:writer"]),
@@ -962,7 +962,7 @@ def main() -> int:
     else:
         raise AssertionError("resolved an unpinned delegation")
 
-    # Codex F2: the summary fits GitHub's 65535-byte limit in UTF-8, cut on a
+    # The summary fits GitHub's 65535-byte limit in UTF-8, cut on a
     # character boundary, with multibyte reason text. Shifting by 0-3 ASCII
     # bytes makes some variant's cut fall inside a multibyte character.
     for shift in range(4):

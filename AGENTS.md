@@ -188,6 +188,10 @@ to it, test on it or tear it down while another agent is using it.
 ## Conventions
 
 - Conventional Commit subjects of at most 72 characters.
+- Name code, docs, branches, labels and workflows by what they do. Tracker
+  and planning IDs (Jira keys, gate codes, decision or case numbers, review
+  rounds) belong only in pull request and commit text
+  (`tests/profiles/no-tracker-ids.py` checks this).
 - Deploy only committed revisions; change the cluster through Git and
   `./fleet sync`, never by patching live objects.
 - Keep documentation beside the behavior it describes; update both in one

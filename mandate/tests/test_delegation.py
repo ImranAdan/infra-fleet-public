@@ -63,7 +63,7 @@ def main() -> int:
     # A file for another repository cannot govern this one.
     rejects(MINIMAL.replace(REPO, "ImranAdan/other"), expect="not 'ImranAdan/infra-fleet-public'")
 
-    # A-13: a class that authorizes a reserved category invalidates the whole file.
+    # A class that authorizes a reserved category invalidates the whole file.
     for reserved in sorted(d.RESERVED):
         rejects(MINIMAL.replace('"decision-record"', f'"{reserved}"'), expect=f"reserved: {reserved}")
     # Escalating a reserved category is fine.
@@ -119,7 +119,7 @@ def main() -> int:
     ordinary = [".github/workflows/ci.yml", ".github/actions/compare-other/action.yml", "docs/README.md", "k8s/base/policies/x.yaml"]
     assert d.reserved_findings(greedy, ordinary, base.get) == []
 
-    # A-18: a mutable script an evidence workflow runs is reserved too,
+    # A mutable script an evidence workflow runs is reserved too,
     # including scripts that script calls.
     scripted = dict(base)
     scripted[".github/workflows/intent-gate-run.yml"] += "      - run: python3 .github/scripts/compare_intent.py --strict\n"
@@ -158,7 +158,7 @@ def main() -> int:
         else:
             raise AssertionError(f"fetch accepted mutable ref {ref!r}")
 
-    # A-19: a delegation change after evidence is drift, so the decision is redone.
+    # A delegation change after evidence is drift, so the decision is redone.
     newer = d.parse(MINIMAL, REPO, SOURCE.replace("a" * 40, "b" * 40))
     assert d.drifted(minimal, newer) and not d.drifted(minimal, d.parse(MINIMAL, REPO, SOURCE))
     assert d.path_for(REPO) == "repositories/infra-fleet-public.toml"

@@ -65,13 +65,13 @@ axes and returns typed failures, never an outcome:
 | Axis | Fails when | Failure |
 | --- | --- | --- |
 | Authenticity | The check name matches but the App, workflow path, event or dispatch branch is not the declared producer's | `CHECK_WRONG_SOURCE` |
-| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY, D-21) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields |
+| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields |
 | Sufficiency | The required producer is absent, running, failed, or reports conflicting or unattributable results | `EVIDENCE_REQUIRED`, `EVIDENCE_PENDING`, `EVIDENCE_FAILED:<name>`, `EVIDENCE_CONFLICT` |
 
 A rerun supersedes earlier attempts of the same workflow run; every result of
 the latest attempt counts. Green checks the
 class does not require carry no weight, and PR prose is not an input. Outcome
-precedence and the public reason codes are the decision's (KAN-24).
+precedence and the public reason codes are the decision module's.
 
 ## Decision
 
@@ -93,7 +93,7 @@ maps to AUTHORIZE.
 
 ## Ledger
 
-`mandate.ledger` keeps receipts on a protected branch (KAN-4 page 09, D-20).
+`mandate.ledger` keeps receipts on a protected branch.
 The layout is immutable `v1/receipts/<decision_id>/<revision>.json` files plus
 a hash-chained `v1/ledger.jsonl`.
 
@@ -115,7 +115,7 @@ The live drill is in `drill/ledger/README.md`.
 ## Receipts
 
 `mandate.receipt` turns a `Decision` into a versioned receipt and records it
-through `ledger.append()` (KAN-26).
+through `ledger.append()`.
 
 - **Decision ID:** `d-` plus the SHA-256 of the canonical subject. The subject
   is the repository, pull request, head, base, delegation revision and
@@ -142,8 +142,8 @@ through `ledger.append()` (KAN-26).
     with `STALE_DECISION` once its own receipt has landed, including when
     the append's response was lost (`LEDGER_UNAVAILABLE`: it may or may not
     have landed). The recorder then reads `pr_latest()` and its inputs
-    again and decides again, which records the next revision. KAN-28 must
-    never refresh only `after` around a cached decision. The check reads receipts through the same validation as
+    again and decides again, which records the next revision. The live merge
+    workflow must never refresh only `after` around a cached decision. The check reads receipts through the same validation as
   reconciliation, so a malformed or rebound receipt fails it closed
   (`LEDGER_INVALID`) rather than being skipped.
 - **Check run:** `reconcile_check(head_sha, app_id=…)` is the only publisher.
@@ -171,8 +171,8 @@ through `ledger.append()` (KAN-26).
       until a decision at the new base, and never falls back to an older
       green receipt, even if the PR is retargeted back.
     - **PR state changes:** these happen outside the writer group, so the
-      reconcile re-reads PR state before returning. The live workflow
-      (KAN-28) must also run on PR open, reopen and close events.
+      reconcile re-reads PR state before returning. The live merge
+      workflow must also run on PR open, reopen and close events.
     - **Title:** gives the count (limited to 255 characters); the summary
       lists the PRs.
   - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
@@ -207,11 +207,11 @@ through `ledger.append()` (KAN-26).
     Two facts are left to the trusted collector, which `record()` can't
     reject:
     - whether the classes should have matched the PR's findings, which
-      needs the inputs (historical replay, KAN-27);
+      needs the inputs (historical replay, not built yet);
     - whether the cited check runs exist, which rests on the producer's word,
       as in `decide()`.
 
-    G4's live collector and executor must gather real GitHub facts,
+    Before enforcement, the live collector and executor must gather real GitHub facts,
     recompute the decision from the actual PR changes, and revalidate before
     merge.
   - **Fail closed:** if anything stops the reconcile showing the current
@@ -243,8 +243,8 @@ through `ledger.append()` (KAN-26).
     at the job's own indentation, never inside a script) and doesn't itself
     use `mandate.receipt`. Today
     `advisor-remediation` `propose`, `autonomous-merge` `merge`,
-    `ledger-drill` `drill` and `release-please` state it. KAN-28 must drop the line from the merge
-    worker before that worker records.
+    `ledger-drill` `drill` and `release-please` state it. The merge worker must drop the line
+    before it records.
   - **Record, then publish:** every recorder must be followed by a job in
     the canonical group that can write checks, `needs` exactly that recorder,
     and runs `if: always()`. It then runs even when the recorder appended and
@@ -273,10 +273,10 @@ through `ledger.append()` (KAN-26).
     re-reads and shows the newer decision before returning. It lists every
     run (`filter=all`, paged), so duplicates from a past race are kept
     current.
-  - **G4 owner action:** the ruleset that requires `mandate/decision` must
+  - **Owner action before enforcement:** the ruleset that requires `mandate/decision` must
     bind it to the publisher App. Otherwise a commit status or another App's
     check with the same name could satisfy it.
-  - **Credentials are the real boundary (G4/KAN-31 owner action):** the scan
+  - **Credentials are the real boundary (owner action before enforcement):** the scan
     sees only what YAML shows: permissions, token inputs and API calls in
     the workflow file. A script that is handed a credential (a secret) and
     writes checks or receipts itself is invisible to it. So the publisher
@@ -332,12 +332,12 @@ through `ledger.append()` (KAN-26).
 
 The shadow output includes the receipt it would record. Nothing writes a
 production ledger yet: that needs the `mandate-ledger` branch, its two
-rulesets and a `checks: write` token, all owner actions gated by KAN-31.
+rulesets and a `checks: write` token, all owner actions.
 
 ## Shadow decisions
 
 `mandate.shadow` turns one live pull request into a `DecisionInput` and runs
-`decide()` on it (the KAN-27 adapter; D-23: it adds no outcome or reason). The
+`decide()` on it; it adds no outcome or reason of its own. The
 input is built from:
 
 - **Findings:** the engine classifies each file from its own diff, plus
@@ -347,7 +347,7 @@ input is built from:
 - **Policy:** the owner's delegation at a pinned commit.
 
 Facts such as permission deltas aren't computed yet, so classes that need them
-never match. Mechanical refusals belong to the executor (KAN-28).
+never match. Mechanical refusals belong to the live merge executor.
 
 `.github/workflows/mandate-shadow.yml` runs it from the default branch after
 each Intent Gate run (not the retarget variant, whose producer no class

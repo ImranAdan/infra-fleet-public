@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# KAN-30 Stage B teardown (owner). All or nothing, in order: resolve exactly
+# Ledger drill teardown (owner). All or nothing, in order: resolve exactly
 # the two drill rulesets, delete them, then delete the drill ref. Any failure
 # stops before the next step, so the ref is never deleted while a drill
 # ruleset could not be resolved or removed.
@@ -10,4 +10,4 @@ ids=$(PYTHONPATH="$here/../../src" python3 -m mandate.ledger drill-rulesets "$re
 for id in $ids; do
   gh api -X DELETE "repos/$repository/rulesets/$id"
 done
-git push "https://github.com/$repository.git" --delete mandate-g0/ledger
+git push "https://github.com/$repository.git" --delete mandate-drill/ledger

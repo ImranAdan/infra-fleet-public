@@ -1,4 +1,4 @@
-"""Decision checks (KAN-24). Run: python3 mandate/tests/test_decision.py
+"""Decision checks. Run: python3 mandate/tests/test_decision.py
 
 A truth table through the real decide(): every outcome, every precedence edge,
 and at least one literal fixture per registered reason code.
@@ -75,7 +75,7 @@ def main() -> int:
     # VERIFY: obtainable proof is missing or still running.
     assert outcome(records=()) == ("VERIFY", ["EVIDENCE_REQUIRED:intent-gate"])
     assert outcome(records=(record(None),)) == ("VERIFY", ["EVIDENCE_PENDING:intent-gate"])
-    # D-21: genuine evidence about another subject is explicit and still obtainable.
+    # Genuine evidence about another subject is explicit and still obtainable.
     older = dataclasses.replace(GREEN, head_sha="c" * 40)
     assert outcome(records=(older,)) == ("VERIFY", ["EVIDENCE_NOT_APPLICABLE:intent-gate"])
 
