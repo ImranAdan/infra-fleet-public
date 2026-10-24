@@ -97,6 +97,7 @@ the stack itself is destroyed only manually. Review current AWS pricing first.
 |----------|-------------|
 | [Dependabot](DEPENDABOT.md) | Dependency automation |
 | [Local Testing with act](ACT-LOCAL-TESTING.md) | Test workflows locally |
+| [Mandate decision engine](../mandate/README.md) | Delegated merge decisions, receipts, the ledger and the `mandate/decision` check |
 
 ### Operations
 | Document | Description |

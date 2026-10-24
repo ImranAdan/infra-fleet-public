@@ -176,7 +176,7 @@ def parse(text: str, repository: str, source: str) -> Delegation:
         raise _invalid("evidence must declare at least one producer")
     for name, spec in data["evidence"].items():
         where = f"evidence.{name}"
-        if not NAME.match(name):
+        if not NAME.fullmatch(name):
             raise _invalid(f"{where}: names are lowercase words joined by hyphens")
         _keys(
             spec,
@@ -212,7 +212,7 @@ def parse(text: str, repository: str, source: str) -> Delegation:
             where,
         )
         class_id = _text(raw["id"], f"{where}.id")
-        if not NAME.match(class_id) or class_id in seen:
+        if not NAME.fullmatch(class_id) or class_id in seen:
             raise _invalid(f"{where}.id must be a unique lowercase hyphenated name")
         seen.add(class_id)
         where = f"class {class_id}"
@@ -277,7 +277,7 @@ def path_for(repository: str) -> str:
 
 def fetch(repository: str, commit: str, delegation_repository: str = DELEGATION_REPOSITORY) -> Delegation:
     """Read and validate ``repository``'s delegation at one immutable commit."""
-    if not COMMIT_SHA.match(commit):
+    if not COMMIT_SHA.fullmatch(commit):
         raise _invalid(f"delegation must be pinned to a full commit SHA, not {commit!r}")
     path = path_for(repository)
     try:

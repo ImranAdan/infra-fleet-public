@@ -1,4 +1,4 @@
-"""Shadow adapter checks (KAN-27). Run: python3 mandate/tests/test_shadow.py
+"""Shadow adapter checks. Run: python3 mandate/tests/test_shadow.py
 
 Provider responses are canned and shaped like the REST API; the adapter and
 decide() are the real code. Nothing here calls GitHub.
@@ -96,7 +96,7 @@ def main() -> int:
     assert (ok.outcome, codes(ok)) == ("AUTHORIZE", []), codes(ok)
     assert ok.subject == e.Subject(REPO, HEAD, BASE, POLICY)
 
-    # The same evidence for an older head is refused by name (D-21).
+    # The same evidence for an older head is refused by name.
     stale = decide(("docs/decisions/0009-x.md",), head_check="c" * 40)
     assert (stale.outcome, codes(stale)) == (
         "VERIFY",

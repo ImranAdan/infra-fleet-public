@@ -1,8 +1,8 @@
-"""Ledger checks (KAN-30 Stage A). Run: python3 mandate/tests/test_ledger.py
+"""Ledger checks against a fake provider. Run: python3 mandate/tests/test_ledger.py
 
 Golden vectors, the anchor attack matrix and a two-writer compare-and-swap
 race, against an in-memory Git that enforces fast-forward-only ref updates
-and the D-20 rulesets the way GitHub does. The provider drill (Stage B) runs
+and the ledger rulesets the way GitHub does. The live provider drill runs
 the same append() and drill() against the real API.
 """
 
@@ -97,6 +97,15 @@ def receipts(git: FakeGit) -> dict[str, bytes]:
 
 
 def main() -> int:
+    # Identifiers are matched whole: a trailing newline is not a safe id.
+    for bad_id in ("d1\n", "D1", "../x"):
+        try:
+            l.receipt_path(bad_id, "r1")
+        except l.LedgerError as exc:
+            assert exc.code == "LEDGER_INVALID", exc
+        else:
+            raise AssertionError(f"accepted unsafe id {bad_id!r}")
+
     # Golden vector: one fixed entry has one fixed digest (canonical JSON, SHA-256).
     receipt = l.canonical({"decision_id": "d1", "outcome": "AUTHORIZE"})
     first = l.entry(
@@ -289,7 +298,7 @@ def main() -> int:
         else:
             raise AssertionError(f"provider failure at {where} was not reported")
 
-    # Attack matrix (page 09): each attack against each anchor availability.
+    # Attack matrix: each attack against each anchor availability.
     lines = text.splitlines()
     head = json.loads(lines[-1])["entry_digest"]
     rs = receipts(git)
@@ -357,7 +366,7 @@ def main() -> int:
     else:
         raise AssertionError("unsafe receipt path accepted")
 
-    # The Stage B drill itself, end to end against the fake provider.
+    # The live drill itself, end to end against the fake provider.
     results = l.drill(FakeGit(), REPO, REF, "123")
     assert all(passed for _, passed, _ in results), results
     assert [s.split()[0] for s, _, _ in results] == [
@@ -371,17 +380,17 @@ def main() -> int:
         "L8",
     ]
 
-    # D-20 topology check against the exact payloads the owner applies.
+    # Ruleset topology check against the exact payloads the owner applies.
     drill_dir = HERE.parent / "drill" / "ledger"
     writer = json.loads((drill_dir / "writer-ruleset.json").read_text())
     integrity = json.loads((drill_dir / "integrity-ruleset.json").read_text())
-    ref, app = "mandate-g0/ledger", 5336871
+    ref, app = "mandate-drill/ledger", 5336871
     assert l.ruleset_failures([writer, integrity], ref, app) == []
     assert l.ruleset_failures([writer], ref, app), "missing integrity ruleset passed"
     assert l.ruleset_failures([integrity], ref, app), "missing writer ruleset passed"
     app_bypass = {**integrity, "bypass_actors": writer["bypass_actors"]}
     assert l.ruleset_failures([writer, app_bypass], ref, app), (
-        "App M bypassing integrity passed"
+        "writer App bypassing integrity passed"
     )
     merged = {**writer, "rules": writer["rules"] + integrity["rules"]}
     assert l.ruleset_failures([merged], ref, app), "one combined ruleset passed"
@@ -414,7 +423,7 @@ def main() -> int:
     ), "`*` crossed a slash"
     assert (
         l.ruleset_failures(
-            [on(writer, "refs/heads/**"), on(integrity, "refs/heads/mandate-g0/*")],
+            [on(writer, "refs/heads/**"), on(integrity, "refs/heads/mandate-drill/*")],
             ref,
             app,
         )
@@ -447,7 +456,7 @@ def main() -> int:
                 **named[1],
                 "conditions": {
                     "ref_name": {
-                        "include": ["refs/heads/mandate-g0/ledger", "refs/heads/main"],
+                        "include": ["refs/heads/mandate-drill/ledger", "refs/heads/main"],
                         "exclude": [],
                     }
                 },
@@ -486,7 +495,7 @@ def main() -> int:
 
     ok = teardown(True, None)
     assert [c.split()[0] for c in ok] == ["python3", "gh", "gh", "git"], ok
-    assert ok[-1].endswith("--delete mandate-g0/ledger"), ok
+    assert ok[-1].endswith("--delete mandate-drill/ledger"), ok
     for selector_ok, fail_delete in ((False, None), (True, "11"), (True, "12")):
         calls = teardown(selector_ok, fail_delete)
         assert not any(c.startswith("git") for c in calls), (

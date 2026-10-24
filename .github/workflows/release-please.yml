@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   release-please:
+    # mandate: no-receipts (release PRs and tags only; mandate/README.md)
     runs-on: ubuntu-latest
     env:
       # secrets cannot be referenced directly in a step-level `if`, so surface
@@ -32,6 +33,11 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          # Only what release-please needs (the same as this job's GITHUB_TOKEN).
+          # Unscoped, the token would carry the App's checks: write and race
+          # the serialized mandate/decision publisher (mandate/README.md).
+          permission-contents: write
+          permission-pull-requests: write
 
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
