@@ -259,12 +259,14 @@ through `ledger.append()`.
     The step must be exactly that one command with all four arguments, none
     an option. A bare argument holds only characters bash takes literally
     (letters, digits, `_./:@%+=,-`); a double-quoted one may also hold
-    `$NAME` or `${NAME}`. So `#x`, an unquoted `$X`, globs, braces and
-    `${X:?}` are refused: bash would comment out, split, drop, expand or
-    abort on them before the reconciler runs. Pass values through `env`, not
-    `${{ }}`; no shell operators or second command. The step has no `if`
-    other than `always()`, no `continue-on-error`, and names `shell: bash`
-    itself, in a job on a GitHub-hosted Ubuntu runner (`runs-on: ubuntu-…`).
+    `$NAME` or `${NAME}`, where `NAME` is a shell name (an ASCII letter or
+    `_`, then letters, digits or `_`). So `#x`, an unquoted `$X`, globs,
+    braces, `${X:?}` and `${1X}` are refused: bash would comment out, split,
+    drop, expand or abort on them before the reconciler runs. Pass values through `env`, not
+    `${{ }}`; no shell operators or second command. The step names `if:
+    always()` itself (a step without an `if` defaults to `success()`, so an
+    earlier failing step skips it), has no `continue-on-error`, and names
+    `shell: bash` itself, in a job on a GitHub-hosted Ubuntu runner (`runs-on: ubuntu-…`).
     The default shell and `python3` depend on the runner: Windows runs an
     unspecified `run` in PowerShell. This is a bounded
     workflow contract, not shell analysis. The command exits 1 when it

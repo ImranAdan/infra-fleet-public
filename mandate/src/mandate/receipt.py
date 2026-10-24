@@ -49,9 +49,10 @@ CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.head_sha
 # The supported publisher step (main() below), as a recorder's follower must
 # run it: every argument, each one word, none an option. A bare word holds only
 # characters bash takes literally (no comment, expansion, splitting or glob); a
-# double-quoted one may also hold $NAME or ${NAME}.
+# double-quoted one may also hold $NAME or ${NAME} (a shell name).
 _LITERAL = r"[\w./:@%+=,-]"
-_ARG = rf'(?!-)(?:{_LITERAL}+|"(?!-)(?:{_LITERAL}|\$\w+|\$\{{\w+\}})+")'
+_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
+_ARG = rf'(?!-)(?:{_LITERAL}+|"(?!-)(?:{_LITERAL}|\${_NAME}|\$\{{{_NAME}\}})+")'
 _RECONCILE = re.compile(rf"PYTHONPATH=mandate/src python3 -m mandate\.receipt reconcile (?:{_ARG} ){{3}}--app-id {_ARG}")
 _ALWAYS = ("always()", "${{always()}}")
 _USES_RECEIPTS = re.compile(r"mandate(\.| import )receipt|src/mandate/receipt\.py")
@@ -564,7 +565,8 @@ def _token_writes(job: dict[str, Any], scope: str) -> bool:
 
 
 def _reconciles(job: dict[str, Any]) -> bool:
-    """A step runs the supported reconciler: the one command, unconditionally,
+    """A step runs the supported reconciler: the one command, under its own
+    ``if: always()`` (a step without one defaults to success()),
     failing the job if it fails, with ``shell: bash`` on the step and a
     GitHub-hosted Ubuntu runner (the default shell and python3 depend on the
     runner: PowerShell on Windows). A bounded contract, not shell analysis."""
@@ -573,7 +575,7 @@ def _reconciles(job: dict[str, Any]) -> bool:
         and isinstance(step.get("run"), str)
         # bash joins a backslash-newline; a bare newline is another command.
         and bool(_RECONCILE.fullmatch(re.sub(r"[ \t]+", " ", re.sub(r"\\\n", " ", step["run"])).strip()))
-        and str(step.get("if", "always()")).replace(" ", "") in _ALWAYS
+        and str(step.get("if")).replace(" ", "") in _ALWAYS
         and step.get("continue-on-error", False) is False
         and step.get("shell") == "bash"
         for step in job.get("steps") or []
@@ -615,7 +617,8 @@ def serial_violations(workflows: dict[str, str]) -> list[str]:
     ``# mandate: no-receipts`` at its own indentation and doesn't use them)
     inside any concurrency group, where GitHub can replace it while pending,
     or that no grouped publisher follows (one that needs exactly it, runs
-    ``if: always()`` and has a step that runs the supported reconciler, main(),
+    ``if: always()`` and has an ``if: always()`` step that runs the supported
+    reconciler, main(),
     as _reconciles() reads it), or one that uses receipts without declaring its
     permissions. A file that doesn't parse to jobs, or has duplicate or merge
     keys, is ``file:?``. It sees only what YAML shows: a script handed a
