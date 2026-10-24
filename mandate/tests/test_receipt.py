@@ -728,7 +728,7 @@ def main() -> int:
 
     serial = f"    concurrency:\n      group: {group}\n      cancel-in-progress: false\n"
     command = 'PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile "$GITHUB_REPOSITORY" "$LEDGER_REF" "$HEAD" --app-id "$APP_ID"'
-    write = f"    steps:\n      - run: {command}\n        shell: bash\n"
+    write = f"    steps:\n      - run: {command}\n        shell: bash\n        if: always()\n"
     top = f"concurrency:\n  group: '{group}'\n  cancel-in-progress: false\n"
     pub = "    permissions:\n      checks: write\n"
     rec = "    permissions:\n      contents: write\n"
@@ -775,7 +775,10 @@ def main() -> int:
             for label, steps in (
                 ("noop-successor", "    steps:\n      - run: echo no-reconciliation\n"),
                 ("empty-successor", "    steps: []\n"),
-                ("skipped-step", write + "        if: false\n"),
+                ("skipped-step", write.replace("if: always()", "if: false")),
+                # A step without an if defaults to success(), so an earlier
+                # failing step skips it even in an always() job.
+                ("implicit-if", write.replace("      - run:", "      - run: exit 1\n      - run:").replace("        if: always()\n", "")),
                 ("soft-step", write + "        continue-on-error: true\n"),
                 ("swallowed", write.replace(command, command + " || true")),
                 ("other-shell", write.replace("shell: bash", "shell: cat {0}")),
@@ -798,6 +801,9 @@ def main() -> int:
                 ("glob-arg", write.replace('"$HEAD"', "*")),
                 ("brace-arg", write.replace('"$HEAD"', "{a,b}")),
                 ("checked-var", write.replace('"$HEAD"', '"${HEAD:?}"')),
+                # A shell name starts with a letter or underscore, in ASCII.
+                ("digit-name", write.replace('"$HEAD"', '"${1HEAD}"')),
+                ("unicode-name", write.replace('"$HEAD"', '"${HÉAD}"')),
                 # bash joins a backslash-newline, but a blank line after it or a
                 # bare newline starts another command.
                 ("blank-after-continuation", write.replace(" --app-id", " \\\n\n          --app-id").replace("run: ", "run: |\n          ")),
@@ -812,13 +818,13 @@ def main() -> int:
             ["windows.yml:record"],
         ),
         "bash-shell.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n    defaults:\n      run:\n        shell: cat {0}\n" + pub + serial + write), []),
-        "always-step.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write + "        if: always()\n"), []),
+        "always-expr-step.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace("if: always()", "if: ${{ always() }}")), []),
         "folded-step.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace(" --app-id", " \\\n          --app-id").replace("run: ", "run: |\n          ")), []),
         "literal-args.yml": (
             wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace(command.split("reconcile ")[1], "o/r refs/heads/mandate/ledger abc123 --app-id 5336871")),
             [],
         ),
-        "braced-var.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace('"$HEAD"', '"${HEAD}"')), []),
+        "braced-var.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace('"$HEAD"', '"${_HEAD_2}"').replace('"$APP_ID"', '"$APP_ID2"')), []),
         "ungrouped-after.yml": (
             wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + write),
             ["ungrouped-after.yml:record", "ungrouped-after.yml:publish"],
