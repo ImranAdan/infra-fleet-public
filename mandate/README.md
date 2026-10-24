@@ -256,10 +256,14 @@ through `ledger.append()`.
     PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile "$GITHUB_REPOSITORY" "$LEDGER_REF" "$HEAD" --app-id "$APP_ID"
     ```
 
-    The step must be exactly that one command with all four arguments, each
-    one word or one double-quoted word that isn't an option (pass values
-    through `env`; no shell operators or second command), with no step `if` other than
-    `always()`, no `continue-on-error`, and `shell: bash` on the step
+    The step must be exactly that one command with all four arguments, none
+    an option. A bare argument holds only characters bash takes literally
+    (letters, digits, `_./:@%+=,-`); a double-quoted one may also hold
+    `$NAME` or `${NAME}`. So `#x`, an unquoted `$X`, globs, braces and
+    `${X:?}` are refused: bash would comment out, split, drop, expand or
+    abort on them before the reconciler runs. Pass values through `env`, not
+    `${{ }}`; no shell operators or second command. The step has no `if`
+    other than `always()`, no `continue-on-error`, and names `shell: bash`
     itself, in a job on a GitHub-hosted Ubuntu runner (`runs-on: ubuntu-…`).
     The default shell and `python3` depend on the runner: Windows runs an
     unspecified `run` in PowerShell. This is a bounded

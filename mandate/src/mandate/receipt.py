@@ -47,9 +47,11 @@ LIVE = re.compile(r"sha256:[0-9a-f]{64}")  # a real enforcement snapshot digest 
 # computes this group.
 CANONICAL_GROUP = "mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}"
 # The supported publisher step (main() below), as a recorder's follower must
-# run it: every argument, each one word (or one double-quoted word), none an option.
-_WORD = r"(?!-)[^\s\"';&|<>`()\\]+"
-_ARG = rf'(?:{_WORD}|"{_WORD}")'
+# run it: every argument, each one word, none an option. A bare word holds only
+# characters bash takes literally (no comment, expansion, splitting or glob); a
+# double-quoted one may also hold $NAME or ${NAME}.
+_LITERAL = r"[\w./:@%+=,-]"
+_ARG = rf'(?!-)(?:{_LITERAL}+|"(?!-)(?:{_LITERAL}|\$\w+|\$\{{\w+\}})+")'
 _RECONCILE = re.compile(rf"PYTHONPATH=mandate/src python3 -m mandate\.receipt reconcile (?:{_ARG} ){{3}}--app-id {_ARG}")
 _ALWAYS = ("always()", "${{always()}}")
 _USES_RECEIPTS = re.compile(r"mandate(\.| import )receipt|src/mandate/receipt\.py")
