@@ -790,6 +790,14 @@ def main() -> int:
                 ("no-app-id", write.replace(' --app-id "$APP_ID"', "")),
                 ("help-as-arg", write.replace('"$HEAD"', "--help")),
                 ("quoted-help", write.replace('"$HEAD"', '"--help"')),
+                # bash comments out, splits, drops, globs or aborts on these
+                # words, so the command never reaches the reconciler.
+                # (in a block scalar: in a plain one, YAML drops the comment)
+                ("comment-arg", write.replace('"$HEAD"', "#head").replace("run: ", "run: |\n          ")),
+                ("unquoted-var", write.replace('"$HEAD"', "$HEAD")),
+                ("glob-arg", write.replace('"$HEAD"', "*")),
+                ("brace-arg", write.replace('"$HEAD"', "{a,b}")),
+                ("checked-var", write.replace('"$HEAD"', '"${HEAD:?}"')),
                 # bash joins a backslash-newline, but a blank line after it or a
                 # bare newline starts another command.
                 ("blank-after-continuation", write.replace(" --app-id", " \\\n\n          --app-id").replace("run: ", "run: |\n          ")),
@@ -806,6 +814,11 @@ def main() -> int:
         "bash-shell.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n    defaults:\n      run:\n        shell: cat {0}\n" + pub + serial + write), []),
         "always-step.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write + "        if: always()\n"), []),
         "folded-step.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace(" --app-id", " \\\n          --app-id").replace("run: ", "run: |\n          ")), []),
+        "literal-args.yml": (
+            wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace(command.split("reconcile ")[1], "o/r refs/heads/mandate/ledger abc123 --app-id 5336871")),
+            [],
+        ),
+        "braced-var.yml": (wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + serial + write.replace('"$HEAD"', '"${HEAD}"')), []),
         "ungrouped-after.yml": (
             wf(record=rec + record, publish="    needs: record\n    if: always()\n" + pub + write),
             ["ungrouped-after.yml:record", "ungrouped-after.yml:publish"],
