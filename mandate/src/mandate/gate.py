@@ -93,6 +93,15 @@ DEPENDABOT_VERSION_ONLY = False
 
 WORKFLOW = re.compile(r"^\.github/(?:workflows|actions)/.+\.ya?ml$")
 AUTOMATION = re.compile(r"^\.github/(?:workflows|actions)/")
+# A diff line cannot follow YAML: an anchor, alias, tag, merge key, block
+# scalar or explicit key can each carry a permission value off its key's line.
+# So any workflow line with a bare write, a permissions key or an alias counts.
+PERMISSION = re.compile(
+    r"""(?:^|[\s{,])['"]?permissions['"]?\s*:|\bwrite\b|(?:^|[:,\[{]\s*|-\s+)\*[A-Za-z_][\w-]*\s*(?:$|[,\]}#])"""
+)
+# Any line naming the secrets context, in any case: toJSON(secrets), an
+# operand after ||, or an expression split across lines all name it.
+SECRETS = re.compile(r"\bsecrets\b", re.I)
 RBAC_FILE = re.compile(r"(?:^|/)(?:rbac|clusterrole|rolebinding|role)[^/]*\.ya?ml$", re.I)
 DOCKERFILE = re.compile(r"(^|/)Dockerfile[^/]*$")
 YAML = re.compile(r"\.ya?ml$")
@@ -324,8 +333,10 @@ def _line_findings(path: str, line: str) -> list[Finding]:
     findings: list[Finding] = []
 
     if WORKFLOW.search(path):
-        # Anywhere on the line, quoted or not: a flow mapping can nest it.
-        if re.search(r"""(?:^|[\s{,])['"]?(?:permissions['"]?\s*:|[a-z-]+['"]?\s*:\s*['"]?write\b)""", text):
+        # A comment line sets nothing, but GitHub evaluates ${{ }} anywhere,
+        # even in a script's comment.
+        comment = text.startswith("#") and "${{" not in text
+        if not comment and PERMISSION.search(text):
             category = "permission-added" if added else "permission-removed"
             findings.append(
                 _finding(category, f"{verb} a workflow permission in {path}: {text[:80]}")
@@ -342,8 +353,7 @@ def _line_findings(path: str, line: str) -> list[Finding]:
             findings.append(
                 _finding("merge-authority", f"adds merge-control logic in {path}: {text[:80]}")
             )
-        # Any expression naming the secrets context: toJSON(secrets) reads them all.
-        if added and re.search(r"(?:\$\{\{.*\bsecrets\b|\bsecrets:\s*inherit\b)", text):
+        if added and not comment and SECRETS.search(text):
             findings.append(
                 _finding("credential", f"adds a credential reference in {path}: {text[:80]}")
             )

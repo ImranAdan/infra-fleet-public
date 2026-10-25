@@ -348,13 +348,17 @@ input is built from:
 
 - **Findings:** the engine classifies each file from its own diff, plus
   reserved surfaces read at the trusted base. A file that appears in the diff
-  but not in the API's file list still counts. A workflow permission counts
-  anywhere on a line, quoted or not, so a flow mapping cannot hide one; any
-  expression naming `secrets` (`toJSON(secrets)`, `a || secrets.X`) is a
-  credential; and a file renamed into `.github/workflows/` or
-  `.github/actions/` is merge authority, because a rename shows none of its
-  triggers or permissions. A Dependabot requirement bump may keep an inline
-  comment, unchanged.
+  but not in the API's file list still counts. A diff line cannot follow
+  YAML, so workflow rules are deliberately broad. A line with a bare `write`,
+  a `permissions` key or an alias is a permission change, since anchors,
+  tags, merge keys, block scalars and explicit keys can each carry a value
+  off its key's line. A line naming `secrets` in any case is a credential,
+  which covers `toJSON(secrets)`, `a || secrets.X` and an expression split
+  across lines. Comment lines are skipped unless they hold `${{`, because
+  GitHub evaluates expressions even inside a script's comments. A file
+  renamed into `.github/workflows/` or `.github/actions/` is merge
+  authority, because a rename shows none of its triggers or permissions. A
+  Dependabot requirement bump may keep an inline comment, unchanged.
 - **Evidence:** the head's check runs, each correlated to its workflow run.
 - **Policy:** the owner's delegation at a pinned commit.
 
