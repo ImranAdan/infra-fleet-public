@@ -286,29 +286,29 @@ live = "NOT RUN — gate not reached"
 [[case]]
 slug = "evade-flow-permissions"
 kind = "evasion"
-title = "Workflow permissions written as flow mappings, quoted values or quoted keys"
+title = "Workflow permissions written as flow mappings, quoted values or keys, block scalars or explicit keys"
 threat = "classifier evasion"
 requirement = "any added write permission is permission-added"
 fixture = "evade_flow_permissions"
-expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added" }
+expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE" }
 
 [[case]]
 slug = "evade-yaml-aliases"
 kind = "evasion"
-title = "Workflow permissions through YAML anchors and aliases"
+title = "Workflow permissions through YAML anchors, aliases, tags and merge keys"
 threat = "classifier evasion"
 requirement = "permissions set through an alias are permission-added"
 fixture = "evade_yaml_aliases"
-expect = { "anchor then alias" = "ESCALATE RESERVED:permission-added", "alias of an existing anchor" = "ESCALATE RESERVED:permission-added" }
+expect = { "anchor then alias" = "ESCALATE RESERVED:permission-added", "alias of an existing anchor" = "ESCALATE RESERVED:permission-added", "anchored value" = "ESCALATE RESERVED:permission-added", "tagged value" = "ESCALATE RESERVED:permission-added", "value aliased to an unchanged anchor" = "ESCALATE RESERVED:permission-added", "merge key" = "ESCALATE RESERVED:permission-added" }
 
 [[case]]
 slug = "evade-secret-expressions"
 kind = "evasion"
-title = "Secrets reached through toJSON, a computed index or inheritance"
+title = "Secrets reached through toJSON, a computed index, another operand, a split expression or inheritance"
 threat = "classifier evasion"
 requirement = "any expression that reads secrets is a credential"
 fixture = "evade_secret_expressions"
-expect = { "toJSON(secrets)" = "ESCALATE RESERVED:credential", "computed index" = "ESCALATE RESERVED:credential", "after another operand" = "ESCALATE RESERVED:credential", "secrets: inherit" = "ESCALATE RESERVED:credential" }
+expect = { "toJSON(secrets)" = "ESCALATE RESERVED:credential", "computed index" = "ESCALATE RESERVED:credential", "after another operand" = "ESCALATE RESERVED:credential", "expression across lines" = "ESCALATE RESERVED:credential", "upper-case context name" = "ESCALATE RESERVED:credential", "expression in a script comment" = "ESCALATE RESERVED:credential", "secrets: inherit" = "ESCALATE RESERVED:credential" }
 
 [[case]]
 slug = "evade-reusable-triggers"

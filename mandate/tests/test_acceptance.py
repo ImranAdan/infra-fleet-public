@@ -108,10 +108,11 @@ GREEN = (record(),)
 BOTH = (record(), record(RUNTIME, run_id=8))
 
 
-def diff(path: str, *added: str, removed: tuple[str, ...] = (), old: str | None = None) -> str:
+def diff(path: str, *added: str, removed: tuple[str, ...] = (), old: str | None = None,
+         context: tuple[str, ...] = ()) -> str:
     """A one-hunk unified diff for one file (a rename when ``old`` differs)."""
     a = old or path
-    body = "".join(f"-{x}\n" for x in removed) + "".join(f"+{x}\n" for x in added)
+    body = "".join(f" {x}\n" for x in context) + "".join(f"-{x}\n" for x in removed) + "".join(f"+{x}\n" for x in added)
     return f"diff --git a/{a} b/{path}\n--- a/{a}\n+++ b/{path}\n@@ -1 +1 @@\n jobs:\n{body}"
 
 
@@ -497,6 +498,9 @@ def evade_flow_permissions():
         "quoted value": decide(findings(diff(W, "      contents: 'write'"))),
         "quoted key": decide(findings(diff(W, '      "contents": write'))),
         "write-all": decide(findings(diff(W, "permissions: write-all"))),
+        "block scalar": decide(findings(diff(W, "      contents: >-", "        write"))),
+        "explicit key": decide(findings(diff(W, "      ? contents", "      : write"))),
+        "a comment naming write and secrets (control)": decide(findings(diff(W, "    # write to the cache; no secrets here"))),
     }
 
 
@@ -505,6 +509,10 @@ def evade_yaml_aliases():
     return {
         "anchor then alias": decide(findings(diff(W, "x-perm: &w", "  contents: write", "    permissions: *w"))),
         "alias of an existing anchor": decide(findings(diff(W, "    permissions: *w"))),
+        "anchored value": decide(findings(diff(W, "      contents: &w write"))),
+        "tagged value": decide(findings(diff(W, "      contents: !!str write"))),
+        "value aliased to an unchanged anchor": decide(findings(diff(W, "      contents: *w", context=("x-w: &w write",)))),
+        "merge key": decide(findings(diff(W, "    <<: *perms", context=("x-perms: &perms", "  permissions:", "    contents: write")))),
     }
 
 
@@ -514,6 +522,9 @@ def evade_secret_expressions():
         "toJSON(secrets)": decide(findings(diff(W, "        env: { ALL: '${{ toJSON(secrets) }}' }"))),
         "computed index": decide(findings(diff(W, "        env: { T: '${{ secrets[inputs.name] }}' }"))),
         "after another operand": decide(findings(diff(W, "        token: ${{ inputs.token || secrets.DEPLOY }}"))),
+        "expression across lines": decide(findings(diff(W, "        run: |", "          echo \"${{", "            secrets.DEPLOY }}\""))),
+        "upper-case context name": decide(findings(diff(W, "        token: ${{ SECRETS.DEPLOY }}"))),
+        "expression in a script comment": decide(findings(diff(W, "        run: |", "          # ${{ toJSON(secrets) }}"))),
         "secrets: inherit": decide(findings(diff(W, "    secrets: inherit"))),
     }
 
