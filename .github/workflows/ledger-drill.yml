@@ -1,7 +1,7 @@
 name: Mandate ledger drill
 
-# KAN-30 Stage B: proves the D-20 ledger topology on the temporary drill ref
-# refs/heads/mandate-g0/ledger only. App M appends, races and read-backs, and
+# Proves the ledger's ruleset topology on the temporary drill ref
+# refs/heads/mandate-drill/ledger only. The writer App appends, races and read-backs, and
 # its force-push and delete attempts must be refused by the integrity ruleset.
 # Owner-dispatched; the ref is fixed here, not an input. Runbook:
 # mandate/drill/ledger/README.md.
@@ -17,11 +17,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  LEDGER_REF: mandate-g0/ledger
+  LEDGER_REF: mandate-drill/ledger
   MANDATE_APP_ID: "5336871"
 
 jobs:
   drill:
+    # mandate: no-receipts (drill records only, on its own ref; mandate/README.md)
     name: Ledger drill
     if: github.actor == github.repository_owner
     runs-on: ubuntu-latest
@@ -30,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Check the D-20 ruleset topology (read-only)
+      - name: Check the ledger ruleset topology (read-only)
         # Informational: GitHub may hide bypass actors from a read-only token.
         # The authoritative check is the runbook's step 3, run as the owner.
         continue-on-error: true
@@ -40,7 +41,7 @@ jobs:
           set -o pipefail
           PYTHONPATH=mandate/src python3 -m mandate.ledger rulesets \
             "$GITHUB_REPOSITORY" "$LEDGER_REF" "$MANDATE_APP_ID" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Mint a contents-only App M token for this repository
+      - name: Mint a contents-only writer App token for this repository
         id: app
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -48,7 +49,7 @@ jobs:
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
-      - name: Run the writer drill as App M
+      - name: Run the writer drill as the writer App
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |

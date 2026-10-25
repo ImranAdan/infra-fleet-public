@@ -1,4 +1,4 @@
-"""Evidence checks (KAN-18). Run: python3 mandate/tests/test_evidence.py
+"""Evidence checks. Run: python3 mandate/tests/test_evidence.py
 
 Fixture-level only: the GitHub objects below are shaped like the REST API's
 check-run and workflow-run responses, not fetched live.
@@ -99,8 +99,18 @@ def main() -> int:
             pass
         else:
             raise AssertionError(f"from_dict accepted version {version!r}")
+    # Every declared type is enforced; nullable fields still accept None.
+    assert e.EvidenceRecord.from_dict({**data, "run_id": None, "conclusion": None}).run_id is None
+    for field, value in (("check_run_id", None), ("run_id", "not-a-run-id"), ("app_id", True),
+                         ("check", 7), ("head_sha", None), ("run_attempt", 1.0), ("policy", None)):
+        try:
+            e.EvidenceRecord.from_dict({**data, field: value})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"from_dict accepted {field}={value!r}")
 
-    # A-24 / A-5: the same check name from another workflow, event or App.
+    # The same check name from another workflow, event or App.
     for wrong in (
         e.normalize(check(), run(path=".github/workflows/forged.yml"), SUBJECT),
         e.normalize(check(), run(event="workflow_dispatch"), SUBJECT),
@@ -130,20 +140,20 @@ def main() -> int:
         e.normalize(check(), run(), e.Subject(REPO, HEAD, BASE, POLICY.replace("d" * 40, "e" * 40))),
     ):
         assert codes([stale]) == ["EVIDENCE_NOT_APPLICABLE:intent-gate"], (stale, codes([stale]))
-    # D-21: the rejection names the provider IDs and the mismatched subject fields.
+    # The rejection names the provider IDs and the mismatched subject fields.
     detail = dict(e.evaluate(DELEGATION, ("intent-gate",), [e.normalize(check(), run(base=OTHER), SUBJECT)], SUBJECT).failures)
     assert detail["EVIDENCE_NOT_APPLICABLE:intent-gate"] == "'Intent gate / Declared intent' check run 70 (run 7) is about another BASE", detail
     assert e.applicability(good, SUBJECT) == ()
     assert e.applicability(e.normalize(check(), run(base=OTHER), SUBJECT), SUBJECT) == ("BASE",)
 
-    # A-17: authentic, current, green, but not what the class requires.
+    # Authentic, current, green, but not what the class requires.
     lint = e.normalize(check(72, name="lint", suite=90), run(9, path=".github/workflows/lint.yml"), SUBJECT)
     assert codes([lint]) == ["EVIDENCE_REQUIRED:intent-gate"]
 
-    # A-4: prose is not an input, so with no check nothing is satisfied.
+    # Prose is not an input, so with no check nothing is satisfied.
     assert codes([]) == ["EVIDENCE_REQUIRED:intent-gate"]
 
-    # A-20: conflicting current results, or a same-name result from no known run.
+    # Conflicting current results, or a same-name result from no known run.
     failed = e.normalize(check(73, conclusion="failure", suite=100), run(10), SUBJECT)
     assert codes([good, failed]) == ["EVIDENCE_CONFLICT"]
     unknown = e.normalize(check(74, suite=110), None, SUBJECT)

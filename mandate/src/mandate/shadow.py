@@ -1,6 +1,6 @@
-"""Shadow decision for one live pull request (KAN-27 adapter, D-23).
+"""Shadow decision for one live pull request.
 
-Translates immutable provider objects into the G2 ``DecisionInput`` and runs
+Translates immutable provider objects into the decision's ``DecisionInput`` and runs
 the same ``decide()``; it adds no outcome or reason of its own. It only reads:
 it never merges, labels, comments or approves, so its output grants nothing.
 
@@ -9,13 +9,15 @@ it never merges, labels, comments or approves, so its output grants nothing.
 ponytail: facts (permission/secret/trigger deltas, signatures) are not
 computed yet, so classes that match on them never match and fail closed; and
 mechanical refusals (head/base drift, reviews, enforcement, ledger) belong to
-the executor (KAN-28), so ``blocking`` is empty here.
+the live merge executor, so ``blocking`` is empty here.
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import os
 import re
 import subprocess
 import sys
@@ -26,6 +28,7 @@ from mandate import decision as m
 from mandate import delegation as d
 from mandate import evidence as e
 from mandate import gate
+from mandate import receipt as rc
 
 ADAPTER_VERSION = 1
 POLICY = Path(".claude/skills/merge-gate/decision-policy.toml")
@@ -168,12 +171,22 @@ def main(argv: list[str] | None = None) -> int:
     else:
         snapshot = inputs(args.repository, args.number, delegation)
     decision = m.decide(snapshot)
+    # The receipt this decision would record; shadow mode writes no ledger.
+    receipt = rc.build(
+        decision,
+        args.number,
+        "shadow",
+        versions={"adapter": ADAPTER_VERSION, "code": os.environ.get("GITHUB_SHA", "local")},
+        actors={"run_id": os.environ.get("GITHUB_RUN_ID", "local")},
+        evaluated_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
     print(
         json.dumps(
             {
                 "adapter_version": ADAPTER_VERSION,
                 "pull_request": args.number,
                 **decision.to_dict(),
+                "receipt": receipt,
             },
             sort_keys=True,
         )

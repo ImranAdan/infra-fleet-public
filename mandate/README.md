@@ -65,13 +65,13 @@ axes and returns typed failures, never an outcome:
 | Axis | Fails when | Failure |
 | --- | --- | --- |
 | Authenticity | The check name matches but the App, workflow path, event or dispatch branch is not the declared producer's | `CHECK_WRONG_SOURCE` |
-| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY, D-21) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields |
+| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields |
 | Sufficiency | The required producer is absent, running, failed, or reports conflicting or unattributable results | `EVIDENCE_REQUIRED`, `EVIDENCE_PENDING`, `EVIDENCE_FAILED:<name>`, `EVIDENCE_CONFLICT` |
 
 A rerun supersedes earlier attempts of the same workflow run; every result of
 the latest attempt counts. Green checks the
 class does not require carry no weight, and PR prose is not an input. Outcome
-precedence and the public reason codes are the decision's (KAN-24).
+precedence and the public reason codes are the decision module's.
 
 ## Decision
 
@@ -93,7 +93,7 @@ maps to AUTHORIZE.
 
 ## Ledger
 
-`mandate.ledger` keeps receipts on a protected branch (KAN-4 page 09, D-20).
+`mandate.ledger` keeps receipts on a protected branch.
 The layout is immutable `v1/receipts/<decision_id>/<revision>.json` files plus
 a hash-chained `v1/ledger.jsonl`.
 
@@ -112,10 +112,238 @@ a hash-chained `v1/ledger.jsonl`.
 
 The live drill is in `drill/ledger/README.md`.
 
+## Receipts
+
+`mandate.receipt` turns a `Decision` into a versioned receipt and records it
+through `ledger.append()`.
+
+- **Decision ID:** `d-` plus the SHA-256 of the canonical subject. The subject
+  is the repository, pull request, head, base, delegation revision and
+  enforcement snapshot, so any drift gives a new ID.
+- **Revisions:** `record()` appends `r1`, `r2` and so on under one ID.
+  Every evaluation is a new revision, even one that means the same as the
+  last: a no-op would leave no trace, so an older recorder that read the same
+  `after` could still land after it. Only a retried append of identical bytes
+  at the same path is a no-op (`ledger.append`). Flipping back to an earlier
+  result is a new revision, never a reuse. Another PR's concurrent append
+  makes it re-read and retry.
+- **Stale decisions:** recorders run outside any concurrency group, so they
+  can finish out of order. A recorder reads `pr_latest()` before the inputs it
+  decides from and passes it to `record(…, after=…)`. If the PR has gained a
+  receipt since, whatever its decision ID, the decision may be stale:
+  `record()` refuses it with `STALE_DECISION`, and the recorder decides again.
+  The check runs inside the ledger append's compare-and-swap loop (its
+  `precondition`), so it holds atomically with the append. Each PR's receipts
+  are therefore ordered by when their inputs were read, and a delayed
+  AUTHORIZE can't land over a newer refusal.
+  `trailers()` takes the same `after`, so a stale merge worker gets no
+  trailers.
+  - **Retries:** a `record()` retry with the `after` it first read is refused
+    with `STALE_DECISION` once its own receipt has landed, including when
+    the append's response was lost (`LEDGER_UNAVAILABLE`: it may or may not
+    have landed). The recorder then reads `pr_latest()` and its inputs
+    again and decides again, which records the next revision. The live merge
+    workflow must never refresh only `after` around a cached decision. The check reads receipts through the same validation as
+  reconciliation, so a malformed or rebound receipt fails it closed
+  (`LEDGER_INVALID`) rather than being skipped.
+- **Check run:** `reconcile_check(head_sha, app_id=…)` is the only publisher.
+  The caller names a head commit, never a decision or revision. It shows the
+  newest decision recorded for that head on every run of the publisher App,
+  replacing an older decision ID for the same head. Runs from other Apps are
+  never touched, and it writes nothing when the decision is already shown.
+  - **Required check:** `mandate/decision` follows the newest decision of any
+    mode. Only a live `sha256:` snapshot with AUTHORIZE can pass; any other
+    value fails.
+  - **Shadow check:** shadow decisions show on `mandate/shadow`, never the
+    required name, because GitHub counts `neutral` as passing a required
+    check. A shadow decision that supersedes a live one fails the existing
+    required check run, and a head with only shadow decisions gets no required check run.
+  - **Shared head:** a check belongs to a commit, so it is shared by every PR
+    GitHub lists as open with that commit as its current `head.sha`, whether
+    or not Mandate has decided it. GitHub's commit-to-PR list includes PRs
+    that have moved on, which is why the head is checked.
+    - **More than one such PR:** the check fails closed, even if only one of
+      them has a decision.
+    - **Only one:** it shows that PR's decision on this commit at the PR's
+      current base (GitHub's `base.sha`), if that is still its latest.
+      Otherwise nothing is current and the check fails closed: the base
+      moved, the PR was retargeted, or GitHub gave no base. It stays failed
+      until a decision at the new base, and never falls back to an older
+      green receipt, even if the PR is retargeted back.
+    - **PR state changes:** these happen outside the writer group, so the
+      reconcile re-reads PR state before returning. The live merge
+      workflow must also run on PR open, reopen and close events.
+    - **Title:** gives the count (limited to 255 characters); the summary
+      lists the PRs.
+  - **Summary:** capped at 65,535 UTF-8 bytes, cut on a character boundary.
+  - **Index binding:** each receipt's decision ID, revision, subject digest
+    and outcome must equal its index entry's, so an old receipt re-appended
+    under another entry gives `LEDGER_INVALID`.
+  - **Other receipts:** receipts of another schema in the same ledger (the
+    drill's) are skipped. A receipt that claims this schema gives
+    `LEDGER_INVALID` if it lacks a field reconciliation reads, or if it isn't
+    one `decide()` could produce: unregistered reasons, an outcome other than
+    the worst of its reasons, an identity that isn't its subject's (the ID
+    and digest must recompute from the subject, and the decision inside must
+    be about the same head, base and policy), or anything but exactly schema
+    v1. Schema v1 means every key `build()` emits, no other key, and the
+    supported registry version.
+  - **AUTHORIZE holds under its delegation:** `record(…, delegation)`,
+    `trailers(…, delegation)` and `reconcile_check(…, delegations=resolver)`
+    accept an AUTHORIZE only if it checks out against the pinned delegation
+    its policy names.
+    - A live AUTHORIZE needs a delegation in `enforce` mode; `shadow` mode
+      grants no merge authority.
+    - Its classes must be that delegation's authorizing classes.
+    - The accepted requirements must be exactly what those classes require.
+    - Re-running the production evidence rules (`evidence.evaluate`:
+      producer, App, workflow, event, subject binding) on the claimed records
+      must accept exactly them.
+
+    `record()` refuses a receipt that fails any of these checks, or the exact
+    schema, as `CONTRACT_ERROR`. Evidence records must match their declared
+    field types exactly (`EvidenceRecord.from_dict`).
+
+    Two facts are left to the trusted collector, which `record()` can't
+    reject:
+    - whether the classes should have matched the PR's findings, which
+      needs the inputs (historical replay, not built yet);
+    - whether the cited check runs exist, which rests on the producer's word,
+      as in `decide()`.
+
+    Before enforcement, the live collector and executor must gather real GitHub facts,
+    recompute the decision from the actual PR changes, and revalidate before
+    merge.
+  - **Fail closed:** if anything stops the reconcile showing the current
+    decision (an unreadable ledger or receipt, a provider error, nothing
+    recorded for the head, anything unexpected), every existing required check run
+    on the head fails first, so an earlier success never outlives it.
+  - **Identifiers:** snapshots, receipt IDs, delegation names and commit
+    SHAs are matched whole (`fullmatch`), so a trailing newline never
+    passes.
+- **One publisher per head commit; recorders outside the group:** GitHub's
+  ruleset reads the check's conclusion, and the Checks API has no
+  compare-and-swap. So every job that can write checks must run in the one
+  canonical group,
+  `mandate-decision-${{ github.repository }}-${{ inputs.head_sha }}`, with
+  `cancel-in-progress: false`, set on the job itself. Workflow-level
+  concurrency doesn't count: it serializes runs, not the jobs or matrix legs
+  of one run. That means publishers are workflows called with a `head_sha`
+  input.
+  - **Recorders wait in no group.** By default a group holds one running
+    and one pending job, and a newer pending job cancels the older one;
+    `queue: max` allows up to 100 pending and cancels any more once full
+    ([GitHub](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)).
+    Either way a pending recording job can be cancelled and lose its
+    receipt, which could be a newer refusal. Ledger appends are compare-and-swap, so
+    recording needs no group. A job that can write contents counts as a
+    recorder and must not mention `concurrency` at any level, so a job can't
+    both record and publish. A wrapper script could hide the receipt import,
+    so this holds unless the job states `# mandate: no-receipts` (a comment
+    at the job's own indentation, never inside a script) and doesn't itself
+    use `mandate.receipt`. Today
+    `advisor-remediation` `propose`, `autonomous-merge` `merge`,
+    `ledger-drill` `drill` and `release-please` state it. The merge worker must drop the line
+    before it records.
+  - **Record, then publish:** every recorder must be followed by a job in
+    the canonical group that can write checks, `needs` exactly that recorder,
+    and runs `if: always()`. It then runs even when the recorder appended and
+    then failed or was cancelled, so a newer refusal never leaves an older
+    success showing. Permission to write checks is not reconciliation, so
+    that job must have a step that runs the supported entrypoint:
+
+    ```sh
+    PYTHONPATH=mandate/src python3 -m mandate.receipt reconcile "$GITHUB_REPOSITORY" "$LEDGER_REF" "$HEAD" --app-id "$APP_ID"
+    ```
+
+    The step must be exactly that one command with all four arguments, none
+    an option. A bare argument holds only characters bash takes literally
+    (letters, digits, `_./:@%+=,-`); a double-quoted one may also hold
+    `$NAME` or `${NAME}`, where `NAME` is a shell name (an ASCII letter or
+    `_`, then letters, digits or `_`). So `#x`, an unquoted `$X`, globs,
+    braces, `${X:?}` and `${1X}` are refused: bash would comment out, split,
+    drop, expand or abort on them before the reconciler runs. Pass values through `env`, not
+    `${{ }}`; no shell operators or second command. The step names `if:
+    always()` itself (a step without an `if` defaults to `success()`, so an
+    earlier failing step skips it), has no `continue-on-error`, and names
+    `shell: bash` itself, in a job on a GitHub-hosted Ubuntu runner (`runs-on: ubuntu-…`).
+    The default shell and `python3` depend on the runner: Windows runs an
+    unspecified `run` in PowerShell. This is a bounded
+    workflow contract, not shell analysis. The command exits 1 when it
+    refuses, after the check has failed closed, and has no `--help`, so it
+    never exits 0 without reconciling. `serial_violations()`
+    enforces all of this. A pending reconcile that
+    gets replaced loses nothing: its replacement was queued later and reads
+    the ledger when it runs.
+  - **Backstop:** if the ledger or the open PRs move during a reconcile, it
+    re-reads and shows the newer decision before returning. It lists every
+    run (`filter=all`, paged), so duplicates from a past race are kept
+    current.
+  - **Owner action before enforcement:** the ruleset that requires `mandate/decision` must
+    bind it to the publisher App. Otherwise a commit status or another App's
+    check with the same name could satisfy it.
+  - **Credentials are the real boundary (owner action before enforcement):** the scan
+    sees only what YAML shows: permissions, token inputs and API calls in
+    the workflow file. A script that is handed a credential (a secret) and
+    writes checks or receipts itself is invisible to it. So the publisher
+    App's key must be reachable only by the canonical publisher job, for
+    example as a secret of an environment that only that job declares.
+    Recording must use an identity that can't write checks; if both use one
+    App, any job holding its key can publish. Until then, the scan guards
+    against mistakes, not against credentialed scripts.
+
+  `serial_violations()` checks this per job over `.github/workflows/`
+  (`.yml` and `.yaml`) in the tests. It reads the **parsed** YAML (PyYAML,
+  which `validate-workflows` installs with yamllint; imported only by this
+  function), so quoting, flow mappings, explicit `?` keys, aliases (also as
+  keys) and comments hide nothing. A file that doesn't parse to a `jobs`
+  mapping, or has duplicate or merge keys, is `file:?`. A job can write a
+  scope (`checks`, or `contents` for recording) if any of these holds:
+  - its workflow or job `permissions` grant it `write`, or are anything but
+    absent, `read-all`, `{}` or a mapping of `read`/`write`/`none` (so
+    `write-all`);
+  - a step asks for it (`permission-<scope>` other than `read`/`none`), or
+    mints an App token with no `permission-*` inputs, because that token
+    carries every App permission and the Mandate App has checks and contents
+    write; a step it can't read counts too;
+  - for checks, it calls the Checks API directly (`check-runs`,
+    `createCheckRun`, `updateCheckRun`), whatever token it uses.
+
+  A job that uses `mandate.receipt` must also declare `permissions` at the
+  job or workflow level rather than rely on the default.
+
+  The check guards against mistakes, not against someone who can edit
+  workflows: workflow changes are already owner decisions at the merge gate.
+
+  Jobs that declare no permissions get the repository default, which is
+  `read` (`gh api repos/ImranAdan/infra-fleet-public/actions/permissions/workflow`
+  → `"default_workflow_permissions":"read"`). Changing that default to
+  `write` would bypass this check.
+- **Merge trailers:** `trailers()` gives `Mandate-Decision`,
+  `Mandate-Receipt-Digest` and `Mandate-Chain-Head` after final revalidation.
+  The fresh decision must be about the subject the merge worker acted on, must
+  have a live enforcement snapshot (a `sha256:` digest; shadow grants
+  nothing) and must AUTHORIZE. Otherwise it refuses with `HEAD_CHANGED`, `BASE_CHANGED`,
+  `ENFORCEMENT_DRIFT` or `CONTRACT_ERROR`. It then records that decision as
+  a new revision, so the trailers always name the latest revision. A stale worker holding a superseded
+  AUTHORIZE can't anchor a merge to it.
+- **Audit:** `audit()` checks a ledger offline against merge-commit anchors.
+  It reports middle deletion, tail truncation, full rewrite and an anchor whose
+  receipt isn't recorded at or before its chain head.
+- **Limits:** forged appends with a stolen key, or truncation after the last
+  anchor, are reported as "not detectable with available anchor". This
+  happens every time, even when the anchor is the visible tip, because a
+  truncated tail would look the same. The anchor
+  is repository-local, not an independent transparency log.
+
+The shadow output includes the receipt it would record. Nothing writes a
+production ledger yet: that needs the `mandate-ledger` branch, its two
+rulesets and a `checks: write` token, all owner actions.
+
 ## Shadow decisions
 
 `mandate.shadow` turns one live pull request into a `DecisionInput` and runs
-`decide()` on it (the KAN-27 adapter; D-23: it adds no outcome or reason). The
+`decide()` on it; it adds no outcome or reason of its own. The
 input is built from:
 
 - **Findings:** the engine classifies each file from its own diff, plus
@@ -125,7 +353,7 @@ input is built from:
 - **Policy:** the owner's delegation at a pinned commit.
 
 Facts such as permission deltas aren't computed yet, so classes that need them
-never match. Mechanical refusals belong to the executor (KAN-28).
+never match. Mechanical refusals belong to the live merge executor.
 
 `.github/workflows/mandate-shadow.yml` runs it from the default branch after
 each Intent Gate run (not the retarget variant, whose producer no class
@@ -147,4 +375,5 @@ python3 mandate/tests/test_evidence.py
 python3 mandate/tests/test_decision.py
 python3 mandate/tests/test_shadow.py
 python3 mandate/tests/test_ledger.py
+python3 mandate/tests/test_receipt.py
 ```

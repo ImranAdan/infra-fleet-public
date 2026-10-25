@@ -9,12 +9,12 @@ three independent axes, and a green conclusion never shortcuts another:
   path, event, and head branch for dispatches). A ruleset's source binding
   only names the App, which every workflow in the repository shares.
 - applicability: it is about this subject (repository, head, base, policy).
-  Genuine evidence about another subject is EVIDENCE_NOT_APPLICABLE (D-21).
+  Genuine evidence about another subject is EVIDENCE_NOT_APPLICABLE.
 - sufficiency: the class's named requirements each have one consistent,
   completed, successful result.
 
 It returns failures, not outcomes. Outcome precedence and the public
-reason-code registry belong to the decision (KAN-24); this module never
+reason-code registry belong to the decision module; this module never
 authorizes anything. PR prose is not an input, so it can satisfy nothing.
 """
 
@@ -72,7 +72,14 @@ class EvidenceRecord:
             raise ValueError(f"evidence record fields differ: {sorted(set(data) ^ names)}")
         if type(data["version"]) is not int or data["version"] != VERSION:
             raise ValueError(f"unsupported evidence record version {data['version']!r}")
+        for f in fields(cls):  # annotations are not enforced at runtime: check them
+            allowed = _TYPES[f.type]
+            if type(data[f.name]) not in allowed:  # type(): a bool is not an int here
+                raise ValueError(f"evidence record field {f.name} is {type(data[f.name]).__name__}, not {f.type}")
         return cls(**data)
+
+
+_TYPES = {"int": (int,), "str": (str,), "int | None": (int, type(None)), "str | None": (str, type(None))}
 
 
 @dataclass(frozen=True)
@@ -199,7 +206,7 @@ def evaluate(
         )
         current = [r for r in genuine if not applicability(r, subject)]
         if not current and genuine:
-            # D-21: still obtainable (rerun on this subject), but say why it was refused.
+            # Still obtainable (rerun on this subject), but say why it was refused.
             failures.append(
                 (
                     f"EVIDENCE_NOT_APPLICABLE:{name}",

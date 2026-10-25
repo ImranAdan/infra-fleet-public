@@ -16,7 +16,7 @@ versioned REGISTRY, and the outcome is the worst reason's:
 
 There is no model input: generated text can never create AUTHORIZE. Fleet's
 live gate still decides READY/PARK; LEGACY maps those verdicts here, and none
-maps to AUTHORIZE, so switching the live path (G4) cannot widen it.
+maps to AUTHORIZE, so switching to live enforcement cannot widen it.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from typing import Any
 from mandate.delegation import CATEGORIES, RESERVED, Delegation, DelegationError
 from mandate.evidence import EvidenceRecord, Subject, evaluate
 
-REGISTRY_VERSION = 2  # 2: EVIDENCE_NOT_APPLICABLE (D-21)
+REGISTRY_VERSION = 2  # 2: EVIDENCE_NOT_APPLICABLE
 OUTCOMES = ("BLOCK", "ESCALATE", "VERIFY", "AUTHORIZE")  # worst first
 
 # code (before any ":<name>") -> (outcome, who acts next)

@@ -147,6 +147,7 @@ trap 'rm -rf "$rendered_root"' EXIT
 ./tests/profiles/local-control-plane.sh
 ./tests/profiles/cluster-ownership.sh
 ./tests/profiles/app-contract.sh
+./tests/profiles/no-tracker-ids.py
 
 local_deployment_workflow=.github/workflows/local-kubernetes.yml
 # Runtime changes are checked deterministically on pull requests. Full live

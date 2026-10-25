@@ -1,6 +1,6 @@
 """Ledger: immutable receipts and a hash-chained index on a protected branch.
 
-Layout on the ledger branch (KAN-4 page 09, D-20):
+Layout on the ledger branch:
 
     v1/ledger.jsonl                               one canonical entry per line
     v1/receipts/<decision_id>/<revision>.json     immutable canonical receipt
@@ -82,8 +82,8 @@ def receipt_path(decision_id: str, revision: str) -> str:
     if not (
         isinstance(decision_id, str)
         and isinstance(revision, str)
-        and ID.match(decision_id)
-        and ID.match(revision)
+        and ID.fullmatch(decision_id)
+        and ID.fullmatch(revision)
     ):
         raise LedgerError(
             "LEDGER_INVALID", f"unsafe receipt identifiers {decision_id!r}/{revision!r}"
@@ -252,13 +252,19 @@ def append(
     subject_digest: str,
     outcome: str,
     created_at: str,
+    precondition: Callable[[str, dict[str, bytes]], None] | None = None,
 ) -> dict[str, Any] | None:
-    """Append one receipt; None when identical bytes are already recorded."""
+    """Append one receipt; None when identical bytes are already recorded.
+
+    ``precondition(index, receipts)`` runs on every attempt's verified state
+    just before a new entry is built, so a check that raises holds atomically
+    with the append (a lost race re-reads and runs it again)."""
     path = receipt_path(decision_id, revision)
     for _attempt in range(RETRIES):
         try:
             state = read(api, repo, ref)
-            failures = verify(state.text, _receipts(api, repo, state))
+            receipts = _receipts(api, repo, state)
+            failures = verify(state.text, receipts)
             if failures:
                 raise LedgerError("LEDGER_INVALID", "; ".join(failures))
             lines = _lines(state.text)
@@ -289,6 +295,8 @@ def append(
                         f"{path} is recorded with another subject or outcome",
                     )
                 return None
+            if precondition is not None:
+                precondition(state.text, receipts)
             prev = json.loads(lines[-1]) if lines else None
             item = entry(
                 prev,
@@ -354,7 +362,7 @@ def gh_api(method: str, path: str, payload: dict[str, Any] | None) -> Any:
 
 
 def drill(api: Api, repo: str, ref: str, stamp: str) -> list[tuple[str, bool, str]]:
-    """KAN-30 Stage B writer drill, run as App M. Returns (step, passed, detail)."""
+    """Live writer drill, run as the writer App. Returns (step, passed, detail)."""
     results: list[tuple[str, bool, str]] = []
 
     def record(step: str, passed: bool, detail: str) -> None:
@@ -372,7 +380,7 @@ def drill(api: Api, repo: str, ref: str, stamp: str) -> list[tuple[str, bool, st
         "AUTHORIZE",
         stamp,
     )
-    record("L1 App M appends a receipt", first is not None, json.dumps(first))
+    record("L1 writer App appends a receipt", first is not None, json.dumps(first))
     record(
         "L2 identical retry appends nothing",
         append(
@@ -448,19 +456,19 @@ def drill(api: Api, repo: str, ref: str, stamp: str) -> list[tuple[str, bool, st
             f"repos/{repo}/git/refs/heads/{ref}",
             {"sha": state.tip, "force": True},
         )
-        record("L6 App M cannot force-push the ledger", False, "force update accepted")
+        record("L6 writer App cannot force-push the ledger", False, "force update accepted")
     except ApiError as exc:
         record(
-            "L6 App M cannot force-push the ledger",
+            "L6 writer App cannot force-push the ledger",
             exc.status in (403, 409, 422),
             str(exc),
         )
     try:
         api("DELETE", f"repos/{repo}/git/refs/heads/{ref}", None)
-        record("L7 App M cannot delete the ledger", False, "delete accepted")
+        record("L7 writer App cannot delete the ledger", False, "delete accepted")
     except ApiError as exc:
         record(
-            "L7 App M cannot delete the ledger", exc.status in (403, 409, 422), str(exc)
+            "L7 writer App cannot delete the ledger", exc.status in (403, 409, 422), str(exc)
         )
     final = read(api, repo, ref)
     failures = verify(
@@ -505,9 +513,9 @@ def _targets(ruleset: dict[str, Any], ref: str) -> bool:
 def ruleset_failures(
     rulesets: list[dict[str, Any]], ref: str, app_id: int
 ) -> list[str]:
-    """D-20 topology check on the active rulesets targeting ``ref``; empty means sound.
+    """Ledger ruleset topology check on the active rulesets targeting ``ref``; empty means sound.
 
-    One writer ruleset restricts updates and creation, with App M as its only
+    One writer ruleset restricts updates and creation, with the writer App as its only
     (always) bypass; a separate integrity ruleset restricts deletion, force
     push and non-linear history with no bypass at all.
     """
@@ -546,12 +554,12 @@ def ruleset_failures(
             )
         if any(a.get("bypass_mode") == "exempt" for a in r.get("bypass_actors", [])):
             failures.append(
-                f"ruleset {r.get('name')!r} has an exempt bypass (banned, D-5)"
+                f"ruleset {r.get('name')!r} has an exempt bypass (banned)"
             )
     return failures
 
 
-DRILL_REF = "refs/heads/mandate-g0/ledger"
+DRILL_REF = "refs/heads/mandate-drill/ledger"
 DRILL_NAMES = ("mandate-ledger-writer-drill", "mandate-ledger-integrity-drill")
 
 
@@ -580,16 +588,16 @@ def drill_ruleset_ids(rulesets: list[dict[str, Any]]) -> list[int]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="KAN-30 ledger drill and topology check"
+        description="Ledger writer drill and ruleset topology check"
     )
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser(
-        "drill", help="writer drill as App M (writes only to the given ref)"
+        "drill", help="writer drill as the writer App (writes only to the given ref)"
     )
     run.add_argument("repository")
     run.add_argument("ref")
     run.add_argument("stamp", help="unique run stamp, e.g. the workflow run ID")
-    check = sub.add_parser("rulesets", help="read-only D-20 ruleset topology check")
+    check = sub.add_parser("rulesets", help="read-only ledger ruleset topology check")
     check.add_argument("repository")
     check.add_argument("ref")
     check.add_argument("app_id", type=int)
@@ -629,7 +637,7 @@ def main(argv: list[str] | None = None) -> int:
         failures = ruleset_failures(rulesets, args.ref, args.app_id)
         print(
             "\n".join(f"FAIL  {f}" for f in failures)
-            or f"PASS  D-20 topology on {args.ref}"
+            or f"PASS  ledger ruleset topology on {args.ref}"
         )
         return 1 if failures else 0
     results = drill(gh_api, args.repository, args.ref, args.stamp)
