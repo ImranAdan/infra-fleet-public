@@ -79,6 +79,7 @@ jobs:
           python3 mandate/tests/test_shadow.py
           python3 mandate/tests/test_ledger.py
           python3 mandate/tests/test_receipt.py
+          python3 mandate/tests/test_acceptance.py
           python3 .claude/skills/merge-gate/judge.py --self-test
 
       - name: Check PR workflow changes

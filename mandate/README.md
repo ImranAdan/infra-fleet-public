@@ -348,7 +348,13 @@ input is built from:
 
 - **Findings:** the engine classifies each file from its own diff, plus
   reserved surfaces read at the trusted base. A file that appears in the diff
-  but not in the API's file list still counts.
+  but not in the API's file list still counts. A workflow permission counts
+  anywhere on a line, quoted or not, so a flow mapping cannot hide one; any
+  expression naming `secrets` (`toJSON(secrets)`, `a || secrets.X`) is a
+  credential; and a file renamed into `.github/workflows/` or
+  `.github/actions/` is merge authority, because a rename shows none of its
+  triggers or permissions. A Dependabot requirement bump may keep an inline
+  comment, unchanged.
 - **Evidence:** the head's check runs, each correlated to its workflow run.
 - **Policy:** the owner's delegation at a pinned commit.
 
@@ -376,4 +382,33 @@ python3 mandate/tests/test_decision.py
 python3 mandate/tests/test_shadow.py
 python3 mandate/tests/test_ledger.py
 python3 mandate/tests/test_receipt.py
+python3 mandate/tests/test_acceptance.py
 ```
+
+## Acceptance matrix
+
+`mandate/tests/acceptance.toml` has one row per acceptance case, per attempt
+to hide an authority change from the classifier, and per regression found in
+review. `test_acceptance.py` runs each row's fixture through the public
+boundary (`shadow.findings()`, `decide()`, the delegation and evidence
+modules, and receipts and the ledger against the test fakes) and compares
+what it observed with the row's literal values:
+
+- **PASS:** every value matches and the case needs nothing unbuilt.
+- **PARTIAL:** every value matches, but the case also needs behaviour listed
+  under `pending` (the merge executor, lifecycle verification, fact
+  extraction, …). It never counts as a pass.
+- **NOT BUILT:** nothing about the case is executable yet.
+- **FAIL:** a value differs.
+
+An AUTHORIZE or a green check where a row expects anything else is unsafe and
+fails the run by itself. Evasion rows claim that a fact extractor found no
+permission, secret or trigger change, so only a reserved finding can refuse.
+A self-check reruns every fixture with `decide()` stubbed to AUTHORIZE, and
+each row that expects a refusal must then fail. Live rows count only with a
+linked run; otherwise they read `NOT RUN — gate not reached`.
+
+The run exits 0 when no row fails and nothing unsafe was seen. With `--gate`
+it also needs every matrix row to PASS, which waits on the behaviour the
+PARTIAL and NOT BUILT rows name; it prints the package commit, the manifest's
+SHA-256 and the fixture policy pin for the evidence bundle.

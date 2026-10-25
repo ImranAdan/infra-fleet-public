@@ -92,6 +92,7 @@ PATH_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 DEPENDABOT_VERSION_ONLY = False
 
 WORKFLOW = re.compile(r"^\.github/(?:workflows|actions)/.+\.ya?ml$")
+AUTOMATION = re.compile(r"^\.github/(?:workflows|actions)/")
 RBAC_FILE = re.compile(r"(?:^|/)(?:rbac|clusterrole|rolebinding|role)[^/]*\.ya?ml$", re.I)
 DOCKERFILE = re.compile(r"(^|/)Dockerfile[^/]*$")
 YAML = re.compile(r"\.ya?ml$")
@@ -323,7 +324,8 @@ def _line_findings(path: str, line: str) -> list[Finding]:
     findings: list[Finding] = []
 
     if WORKFLOW.search(path):
-        if re.match(r"(?:permissions:|[a-z-]+:\s*write\b)", text):
+        # Anywhere on the line, quoted or not: a flow mapping can nest it.
+        if re.search(r"""(?:^|[\s{,])['"]?(?:permissions['"]?\s*:|[a-z-]+['"]?\s*:\s*['"]?write\b)""", text):
             category = "permission-added" if added else "permission-removed"
             findings.append(
                 _finding(category, f"{verb} a workflow permission in {path}: {text[:80]}")
@@ -340,7 +342,8 @@ def _line_findings(path: str, line: str) -> list[Finding]:
             findings.append(
                 _finding("merge-authority", f"adds merge-control logic in {path}: {text[:80]}")
             )
-        if added and re.search(r"(?:\$\{\{\s*secrets(?:\.|\s*\[)|\bsecrets:\s*inherit\b)", text):
+        # Any expression naming the secrets context: toJSON(secrets) reads them all.
+        if added and re.search(r"(?:\$\{\{.*\bsecrets\b|\bsecrets:\s*inherit\b)", text):
             findings.append(
                 _finding("credential", f"adds a credential reference in {path}: {text[:80]}")
             )
@@ -390,6 +393,10 @@ def scope_findings(diff: str) -> list[Finding]:
             old, path = header.group(1), header.group(2)
             for changed in dict.fromkeys((old, path)):
                 findings.extend(_path_findings(changed))
+            if AUTOMATION.search(path) and not AUTOMATION.search(old):
+                # A rename shows only changed lines, so the moved file's
+                # triggers and permissions are unseen.
+                findings.append(_finding("merge-authority", f"moves {old} into automation unseen: {path}"))
             continue
         if not in_hunk:
             if line.startswith("rename from "):
@@ -711,7 +718,7 @@ VERSION_LINES = (
         re.I,
     ),
     re.compile(r"^(?:-\s*)?uses:\s*(?P<key>[^\s@]+)@[0-9a-f]{40}(?:\s+#\s*\S+)?$"),
-    re.compile(r"^(?P<key>[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]*\])?)==\d[^\s;#]*$"),
+    re.compile(r"^(?P<key>[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]*\])?)==\d[^\s;#]*(?P<comment>\s+#.*)?$"),
     re.compile(r'^"(?P<key>[@A-Za-z0-9_./-]+)":\s*"[\^~]?\d[\w.+-]*",?$'),
     re.compile(r'^(?P<key>version)\s*=\s*"[^"]+"$'),
 )
@@ -720,7 +727,8 @@ VERSION_LINES = (
 def _version_key(text: str) -> str | None:
     for pattern in VERSION_LINES:
         if match := pattern.match(text.strip()):
-            return match.group("key")
+            # An inline comment is part of the key: kept as is, never changed.
+            return match.group("key") + (match.groupdict().get("comment") or "")
     return None
 
 
