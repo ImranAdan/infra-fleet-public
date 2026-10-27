@@ -81,6 +81,14 @@ def worker_merges(events: list[dict], worker: str, start: str, end: str) -> list
                    and start <= ev["created_at"] <= end})
 
 
+def git(where: Path, *args: str) -> str:
+    """git's answer in ``where``, or "" without git or outside a checkout."""
+    try:
+        return subprocess.run(["git", "-C", str(where), *args], capture_output=True, text=True).stdout.strip()
+    except OSError:
+        return ""
+
+
 def delegation_for(rec: Recorder, repository: str, sha: str):
     """The pinned delegation, read the way delegation.fetch() reads it; None if the pin has none."""
     path = d.path_for(repository)
@@ -163,13 +171,12 @@ def main(argv: list[str] | None = None) -> int:
             errors.append([repository, number, f"{type(exc).__name__}: {exc}"[:300]])
 
     engine = Path(shadow.__file__).resolve().parents[2]  # the engine's mandate/ directory
-    git = lambda *a: subprocess.run(["git", "-C", str(engine), *a], capture_output=True, text=True).stdout.strip()  # noqa: E731
     manifest = {
         "dictionary": {"version": spec["version"], "sha256": hashlib.sha256(DICTIONARY.read_bytes()).hexdigest()},
         "collected_at": collected_at,
         "gh": subprocess.run(["gh", "--version"], capture_output=True, text=True).stdout.splitlines()[0],
         "repositories": repositories,
-        "engine": {"commit": git("rev-parse", "HEAD"), "clean": git("status", "--porcelain", "--", ".") == ""},
+        "engine": {"commit": git(engine, "rev-parse", "HEAD"), "clean": git(engine, "status", "--porcelain", "--", ".") == ""},
         "delegation": {"repository": d.DELEGATION_REPOSITORY, "commit": args.delegation_sha,
                        "covers": [r for r, x in delegations.items() if x is not None]},
         "populations": populations,

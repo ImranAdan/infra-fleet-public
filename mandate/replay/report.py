@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "export": {"collected_at": man["collected_at"], "engine_collected": man["engine"], "delegation": man["delegation"],
                    "manifest_sha256": hashlib.sha256((args.export / "manifest.json").read_bytes()).hexdigest()},
-        "engine_replayed": subprocess.run(["git", "-C", str(engine), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip(),
+        "engine_replayed": collect.git(engine, "rev-parse", "HEAD") or "unknown (no git)",
         "attribution": spec["attribution"],
         "population_counts": {k: {"total": len(v), "pull": sum(1 for x in v if x[2] == "pull"),
                                   "issue": sum(1 for x in v if x[2] == "issue")} for k, v in pops.items()},
