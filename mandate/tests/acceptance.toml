@@ -299,7 +299,7 @@ title = "Workflow permissions through YAML anchors, aliases, tags and merge keys
 threat = "classifier evasion"
 requirement = "permissions set through an alias are permission-added"
 fixture = "evade_yaml_aliases"
-expect = { "anchor then alias" = "ESCALATE RESERVED:permission-added", "alias of an existing anchor" = "ESCALATE RESERVED:permission-added", "anchored value" = "ESCALATE RESERVED:permission-added", "tagged value" = "ESCALATE RESERVED:permission-added", "value aliased to an unchanged anchor" = "ESCALATE RESERVED:permission-added", "merge key" = "ESCALATE RESERVED:permission-added", "numeric anchor name" = "ESCALATE RESERVED:permission-added" }
+expect = { "anchor then alias" = "ESCALATE RESERVED:permission-added", "alias of an existing anchor" = "ESCALATE RESERVED:permission-added", "anchored value" = "ESCALATE RESERVED:permission-added", "tagged value" = "ESCALATE RESERVED:permission-added", "value aliased to an unchanged anchor" = "ESCALATE RESERVED:permission-added", "merge key" = "ESCALATE RESERVED:permission-added", "numeric anchor name" = "ESCALATE RESERVED:permission-added", "recursive alias" = "ESCALATE RESERVED:permission-added", "aliases that expand exponentially" = "ESCALATE RESERVED:permission-added" }
 
 [[case]]
 slug = "evade-secret-expressions"
@@ -313,11 +313,11 @@ expect = { "toJSON(secrets)" = "ESCALATE RESERVED:credential", "computed index" 
 [[case]]
 slug = "evade-reusable-triggers"
 kind = "evasion"
-title = "Privileged triggers in a reusable workflow, a flow map or a list"
+title = "Privileged triggers added in a reusable workflow, a flow map or a list, or an existing one re-sourced or re-filtered"
 threat = "classifier evasion"
 requirement = "any privileged trigger is merge-authority"
 fixture = "evade_reusable_triggers"
-expect = { "reusable workflow gains pull_request_target" = "ESCALATE RESERVED:merge-authority", "flow-map trigger" = "ESCALATE RESERVED:merge-authority", "list trigger" = "ESCALATE RESERVED:merge-authority", "an escaped trigger name" = "ESCALATE RESERVED:merge-authority" }
+expect = { "reusable workflow gains pull_request_target" = "ESCALATE RESERVED:merge-authority", "flow-map trigger" = "ESCALATE RESERVED:merge-authority", "list trigger" = "ESCALATE RESERVED:merge-authority", "an escaped trigger name" = "ESCALATE RESERVED:merge-authority", "workflow_run source changed" = "ESCALATE RESERVED:merge-authority", "workflow_run branch filter changed" = "ESCALATE RESERVED:merge-authority", "pull_request_target filter changed" = "ESCALATE RESERVED:merge-authority", "privileged trigger unchanged, step changed (control)" = "AUTHORIZE", "ordinary trigger filter changed (control)" = "AUTHORIZE" }
 
 [[case]]
 slug = "evade-moved-workflows"
@@ -449,6 +449,8 @@ fixture = "live_gate_evasions"
 "yaml aliases: value aliased to an unchanged anchor" = "PARK owner decision required for: permission-added"
 "yaml aliases: merge key" = "PARK owner decision required for: permission-added"
 "yaml aliases: numeric anchor name" = "PARK owner decision required for: permission-added"
+"yaml aliases: recursive alias" = "PARK owner decision required for: permission-added"
+"yaml aliases: aliases that expand exponentially" = "PARK owner decision required for: permission-added"
 "secret expressions: toJSON(secrets)" = "PARK owner decision required for: credential"
 "secret expressions: computed index" = "PARK owner decision required for: credential"
 "secret expressions: after another operand" = "PARK owner decision required for: credential"
@@ -462,6 +464,20 @@ fixture = "live_gate_evasions"
 "reusable triggers: flow-map trigger" = "PARK owner decision required for: merge-authority"
 "reusable triggers: list trigger" = "PARK owner decision required for: merge-authority"
 "reusable triggers: an escaped trigger name" = "PARK owner decision required for: merge-authority"
+"reusable triggers: workflow_run source changed" = "PARK owner decision required for: merge-authority"
+"reusable triggers: workflow_run branch filter changed" = "PARK owner decision required for: merge-authority"
+"reusable triggers: pull_request_target filter changed" = "PARK owner decision required for: merge-authority"
+"reusable triggers: privileged trigger unchanged, step changed (control)" = "READY"
+"reusable triggers: ordinary trigger filter changed (control)" = "READY"
 "moved workflows: evidence workflow renamed" = "PARK owner decision required for: merge-authority"
 "moved workflows: evidence workflow moved out" = "PARK owner decision required for: merge-authority"
 "moved workflows: privileged file moved in" = "PARK owner decision required for: merge-authority, permission-added"
+
+[[case]]
+slug = "structural-controls"
+kind = "evasion"
+title = "The parsed workflow comparison on its own: controls and alias graphs"
+threat = "classifier evasion"
+requirement = "ordinary aliases and unchanged privileged triggers grant nothing; an alias graph is refused promptly, never followed forever"
+fixture = "structural_controls"
+expect = { "an acyclic alias reused" = "none", "an unchanged privileged trigger" = "none", "a recursive alias" = "permission-added", "an exponential alias graph" = "permission-added" }

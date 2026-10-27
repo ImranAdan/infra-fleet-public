@@ -25,6 +25,7 @@ from __future__ import annotations
 import dataclasses
 import difflib
 import hashlib
+import signal
 import subprocess
 import sys
 import tomllib
@@ -540,6 +541,12 @@ def bypass_topology():
 STEP = "      - run: echo smoke\n"
 ANCHORS = "env:\n  READ_PERMISSION: &r read\n  WRITE_PERMISSION: &1 write\n"
 PRIVILEGED = "on: pull_request_target\npermissions: write-all\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+# A workflow_run workflow reading a secret: the run it acts on comes from elsewhere.
+RESULT = ("name: result\non:\n  workflow_run:\n    workflows: [Trusted CI]\n    types: [completed]\n"
+          "permissions:\n  contents: read\njobs:\n  result:\n    runs-on: ubuntu-latest\n    steps:\n"
+          "      - run: echo ready\n        env:\n          TOKEN: ${{ secrets.DEPLOY }}\n")
+# Each level doubles the last: 2**40 nodes once the aliases are expanded.
+LAUGHS = "x0: &x0 [a, a]\n" + "".join(f"x{i}: &x{i} [*x{i - 1}, *x{i - 1}]\n" for i in range(1, 41))
 QUOTED3 = '  contents: "\\\n    non\\\n    e"\n'  # "none" over three lines
 EVASIONS = {
     "evade_flow_permissions": {
@@ -581,6 +588,9 @@ EVASIONS = {
         "merge key": wf(("    runs-on: ubuntu-latest\n", "    <<: *perms\n    runs-on: ubuntu-latest\n"),
                         base="x-perms: &perms\n  permissions:\n    contents: write\n" + BASE_WF),
         "numeric anchor name": wf(("  contents: read", "  contents: *1"), base=ANCHORS + BASE_WF),
+        # Alias graphs a traversal must not follow forever.
+        "recursive alias": wf(("jobs:\n", "env: &loop {SELF: *loop}\njobs:\n")),
+        "aliases that expand exponentially": wf(("jobs:\n", LAUGHS + "jobs:\n")),
     },
     "evade_secret_expressions": {
         "toJSON(secrets)": wf((STEP, STEP + "        env: { ALL: '${{ toJSON(secrets) }}' }\n")),
@@ -600,6 +610,13 @@ EVASIONS = {
         "flow-map trigger": wf(("on: pull_request", "on: {pull_request: {}, workflow_run: {workflows: [ci]}}")),
         "list trigger": wf(("on: pull_request", "on: [pull_request, issue_comment]")),
         "an escaped trigger name": wf(("on: pull_request", 'on: [pull_request, "pull_request_t\\x61rget"]')),
+        # An existing privileged trigger whose source or filter changes.
+        "workflow_run source changed": wf(("[Trusted CI]", "[Untrusted CI]"), base=RESULT),
+        "workflow_run branch filter changed": wf(("    types: [completed]\n", "    types: [completed]\n    branches: ['**']\n"), base=RESULT),
+        "pull_request_target filter changed": wf(("branches: [main]", "branches: ['**']"),
+                                                 base=BASE_WF.replace("on: pull_request\n", "on:\n  pull_request_target:\n    branches: [main]\n")),
+        "privileged trigger unchanged, step changed (control)": wf(("echo ready", "echo done"), base=RESULT),
+        "ordinary trigger filter changed (control)": wf(("on: pull_request\n", "on:\n  pull_request:\n    branches: [main]\n")),
     },
     "evade_moved_workflows": {
         "evidence workflow renamed": change(".github/workflows/other.yml", BASE_WF, BASE_WF, old=WORKFLOWS[INTENT]),
@@ -610,6 +627,22 @@ EVASIONS = {
 }
 for _row in EVASIONS:
     FIXTURES[_row] = (lambda row: lambda: {k: decide(classify(c)) for k, c in EVASIONS[row].items()})(_row)
+
+
+@fixture
+def structural_controls():
+    """The parsed comparison alone: ordinary aliases and unchanged privileged
+    triggers grant nothing, and an alias graph returns a finding promptly."""
+    def found(base, head):
+        return ", ".join(sorted({c for c, _ in gate.workflow_findings(W, base, head)})) or "none"
+
+    alias = BASE_WF.replace("jobs:\n", "x-env: &e {A: '1'}\njobs:\n").replace(STEP, STEP + "        env: *e\n")
+    return {
+        "an acyclic alias reused": found(BASE_WF, alias),
+        "an unchanged privileged trigger": found(RESULT, RESULT.replace("echo ready", "echo done")),
+        "a recursive alias": found(BASE_WF, BASE_WF.replace("jobs:\n", "env: &loop {SELF: *loop}\njobs:\n")),
+        "an exponential alias graph": found(BASE_WF, BASE_WF.replace("jobs:\n", LAUGHS + "jobs:\n")),
+    }
 
 
 @fixture
@@ -809,6 +842,15 @@ def dependabot_inline_comment():
 # --- runner -------------------------------------------------------------------
 
 
+# A row that runs longer has hung (the gate must answer promptly).
+ROW_SECONDS = 20
+
+
+def _timeout(_signum, _frame):
+    raise TimeoutError(f"row took over {ROW_SECONDS}s")
+
+
+signal.signal(signal.SIGALRM, _timeout)
 # What lets a change through: an AUTHORIZE, a green check, or the legacy gate's READY.
 GRANTS = ("AUTHORIZE", "success", "READY")
 
@@ -816,10 +858,13 @@ GRANTS = ("AUTHORIZE", "success", "READY")
 def run(rows: list[dict]) -> list[tuple[dict, dict, str, int]]:
     results = []
     for row in rows:
+        signal.setitimer(signal.ITIMER_REAL, ROW_SECONDS)
         try:
             observed = FIXTURES[row["fixture"]]()
-        except Exception as exc:  # noqa: BLE001 - a crash is a failed row, never a pass
+        except Exception as exc:  # noqa: BLE001 - a crash or hang is a failed row, never a pass
             observed = {"fixture error": f"{type(exc).__name__}: {exc}"}
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
         expect = row.get("expect", {})
         unsafe = sum(
             1 for k, v in observed.items()
