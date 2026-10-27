@@ -286,11 +286,11 @@ live = "NOT RUN — gate not reached"
 [[case]]
 slug = "evade-flow-permissions"
 kind = "evasion"
-title = "Workflow permissions written as flow mappings, quoted values or keys, block scalars or explicit keys"
+title = "Workflow permissions written as flow mappings, quoted, escaped or tagged values, block scalars or explicit keys"
 threat = "classifier evasion"
 requirement = "any added write permission is permission-added"
 fixture = "evade_flow_permissions"
-expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE" }
+expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE", "hex-escaped value" = "ESCALATE RESERVED:permission-added", "unicode-escaped value" = "ESCALATE RESERVED:permission-added", "escaped line break" = "ESCALATE RESERVED:permission-added", "only the continuation line changes" = "ESCALATE RESERVED:permission-added", "a value under an unknown tag" = "ESCALATE RESERVED:permission-added", "an escaped string in a script (control)" = "AUTHORIZE", "a shell inequality (control)" = "AUTHORIZE" }
 
 [[case]]
 slug = "evade-yaml-aliases"
@@ -299,7 +299,7 @@ title = "Workflow permissions through YAML anchors, aliases, tags and merge keys
 threat = "classifier evasion"
 requirement = "permissions set through an alias are permission-added"
 fixture = "evade_yaml_aliases"
-expect = { "anchor then alias" = "ESCALATE RESERVED:permission-added", "alias of an existing anchor" = "ESCALATE RESERVED:permission-added", "anchored value" = "ESCALATE RESERVED:permission-added", "tagged value" = "ESCALATE RESERVED:permission-added", "value aliased to an unchanged anchor" = "ESCALATE RESERVED:permission-added", "merge key" = "ESCALATE RESERVED:permission-added" }
+expect = { "anchor then alias" = "ESCALATE RESERVED:permission-added", "alias of an existing anchor" = "ESCALATE RESERVED:permission-added", "anchored value" = "ESCALATE RESERVED:permission-added", "tagged value" = "ESCALATE RESERVED:permission-added", "value aliased to an unchanged anchor" = "ESCALATE RESERVED:permission-added", "merge key" = "ESCALATE RESERVED:permission-added", "numeric anchor name" = "ESCALATE RESERVED:permission-added" }
 
 [[case]]
 slug = "evade-secret-expressions"
@@ -410,3 +410,48 @@ threat = "none: false refusal of a routine bump"
 requirement = "an unchanged comment does not change the classification; any other token change still refuses"
 fixture = "dependabot_inline_comment"
 expect = { "comment kept" = "version-only", "comment changed" = "changes more than a version in requirements.txt: requests==2.32.4  # via urllib3", "comment added" = "changes more than a version in requirements.txt: requests==2.32.4  # via requests", "package swapped, comment kept" = "changes more than a version in requirements.txt: request==2.32.4  # via requests" }
+
+[[case]]
+slug = "live-gate-evasions"
+kind = "evasion"
+title = "The same evasion attempts through Fleet's legacy merge gate"
+threat = "classifier evasion"
+requirement = "a permission, credential or authority change never reaches evidence-only READY"
+fixture = "live_gate_evasions"
+
+[case.expect]
+"flow permissions: flow-style block" = "PARK owner decision required for: permission-added"
+"flow permissions: nested flow mapping" = "PARK owner decision required for: permission-added"
+"flow permissions: quoted value" = "PARK owner decision required for: permission-added"
+"flow permissions: quoted key" = "PARK owner decision required for: permission-added"
+"flow permissions: write-all" = "PARK owner decision required for: permission-added"
+"flow permissions: block scalar" = "PARK owner decision required for: permission-added"
+"flow permissions: explicit key" = "PARK owner decision required for: permission-added"
+"flow permissions: a comment naming write and secrets (control)" = "READY"
+"flow permissions: hex-escaped value" = "PARK owner decision required for: permission-added"
+"flow permissions: unicode-escaped value" = "PARK owner decision required for: permission-added"
+"flow permissions: escaped line break" = "PARK owner decision required for: permission-added"
+"flow permissions: only the continuation line changes" = "PARK owner decision required for: permission-added"
+"flow permissions: a value under an unknown tag" = "PARK owner decision required for: permission-added"
+"flow permissions: an escaped string in a script (control)" = "READY"
+"flow permissions: a shell inequality (control)" = "READY"
+"yaml aliases: anchor then alias" = "PARK owner decision required for: permission-added"
+"yaml aliases: alias of an existing anchor" = "PARK owner decision required for: permission-added"
+"yaml aliases: anchored value" = "PARK owner decision required for: permission-added"
+"yaml aliases: tagged value" = "PARK owner decision required for: permission-added"
+"yaml aliases: value aliased to an unchanged anchor" = "PARK owner decision required for: permission-added"
+"yaml aliases: merge key" = "PARK owner decision required for: permission-added"
+"yaml aliases: numeric anchor name" = "PARK owner decision required for: permission-added"
+"secret expressions: toJSON(secrets)" = "PARK owner decision required for: credential"
+"secret expressions: computed index" = "PARK owner decision required for: credential"
+"secret expressions: after another operand" = "PARK owner decision required for: credential"
+"secret expressions: expression across lines" = "PARK owner decision required for: credential"
+"secret expressions: upper-case context name" = "PARK owner decision required for: credential"
+"secret expressions: expression in a script comment" = "PARK owner decision required for: credential"
+"secret expressions: secrets: inherit" = "PARK owner decision required for: credential"
+"reusable triggers: reusable workflow gains pull_request_target" = "PARK owner decision required for: merge-authority"
+"reusable triggers: flow-map trigger" = "PARK owner decision required for: merge-authority"
+"reusable triggers: list trigger" = "PARK owner decision required for: merge-authority"
+"moved workflows: evidence workflow renamed" = "PARK owner decision required for: merge-authority"
+"moved workflows: evidence workflow moved out" = "PARK owner decision required for: merge-authority"
+"moved workflows: privileged file moved in" = "PARK owner decision required for: merge-authority"

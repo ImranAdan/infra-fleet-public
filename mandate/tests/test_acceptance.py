@@ -10,8 +10,9 @@ decision reads "OUTCOME code ...", a check "conclusion title", a refusal
 A row is PASS when every value matches and nothing is pending, PARTIAL when
 every value matches but a behaviour it needs is not built yet, NOT BUILT when
 nothing about it is executable yet, and FAIL on any mismatch. Live rows are
-only ever credited by linked run evidence. An AUTHORIZE (or a success check)
-where the row expects anything else is unsafe, and fails the run on its own.
+only ever credited by linked run evidence. An AUTHORIZE, a success check or
+the legacy gate's READY where the row expects anything else is unsafe, and
+fails the run on its own.
 
 Exits 0 when no row fails and nothing unsafe was observed; with --gate, only
 when every matrix row also PASSes. A self-check reruns every fixture with
@@ -489,66 +490,76 @@ def bypass_topology():
 
 # --- classifier evasion: hide an authority change from the scope classifier ---
 
-
-@fixture
-def evade_flow_permissions():
-    return {
-        "flow-style block": decide(findings(diff(W, "    permissions: {contents: write}"))),
-        "nested flow mapping": decide(findings(diff(W, "  build: {runs-on: ubuntu-latest, permissions: {contents: write}}"))),
-        "quoted value": decide(findings(diff(W, "      contents: 'write'"))),
-        "quoted key": decide(findings(diff(W, '      "contents": write'))),
-        "write-all": decide(findings(diff(W, "permissions: write-all"))),
-        "block scalar": decide(findings(diff(W, "      contents: >-", "        write"))),
-        "explicit key": decide(findings(diff(W, "      ? contents", "      : write"))),
-        "a comment naming write and secrets (control)": decide(findings(diff(W, "    # write to the cache; no secrets here"))),
-    }
-
-
-@fixture
-def evade_yaml_aliases():
-    return {
-        "anchor then alias": decide(findings(diff(W, "x-perm: &w", "  contents: write", "    permissions: *w"))),
-        "alias of an existing anchor": decide(findings(diff(W, "    permissions: *w"))),
-        "anchored value": decide(findings(diff(W, "      contents: &w write"))),
-        "tagged value": decide(findings(diff(W, "      contents: !!str write"))),
-        "value aliased to an unchanged anchor": decide(findings(diff(W, "      contents: *w", context=("x-w: &w write",)))),
-        "merge key": decide(findings(diff(W, "    <<: *perms", context=("x-perms: &perms", "  permissions:", "    contents: write")))),
-    }
-
-
-@fixture
-def evade_secret_expressions():
-    return {
-        "toJSON(secrets)": decide(findings(diff(W, "        env: { ALL: '${{ toJSON(secrets) }}' }"))),
-        "computed index": decide(findings(diff(W, "        env: { T: '${{ secrets[inputs.name] }}' }"))),
-        "after another operand": decide(findings(diff(W, "        token: ${{ inputs.token || secrets.DEPLOY }}"))),
-        "expression across lines": decide(findings(diff(W, "        run: |", "          echo \"${{", "            secrets.DEPLOY }}\""))),
-        "upper-case context name": decide(findings(diff(W, "        token: ${{ SECRETS.DEPLOY }}"))),
-        "expression in a script comment": decide(findings(diff(W, "        run: |", "          # ${{ toJSON(secrets) }}"))),
-        "secrets: inherit": decide(findings(diff(W, "    secrets: inherit"))),
-    }
-
-
-@fixture
-def evade_reusable_triggers():
-    return {
-        "reusable workflow gains pull_request_target": decide(findings(diff(".github/workflows/reusable.yml", "on:", "  pull_request_target:"))),
-        "flow-map trigger": decide(findings(diff(W, "on: {workflow_run: {workflows: [ci]}}"))),
-        "list trigger": decide(findings(diff(W, "on: [push, issue_comment]"))),
-    }
-
-
-@fixture
-def evade_moved_workflows():
-    return {
-        "evidence workflow renamed": decide(findings(diff(".github/workflows/other.yml", old=WORKFLOWS[INTENT]))),
-        "evidence workflow moved out": decide(findings(diff("scripts/intent-gate.yml", old=WORKFLOWS[INTENT]))),
+# Each attempt is a workflow diff; the evasion rows decide them through the new
+# engine, and live_gate_evasions through Fleet's legacy gate.
+EVASIONS = {
+    "evade_flow_permissions": {
+        "flow-style block": diff(W, "    permissions: {contents: write}"),
+        "nested flow mapping": diff(W, "  build: {runs-on: ubuntu-latest, permissions: {contents: write}}"),
+        "quoted value": diff(W, "      contents: 'write'"),
+        "quoted key": diff(W, '      "contents": write'),
+        "write-all": diff(W, "permissions: write-all"),
+        "block scalar": diff(W, "      contents: >-", "        write"),
+        "explicit key": diff(W, "      ? contents", "      : write"),
+        "a comment naming write and secrets (control)": diff(W, "    # write to the cache; no secrets here"),
+        # YAML decodes escapes in double-quoted scalars, and an escaped line
+        # break joins two lines with no space.
+        "hex-escaped value": diff(W, '      contents: "wri\\x74e"', removed=("      contents: read",)),
+        "unicode-escaped value": diff(W, '      contents: "\\u0077rite"', removed=("      contents: read",)),
+        "escaped line break": diff(W, '      contents: "wri\\', '        te"', removed=("      contents: read",)),
+        "only the continuation line changes": diff(W, '        te"', removed=('        ad"',), context=('      contents: "wri\\',)),
+        "a value under an unknown tag": diff(W, "      contents: !!binary d3JpdGU=", removed=("      contents: read",)),
+        "an escaped string in a script (control)": diff(W, '        run: printf "a\\tb\\n"'),
+        "a shell inequality (control)": diff(W, '        run: test "$A" != "b"'),
+    },
+    "evade_yaml_aliases": {
+        "anchor then alias": diff(W, "x-perm: &w", "  contents: write", "    permissions: *w"),
+        "alias of an existing anchor": diff(W, "    permissions: *w"),
+        "anchored value": diff(W, "      contents: &w write"),
+        "tagged value": diff(W, "      contents: !!str write"),
+        "value aliased to an unchanged anchor": diff(W, "      contents: *w", context=("x-w: &w write",)),
+        "merge key": diff(W, "    <<: *perms", context=("x-perms: &perms", "  permissions:", "    contents: write")),
+        "numeric anchor name": diff(W, "      contents: *1", removed=("      contents: read",), context=("  WRITE_PERMISSION: &1 write",)),
+    },
+    "evade_secret_expressions": {
+        "toJSON(secrets)": diff(W, "        env: { ALL: '${{ toJSON(secrets) }}' }"),
+        "computed index": diff(W, "        env: { T: '${{ secrets[inputs.name] }}' }"),
+        "after another operand": diff(W, "        token: ${{ inputs.token || secrets.DEPLOY }}"),
+        "expression across lines": diff(W, "        run: |", '          echo "${{', '            secrets.DEPLOY }}"'),
+        "upper-case context name": diff(W, "        token: ${{ SECRETS.DEPLOY }}"),
+        "expression in a script comment": diff(W, "        run: |", "          # ${{ toJSON(secrets) }}"),
+        "secrets: inherit": diff(W, "    secrets: inherit"),
+    },
+    "evade_reusable_triggers": {
+        "reusable workflow gains pull_request_target": diff(".github/workflows/reusable.yml", "on:", "  pull_request_target:"),
+        "flow-map trigger": diff(W, "on: {workflow_run: {workflows: [ci]}}"),
+        "list trigger": diff(W, "on: [push, issue_comment]"),
+    },
+    "evade_moved_workflows": {
+        "evidence workflow renamed": diff(".github/workflows/other.yml", old=WORKFLOWS[INTENT]),
+        "evidence workflow moved out": diff("scripts/intent-gate.yml", old=WORKFLOWS[INTENT]),
         # A pure rename shows no content, so the moved file's triggers and
         # permissions are invisible to a line classifier.
-        "privileged file moved in": decide(findings(
-            "diff --git a/scripts/new.yml b/.github/workflows/new.yml\nsimilarity index 100%\n"
-            "rename from scripts/new.yml\nrename to .github/workflows/new.yml\n")),
-    }
+        "privileged file moved in": "diff --git a/scripts/new.yml b/.github/workflows/new.yml\nsimilarity index 100%\n"
+                                    "rename from scripts/new.yml\nrename to .github/workflows/new.yml\n",
+    },
+}
+for _row in EVASIONS:
+    FIXTURES[_row] = (lambda row: lambda: {k: decide(findings(v)) for k, v in EVASIONS[row].items()})(_row)
+
+
+@fixture
+def live_gate_evasions():
+    """The same attempts through Fleet's legacy gate, which decides workflow
+    changes on evidence alone and permission or credential changes by the owner."""
+    rules, _ = gate.load_policy(ROOT / ".claude/skills/merge-gate/decision-policy.toml")
+
+    def verdict(text: str) -> str:
+        outcome, why = gate.decide(gate.scope_findings(text), rules, set(), None)
+        return " ".join([outcome, *why])
+
+    return {f"{row.removeprefix('evade_').replace('_', ' ')}: {k}": verdict(v)
+            for row, attempts in EVASIONS.items() for k, v in attempts.items()}
 
 
 # --- regressions found in review --------------------------------------------
@@ -732,6 +743,10 @@ def dependabot_inline_comment():
 # --- runner -------------------------------------------------------------------
 
 
+# What lets a change through: an AUTHORIZE, a green check, or the legacy gate's READY.
+GRANTS = ("AUTHORIZE", "success", "READY")
+
+
 def run(rows: list[dict]) -> list[tuple[dict, dict, str, int]]:
     results = []
     for row in rows:
@@ -742,7 +757,7 @@ def run(rows: list[dict]) -> list[tuple[dict, dict, str, int]]:
         expect = row.get("expect", {})
         unsafe = sum(
             1 for k, v in observed.items()
-            if v.startswith(("AUTHORIZE", "success")) and not str(expect.get(k, "")).startswith(("AUTHORIZE", "success"))
+            if v.startswith(GRANTS) and not str(expect.get(k, "")).startswith(GRANTS)
         )
         if observed != expect:
             status = "FAIL"
