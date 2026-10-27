@@ -1,0 +1,121 @@
+# Historical replay dictionary: what is collected and how each number is
+# computed. It is frozen before any outcome is examined; changing anything
+# here is a new dictionary version and a new export, never an edit of an
+# accepted one. Read by mandate/replay/collect.py and report.py.
+
+version = 1
+repositories = ["ImranAdan/infra-fleet-public", "ImranAdan/infra-fleet-advisor-public"]
+# One row per repository and pull request (or issue) number, however many
+# heads, labels or gate comments it had.
+dedup_unit = "repository and number"
+# Agents act under the owner's login, so no action by it proves a human.
+owner = "ImranAdan"
+attribution = "owner-principal, human/agent attribution unknown"
+worker = "github-actions[bot]"
+label = "needs-decision"
+
+[windows]
+# The original discovery snapshot's day: membership is reconstructed from
+# events at or before this instant, never from today's labels.
+discovery_cutoff = "2026-10-15T23:59:59Z"
+# Start of the worker-merge sample window; it ends at the discovery cut-off.
+sample_start = "2026-09-25T00:00:00Z"
+# The census window ends at the collection time recorded in the manifest.
+
+[sample]
+population = "worker-merges"
+size = 50
+seed = 20261015
+method = "random.Random(seed).sample over the population sorted by (repository, number); all of it if smaller"
+
+# --- populations ---------------------------------------------------------------
+
+[[population]]
+id = "ever-labelled"
+semantics = "event-time"
+query = "GET repos/{repository}/issues/events (paginated); keep labeled events whose label is the needs-decision label, created at or before the discovery cut-off"
+members = "every item with at least one such event, split into pull requests (the event's issue has pull_request) and issues"
+exclusions = "none"
+
+[[population]]
+id = "labelled-at-cutoff"
+semantics = "event-time"
+query = "the same events plus unlabeled ones for the label, at or before the cut-off"
+members = "pull requests whose last labeled/unlabeled event for the label at the cut-off is labeled"
+exclusions = "issues"
+
+[[population]]
+id = "ever-labelled-census"
+semantics = "event-time, census"
+query = "as ever-labelled, up to the collection time"
+members = "as ever-labelled; versioned separately and never substituted for it"
+exclusions = "none"
+
+[[population]]
+id = "worker-merges"
+semantics = "event-time"
+query = "GET repos/{repository}/pulls?state=closed (paginated); merged_at within [sample_start, discovery_cutoff] and merged_by the worker"
+members = "merged pull requests the worker merged without any owner decision"
+exclusions = "items in ever-labelled-census (an owner decision was involved)"
+
+# --- what each replayed item is compared with ---------------------------------
+
+[paths]
+# The historical path of one item, first match wins. A head-bound approval is
+# an owner comment exactly "/approve <head>" naming the item's final head,
+# created before the merge.
+order = ["head-bound approval", "worker merge", "owner-principal merge without approval", "closed unmerged", "open"]
+authority_categories = ["merge-authority", "credential", "permission-added", "iam", "permanent-infrastructure"]
+# Authority class comes from the history, not the engine: the gate's own PARK
+# comments ("PARK: owner decision required for `...`") on the item.
+authority_source = "issue comments by the worker that start with the merge-gate owner marker"
+
+# --- metrics ---------------------------------------------------------------------
+
+[[metric]]
+name = "unsafe-authorizations"
+purpose = "the hard gate: AUTHORIZE on any authority-class item"
+population = "ever-labelled-census plus worker-merges sample"
+numerator = "authority-class items replayed as AUTHORIZE"
+denominator = "authority-class items"
+missing_data = "an item whose provider objects are partly missing is replayed on what the provider returned and reported as such; it is never dropped"
+column = "integer; must be 0"
+
+[[metric]]
+name = "outcome-by-path"
+purpose = "confusion matrix of the replayed outcome against the historical path"
+population = "ever-labelled-census plus worker-merges sample"
+numerator = "items per (path, outcome)"
+denominator = "items per path"
+missing_data = "as unsafe-authorizations"
+column = "integer counts"
+
+[[metric]]
+name = "delegable-autonomy-rate"
+purpose = "how much the current delegation would authorize"
+population = "items whose every finding maps to an authorizing class"
+numerator = "those replayed as AUTHORIZE"
+denominator = "those items"
+missing_data = "as unsafe-authorizations"
+column = "ratio; reported, no target"
+
+[[metric]]
+name = "population-counts"
+purpose = "reproduce the discovery figures from events"
+population = "ever-labelled, labelled-at-cutoff, ever-labelled-census, worker-merges"
+numerator = "members per population, split by repository and kind"
+denominator = "none"
+missing_data = "a repository whose events cannot be read fails the export"
+column = "integer counts"
+
+# --- disagreement review -----------------------------------------------------------
+
+[disagreement]
+# A disagreement is reviewed by hand, never counted as engine right or wrong.
+when = [
+  "authority class and not ESCALATE",
+  "worker merge and not AUTHORIZE",
+  "head-bound approval or owner-principal merge, and AUTHORIZE",
+]
+fields = ["repository", "number", "path", "outcome", "reasons", "authority_categories", "rule", "reviewer", "verdict", "note"]
+verdicts = ["engine right", "history right", "both acceptable", "undetermined"]
