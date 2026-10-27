@@ -95,10 +95,34 @@ WORKFLOW = re.compile(r"^\.github/(?:workflows|actions)/.+\.ya?ml$")
 AUTOMATION = re.compile(r"^\.github/(?:workflows|actions)/")
 # A diff line cannot follow YAML: an anchor, alias, tag, merge key, block
 # scalar or explicit key can each carry a permission value off its key's line.
-# So any workflow line with a bare write, a permissions key or an alias counts.
+# So any workflow line with a bare write, a permissions key or an alias (any
+# anchor name YAML allows) counts.
 PERMISSION = re.compile(
-    r"""(?:^|[\s{,])['"]?permissions['"]?\s*:|\bwrite\b|(?:^|[:,\[{]\s*|-\s+)\*[A-Za-z_][\w-]*\s*(?:$|[,\]}#])"""
+    r"""(?:^|[\s{,])['"]?permissions['"]?\s*:|\bwrite\b|(?:^|[:,\[{]\s*|-\s+)\*[^\s,\[\]{}]"""
 )
+# A double-quoted scalar decodes escapes ("wri\x74e" is write), and one left
+# open continues on the next line, as does an explicit tag's value: what such
+# a line means is not on it, so it counts as a permission change too.
+QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"')
+ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)")
+TAG = re.compile(r"(?:^|:\s+|-\s+|(?<![${])[\[{,]\s*)!\S")
+
+
+def _decoded(text: str) -> str:
+    """The line with each double-quoted scalar's escapes decoded."""
+    return QUOTED.sub(
+        lambda m: ESCAPE.sub(
+            lambda e: chr(min(int(e.group(1)[1:], 16), 0x10FFFF)) if len(e.group(1)) > 1 else e.group(1),
+            m.group(0),
+        ),
+        text,
+    )
+
+
+def _unseen_value(text: str) -> bool:
+    """An open double-quoted scalar or an explicit tag: the value is elsewhere."""
+    rest = re.sub(r"'(?:[^']|'')*'", "", QUOTED.sub("", text))
+    return '"' in rest or bool(TAG.search(text))
 # Any line naming the secrets context, in any case: toJSON(secrets), an
 # operand after ||, or an expression split across lines all name it.
 SECRETS = re.compile(r"\bsecrets\b", re.I)
@@ -336,7 +360,9 @@ def _line_findings(path: str, line: str) -> list[Finding]:
         # A comment line sets nothing, but GitHub evaluates ${{ }} anywhere,
         # even in a script's comment.
         comment = text.startswith("#") and "${{" not in text
-        if not comment and PERMISSION.search(text):
+        if not comment and (
+            PERMISSION.search(text) or PERMISSION.search(_decoded(text)) or _unseen_value(text)
+        ):
             category = "permission-added" if added else "permission-removed"
             findings.append(
                 _finding(category, f"{verb} a workflow permission in {path}: {text[:80]}")

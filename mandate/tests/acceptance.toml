@@ -290,7 +290,7 @@ title = "Workflow permissions written as flow mappings, quoted, escaped or tagge
 threat = "classifier evasion"
 requirement = "any added write permission is permission-added"
 fixture = "evade_flow_permissions"
-expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE", "hex-escaped value" = "ESCALATE RESERVED:permission-added", "unicode-escaped value" = "ESCALATE RESERVED:permission-added", "escaped line break" = "ESCALATE RESERVED:permission-added", "only the continuation line changes" = "ESCALATE RESERVED:permission-added", "a value under an unknown tag" = "ESCALATE RESERVED:permission-added", "an escaped string in a script (control)" = "AUTHORIZE", "a shell inequality (control)" = "AUTHORIZE" }
+expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE", "hex-escaped value" = "ESCALATE RESERVED:permission-added", "unicode-escaped value" = "ESCALATE RESERVED:permission-added", "escaped line break" = "ESCALATE RESERVED:permission-added", "only the continuation line changes" = "ESCALATE RESERVED:permission-added", "a value under an unknown tag" = "ESCALATE RESERVED:permission-added", "an escaped string in a script (control)" = "AUTHORIZE", "a shell inequality (control)" = "AUTHORIZE", "a double quote inside single quotes (control)" = "AUTHORIZE" }
 
 [[case]]
 slug = "evade-yaml-aliases"
@@ -308,7 +308,7 @@ title = "Secrets reached through toJSON, a computed index, another operand, a sp
 threat = "classifier evasion"
 requirement = "any expression that reads secrets is a credential"
 fixture = "evade_secret_expressions"
-expect = { "toJSON(secrets)" = "ESCALATE RESERVED:credential", "computed index" = "ESCALATE RESERVED:credential", "after another operand" = "ESCALATE RESERVED:credential", "expression across lines" = "ESCALATE RESERVED:credential", "upper-case context name" = "ESCALATE RESERVED:credential", "expression in a script comment" = "ESCALATE RESERVED:credential", "secrets: inherit" = "ESCALATE RESERVED:credential" }
+expect = { "toJSON(secrets)" = "ESCALATE RESERVED:credential", "computed index" = "ESCALATE RESERVED:credential", "after another operand" = "ESCALATE RESERVED:credential", "expression across lines" = "ESCALATE RESERVED:credential RESERVED:permission-added", "upper-case context name" = "ESCALATE RESERVED:credential", "expression in a script comment" = "ESCALATE RESERVED:credential", "secrets: inherit" = "ESCALATE RESERVED:credential" }
 
 [[case]]
 slug = "evade-reusable-triggers"
@@ -435,6 +435,7 @@ fixture = "live_gate_evasions"
 "flow permissions: a value under an unknown tag" = "PARK owner decision required for: permission-added"
 "flow permissions: an escaped string in a script (control)" = "READY"
 "flow permissions: a shell inequality (control)" = "READY"
+"flow permissions: a double quote inside single quotes (control)" = "READY"
 "yaml aliases: anchor then alias" = "PARK owner decision required for: permission-added"
 "yaml aliases: alias of an existing anchor" = "PARK owner decision required for: permission-added"
 "yaml aliases: anchored value" = "PARK owner decision required for: permission-added"
@@ -445,7 +446,7 @@ fixture = "live_gate_evasions"
 "secret expressions: toJSON(secrets)" = "PARK owner decision required for: credential"
 "secret expressions: computed index" = "PARK owner decision required for: credential"
 "secret expressions: after another operand" = "PARK owner decision required for: credential"
-"secret expressions: expression across lines" = "PARK owner decision required for: credential"
+"secret expressions: expression across lines" = "PARK owner decision required for: permission-added, credential"
 "secret expressions: upper-case context name" = "PARK owner decision required for: credential"
 "secret expressions: expression in a script comment" = "PARK owner decision required for: credential"
 "secret expressions: secrets: inherit" = "PARK owner decision required for: credential"

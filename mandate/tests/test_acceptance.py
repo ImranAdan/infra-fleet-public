@@ -511,6 +511,7 @@ EVASIONS = {
         "a value under an unknown tag": diff(W, "      contents: !!binary d3JpdGU=", removed=("      contents: read",)),
         "an escaped string in a script (control)": diff(W, '        run: printf "a\\tb\\n"'),
         "a shell inequality (control)": diff(W, '        run: test "$A" != "b"'),
+        "a double quote inside single quotes (control)": diff(W, "        run: echo 'say \"hi'"),
     },
     "evade_yaml_aliases": {
         "anchor then alias": diff(W, "x-perm: &w", "  contents: write", "    permissions: *w"),

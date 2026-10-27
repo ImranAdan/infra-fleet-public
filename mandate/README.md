@@ -350,9 +350,12 @@ input is built from:
   reserved surfaces read at the trusted base. A file that appears in the diff
   but not in the API's file list still counts. A diff line cannot follow
   YAML, so workflow rules are deliberately broad. A line with a bare `write`,
-  a `permissions` key or an alias is a permission change, since anchors,
-  tags, merge keys, block scalars and explicit keys can each carry a value
-  off its key's line. A line naming `secrets` in any case is a credential,
+  a `permissions` key or an alias (any anchor name, `*1` included) is a
+  permission change, since anchors, tags, merge keys, block scalars and
+  explicit keys can each carry a value off its key's line. Double-quoted
+  scalars are checked after decoding their escapes (`"wri\x74e"` is
+  `write`), and a line whose value is elsewhere also counts: one that leaves
+  a double-quoted scalar open across lines, or that holds an explicit tag. A line naming `secrets` in any case is a credential,
   which covers `toJSON(secrets)`, `a || secrets.X` and an expression split
   across lines. Comment lines are skipped unless they hold `${{`, because
   GitHub evaluates expressions even inside a script's comments. A file
