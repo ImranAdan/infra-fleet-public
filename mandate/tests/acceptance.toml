@@ -480,4 +480,4 @@ title = "The parsed workflow comparison on its own: controls and alias graphs"
 threat = "classifier evasion"
 requirement = "ordinary aliases and unchanged privileged triggers grant nothing; an alias graph is refused promptly, never followed forever"
 fixture = "structural_controls"
-expect = { "an acyclic alias reused" = "none", "an unchanged privileged trigger" = "none", "a recursive alias" = "permission-added", "an exponential alias graph" = "permission-added" }
+expect = { "an acyclic alias reused" = "none", "an unchanged privileged trigger" = "none", "a recursive alias" = "permission-added", "why a recursive alias is refused" = "ValueError", "an exponential alias graph" = "permission-added" }

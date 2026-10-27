@@ -641,6 +641,8 @@ def structural_controls():
         "an acyclic alias reused": found(BASE_WF, alias),
         "an unchanged privileged trigger": found(RESULT, RESULT.replace("echo ready", "echo done")),
         "a recursive alias": found(BASE_WF, BASE_WF.replace("jobs:\n", "env: &loop {SELF: *loop}\njobs:\n")),
+        "why a recursive alias is refused": gate.workflow_findings(
+            W, BASE_WF, BASE_WF.replace("jobs:\n", "env: &loop {SELF: *loop}\njobs:\n"))[0][1].rsplit(": ", 1)[-1],
         "an exponential alias graph": found(BASE_WF, BASE_WF.replace("jobs:\n", LAUGHS + "jobs:\n")),
     }
 

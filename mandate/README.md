@@ -355,9 +355,11 @@ input is built from:
   permissions rise is a permission change: a removed `permissions` block
   falls back to the repository default, which may grant write, and a new
   workflow starts from none. A new expression that reads `secrets` (or a new
-  `secrets: inherit`) is a credential, and a new privileged trigger is merge
-  authority. A workflow that cannot be read or parsed, or a missing parser,
-  counts as a permission change. The diff's lines are classified too, as a
+  `secrets: inherit`) is a credential, and a new privileged trigger, or a
+  changed configuration of one (its source workflows, branch or activity
+  filters), is merge authority. A workflow that cannot be read or parsed, a
+  recursive alias, more than 100,000 nodes once aliases are expanded, or a
+  missing parser counts as a permission change. The diff's lines are classified too, as a
   fallback for callers without file access: a bare `write`, a `permissions`
   key, an alias, a decoded double-quoted value, an open quote or a tag is a
   permission change, and a line naming `secrets` is a credential. A file

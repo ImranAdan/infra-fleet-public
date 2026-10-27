@@ -484,13 +484,16 @@ def _secret_reads(doc: Any) -> dict[str, int]:
     return found
 
 
-def _events(doc: dict[str, Any]) -> set[str] | None:
-    """Trigger names, or None when they cannot be read. YAML 1.1 reads on as True."""
+def _events(doc: dict[str, Any]) -> dict[str, Any] | None:
+    """Each trigger and its configuration (source workflows, branch and
+    activity filters), or None when they cannot be read. YAML 1.1 reads on as True."""
     on = doc.get("on", doc.get(True))
     if on is None or isinstance(on, str):
-        return {on} if on else set()
-    if isinstance(on, (list, dict)):
-        return {e for e in on if isinstance(e, str)}
+        return {on: None} if on else {}
+    if isinstance(on, list) and all(isinstance(e, str) for e in on):
+        return dict.fromkeys(on)
+    if isinstance(on, dict) and all(isinstance(e, str) for e in on):
+        return dict(on)
     return None
 
 
@@ -526,16 +529,47 @@ def workflow_findings(path: str, base: str | None, head: str) -> list[Finding]:
     before = _secret_reads(old)
     if any(n > before.get(k, 0) for k, n in _secret_reads(new).items()):
         findings.append(_finding("credential", f"reads more secrets in {path}"))
-    events, prior = _events(new), _events(old) or set()
-    if events is None or (events - prior) & PRIVILEGED_EVENTS:
-        findings.append(_finding("merge-authority", f"adds a privileged workflow trigger in {path}"))
+    events, prior = _events(new), _events(old) or {}
+    if events is None or any(e in events and (e not in prior or events[e] != prior[e]) for e in PRIVILEGED_EVENTS):
+        findings.append(_finding("merge-authority", f"adds or changes a privileged workflow trigger in {path}"))
     return findings
+
+
+# Aliases share nodes, so a document can be small yet huge or endless when
+# followed: bound it before anything walks or compares it.
+EXPANDED_LIMIT = 100_000
+
+
+def _expanded_size(doc: Any) -> int:
+    """Nodes in ``doc`` with its aliases expanded; a cycle or more than
+    EXPANDED_LIMIT nodes raises. Linear in the distinct nodes."""
+    sizes: dict[int, int] = {}
+    path: set[int] = set()
+
+    def size(node: Any) -> int:
+        if not isinstance(node, (dict, list)):
+            return 1
+        key = id(node)
+        if key in path:
+            raise ValueError("recursive alias")
+        if key not in sizes:
+            path.add(key)
+            children = [*node.keys(), *node.values()] if isinstance(node, dict) else node
+            sizes[key] = 1 + sum(size(child) for child in children)
+            path.discard(key)
+            if sizes[key] > EXPANDED_LIMIT:
+                raise ValueError(f"over {EXPANDED_LIMIT} nodes with aliases expanded")
+        return sizes[key]
+
+    return size(doc)
 
 
 def yaml_load(text: str) -> Any:
     import yaml
 
-    return yaml.load(text, Loader=strict_loader())  # noqa: S506 (SafeLoader subclass)
+    doc = yaml.load(text, Loader=strict_loader())  # noqa: S506 (SafeLoader subclass)
+    _expanded_size(doc)
+    return doc
 
 
 def workflow_changes(
