@@ -23,6 +23,7 @@ fail, so no row can pass without the engine.
 from __future__ import annotations
 
 import dataclasses
+import difflib
 import hashlib
 import subprocess
 import sys
@@ -118,7 +119,48 @@ def diff(path: str, *added: str, removed: tuple[str, ...] = (), old: str | None 
 
 
 def findings(text: str, read=lambda path: None) -> tuple[tuple[str, str], ...]:
+    """A diff with no file contents: a workflow in it fails closed."""
     return shadow.findings(text, [], DELEG, read)
+
+
+# Workflow fixtures edit this file; the gate parses both versions.
+BASE_WF = (
+    "on: pull_request\n"
+    "permissions:\n"
+    "  contents: read\n"
+    "jobs:\n"
+    "  build:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    steps:\n"
+    "      - run: echo smoke\n"
+)
+
+
+def change(path: str, base: str | None, head: str | None, old: str | None = None):
+    """One file's git diff, with its text at base and at head (None: absent)."""
+    a = old or path
+    header = f"diff --git a/{a} b/{path}\n"
+    header += "new file mode 100644\n" if base is None else "deleted file mode 100644\n" if head is None else ""
+    if a != path:
+        header += ("similarity index 100%\n" if base == head else "") + f"rename from {a}\nrename to {path}\n"
+    body = "".join(difflib.unified_diff((base or "").splitlines(True), (head or "").splitlines(True), f"a/{a}", f"b/{path}"))
+    return header + body, {a: base}, {path: head}
+
+
+def wf(*edits: tuple[str, str], base: str = BASE_WF, path: str = W):
+    """A change to one workflow: each (old, new) replaces text that occurs once."""
+    head = base
+    for old, new in edits:
+        assert head.count(old) == 1, old
+        head = head.replace(old, new)
+    return change(path, base, head)
+
+
+def classify(*changes, read=None, delegation=None) -> tuple[tuple[str, str], ...]:
+    text = "".join(c[0] for c in changes)
+    base = {k: v for c in changes for k, v in c[1].items() if v is not None}
+    head = {k: v for c in changes for k, v in c[2].items() if v is not None}
+    return shadow.findings(text, [], delegation or DELEG, read or base.get, head.get)
 
 
 def said(decision: m.Decision) -> str:
@@ -155,15 +197,18 @@ def live_receipts():
 
 @fixture
 def routine_dependency_bump():
-    bump = diff(".github/workflows/ci.yml", f"      - uses: actions/checkout@{SHA2} # v4.1.1",
-                removed=(f"      - uses: actions/checkout@{SHA1} # v4.1.0",))
+    bump = wf((f"      - uses: actions/checkout@{SHA1} # v4.1.0", f"      - uses: actions/checkout@{SHA2} # v4.1.1"),
+              base=CHECKOUT, path=".github/workflows/ci.yml")
     commits = [{"author": "dependabot[bot]", "verified": True, "message": "update-type: version-update:semver-patch"}]
-    failures = gate.dependabot_bump_failures("app/dependabot", "dependabot/github_actions/checkout", commits, bump)
+    failures = gate.dependabot_bump_failures("app/dependabot", "dependabot/github_actions/checkout", commits, bump[0])
     return {
         "Dependabot provenance": "; ".join(failures) or "version-only",
-        "routine bump with intent evidence": decide(findings(bump)),
-        "same bump, intent evidence missing": decide(findings(bump), ()),
+        "routine bump with intent evidence": decide(classify(bump)),
+        "same bump, intent evidence missing": decide(classify(bump), ()),
     }
+
+
+CHECKOUT = BASE_WF.replace("      - run: echo smoke\n", f"      - uses: actions/checkout@{SHA1} # v4.1.0\n")
 
 
 @fixture
@@ -207,7 +252,7 @@ def claimed_evidence_only():
 @fixture
 def forged_check_source():
     forged = record(workflow=".github/workflows/forged.yml", run_id=9)
-    pr = findings(diff(".github/workflows/forged.yml", "name: Intent gate", "on: pull_request"))
+    pr = classify(change(".github/workflows/forged.yml", None, BASE_WF.replace("on:", "name: Intent gate\non:")))
     return {
         "forged check alone": decide(records=(forged,)),
         "forged check beside a genuine one": decide(records=(record(), forged)),
@@ -241,9 +286,9 @@ def forged_dependabot():
 @fixture
 def unauthorized_privilege():
     return {
-        "adds contents: write": decide(findings(diff(W, "    permissions:", "      contents: write"))),
-        "adds a secret": decide(findings(diff(W, "        env: { TOKEN: '${{ secrets.DEPLOY }}' }"))),
-        "adds pull_request_target": decide(findings(diff(W, "on: pull_request_target"))),
+        "adds contents: write": decide(classify(wf(("  contents: read", "  contents: write")))),
+        "adds a secret": decide(classify(wf(("echo smoke\n", "echo smoke\n        env: { TOKEN: '${{ secrets.DEPLOY }}' }\n")))),
+        "adds pull_request_target": decide(classify(wf(("on: pull_request", "on: pull_request_target")))),
         "App manifest grants contents: write": decide(findings(diff("app-manifest.json", '  "contents": "write",'))),
     }
 
@@ -252,7 +297,7 @@ def unauthorized_privilege():
 def authority_change():
     return {
         "edits the engine": decide(findings(diff("mandate/src/mandate/decision.py", "    return True"))),
-        "edits an evidence workflow": decide(findings(diff(".github/workflows/intent-gate.yml", "      - run: true"))),
+        "edits an evidence workflow": decide(classify(change(WORKFLOWS[INTENT], BASE_WF, BASE_WF + "      - run: true\n"))),
         "edits a ruleset": decide(findings(diff(".github/rulesets/main.json", '  "enforcement": "disabled"'))),
         "edits the merge gate": decide(findings(diff(".claude/skills/merge-gate/decision-policy.toml", "x = 1"))),
     }
@@ -322,9 +367,9 @@ def non_fleet_repository():
     deleg = d.parse(text, other, source)
     subject = e.Subject(other, HEAD, BASE, source)
     green = (dataclasses.replace(record(policy=source), repository=other),)
-    bump = shadow.findings(diff(".github/workflows/ci.yml", f"      - uses: actions/checkout@{SHA2} # v4.1.1",
-                                removed=(f"      - uses: actions/checkout@{SHA1} # v4.1.0",)), [], deleg, lambda p: None)
-    widen = shadow.findings(diff(W, "    permissions:", "      contents: write"), [], deleg, lambda p: None)
+    bump = classify(wf((f"@{SHA1} # v4.1.0", f"@{SHA2} # v4.1.1"), base=CHECKOUT, path=".github/workflows/ci.yml"),
+                    delegation=deleg)
+    widen = classify(wf(("  contents: read", "  contents: write")), delegation=deleg)
     return {
         "routine bump": decide(bump, green, delegation=deleg, subject=subject),
         "permission widening": decide(widen, green, delegation=deleg, subject=subject),
@@ -490,66 +535,81 @@ def bypass_topology():
 
 # --- classifier evasion: hide an authority change from the scope classifier ---
 
-# Each attempt is a workflow diff; the evasion rows decide them through the new
-# engine, and live_gate_evasions through Fleet's legacy gate.
+# Each attempt is a change to a complete workflow; the evasion rows decide them
+# through the new engine, and live_gate_evasions through Fleet's legacy gate.
+STEP = "      - run: echo smoke\n"
+ANCHORS = "env:\n  READ_PERMISSION: &r read\n  WRITE_PERMISSION: &1 write\n"
+PRIVILEGED = "on: pull_request_target\npermissions: write-all\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+QUOTED3 = '  contents: "\\\n    non\\\n    e"\n'  # "none" over three lines
 EVASIONS = {
     "evade_flow_permissions": {
-        "flow-style block": diff(W, "    permissions: {contents: write}"),
-        "nested flow mapping": diff(W, "  build: {runs-on: ubuntu-latest, permissions: {contents: write}}"),
-        "quoted value": diff(W, "      contents: 'write'"),
-        "quoted key": diff(W, '      "contents": write'),
-        "write-all": diff(W, "permissions: write-all"),
-        "block scalar": diff(W, "      contents: >-", "        write"),
-        "explicit key": diff(W, "      ? contents", "      : write"),
-        "a comment naming write and secrets (control)": diff(W, "    # write to the cache; no secrets here"),
+        "flow-style block": wf(("permissions:\n  contents: read\n", "permissions: {contents: write}\n")),
+        "nested flow mapping": wf(("  build:\n    runs-on: ubuntu-latest\n    steps:\n" + STEP,
+                                   "  build: {runs-on: ubuntu-latest, permissions: {contents: write}, steps: [{run: echo smoke}]}\n")),
+        "quoted value": wf(("  contents: read", "  contents: 'write'")),
+        "quoted key": wf(("  contents: read", '  "contents": write')),
+        "write-all": wf(("permissions:\n  contents: read\n", "permissions: write-all\n")),
+        "block scalar": wf(("  contents: read\n", "  contents: >-\n    write\n")),
+        "explicit key": wf(("  contents: read\n", "  ? contents\n  : write\n")),
+        "a comment naming write and secrets (control)": wf((STEP, "      # write to the cache; no secrets here\n" + STEP)),
         # YAML decodes escapes in double-quoted scalars, and an escaped line
         # break joins two lines with no space.
-        "hex-escaped value": diff(W, '      contents: "wri\\x74e"', removed=("      contents: read",)),
-        "unicode-escaped value": diff(W, '      contents: "\\u0077rite"', removed=("      contents: read",)),
-        "escaped line break": diff(W, '      contents: "wri\\', '        te"', removed=("      contents: read",)),
-        "only the continuation line changes": diff(W, '        te"', removed=('        ad"',), context=('      contents: "wri\\',)),
-        # A quote-free middle line of a three-line quoted value ("\ / non\ / e").
-        "only a quote-free middle line changes": diff(W, "        writ\\", removed=("        non\\",), context=('      contents: "\\',)),
-        "an escaped middle line": diff(W, "        \\x77rit\\", removed=("        non\\",), context=('      contents: "\\',)),
-        "a value under an unknown tag": diff(W, "      contents: !!binary d3JpdGU=", removed=("      contents: read",)),
-        "an escaped string in a script (control)": diff(W, '        run: printf "a\\tb\\n"'),
-        "a shell inequality (control)": diff(W, '        run: test "$A" != "b"'),
-        "a double quote inside single quotes (control)": diff(W, "        run: echo 'say \"hi'"),
+        "hex-escaped value": wf(("  contents: read", '  contents: "wri\\x74e"')),
+        "unicode-escaped value": wf(("  contents: read", '  contents: "\\u0077rite"')),
+        "escaped line break": wf(("  contents: read\n", '  contents: "wri\\\n    te"\n')),
+        "only the continuation line changes": wf(('    ad"', '    te"'), base=BASE_WF.replace("  contents: read\n", '  contents: "wri\\\n    ad"\n')),
+        # A quote-free middle line of a three-line quoted value.
+        "only a quote-free middle line changes": wf(("    non\\", "    writ\\"), base=BASE_WF.replace("  contents: read\n", QUOTED3)),
+        "an escaped middle line": wf(("    non\\", "    \\x77rit\\"), base=BASE_WF.replace("  contents: read\n", QUOTED3)),
+        "a value under an unknown tag": wf(("  contents: read", "  contents: !!binary d3JpdGU=")),
+        "an escaped string in a script (control)": wf((STEP, STEP + '      - run: printf "a\\tb\\n"\n')),
+        "a shell inequality (control)": wf((STEP, STEP + '      - run: test "$A" != "b"\n')),
+        "a double quote inside single quotes (control)": wf((STEP, STEP + "      - run: echo 'say \"hi'\n")),
+        # Only the parsed versions show these: no changed line names a write.
+        "a value of another type": wf(("  contents: read", "  contents: 2")),
+        "permissions block removed": wf(("permissions:\n  contents: read\n", "")),
+        "a duplicate key": wf(("  contents: read\n", "  contents: read\n  contents: read\n")),
+        "a workflow whose head cannot be read": (wf((STEP, STEP + STEP))[0], {W: BASE_WF}, {W: None}),
     },
     "evade_yaml_aliases": {
-        "anchor then alias": diff(W, "x-perm: &w", "  contents: write", "    permissions: *w"),
-        "alias of an existing anchor": diff(W, "    permissions: *w"),
-        "anchored value": diff(W, "      contents: &w write"),
-        "tagged value": diff(W, "      contents: !!str write"),
-        "value aliased to an unchanged anchor": diff(W, "      contents: *w", context=("x-w: &w write",)),
-        "merge key": diff(W, "    <<: *perms", context=("x-perms: &perms", "  permissions:", "    contents: write")),
-        "numeric anchor name": diff(W, "      contents: *1", removed=("      contents: read",), context=("  WRITE_PERMISSION: &1 write",)),
+        "anchor then alias": wf(("permissions:\n  contents: read\n", "x-perm: &w\n  contents: write\npermissions: *w\n")),
+        "alias of an existing anchor": wf(("permissions:\n  contents: read\n", "permissions: *w\n"),
+                                          base="x-perm: &w {contents: write}\n" + BASE_WF),
+        "anchored value": wf(("  contents: read", "  contents: &w write")),
+        "tagged value": wf(("  contents: read", "  contents: !!str write")),
+        "value aliased to an unchanged anchor": wf(("  contents: read", "  contents: *w"), base="x-w: &w write\n" + BASE_WF),
+        "merge key": wf(("    runs-on: ubuntu-latest\n", "    <<: *perms\n    runs-on: ubuntu-latest\n"),
+                        base="x-perms: &perms\n  permissions:\n    contents: write\n" + BASE_WF),
+        "numeric anchor name": wf(("  contents: read", "  contents: *1"), base=ANCHORS + BASE_WF),
     },
     "evade_secret_expressions": {
-        "toJSON(secrets)": diff(W, "        env: { ALL: '${{ toJSON(secrets) }}' }"),
-        "computed index": diff(W, "        env: { T: '${{ secrets[inputs.name] }}' }"),
-        "after another operand": diff(W, "        token: ${{ inputs.token || secrets.DEPLOY }}"),
-        "expression across lines": diff(W, "        run: |", '          echo "${{', '            secrets.DEPLOY }}"'),
-        "upper-case context name": diff(W, "        token: ${{ SECRETS.DEPLOY }}"),
-        "expression in a script comment": diff(W, "        run: |", "          # ${{ toJSON(secrets) }}"),
-        "secrets: inherit": diff(W, "    secrets: inherit"),
+        "toJSON(secrets)": wf((STEP, STEP + "        env: { ALL: '${{ toJSON(secrets) }}' }\n")),
+        "computed index": wf((STEP, STEP + "        env: { T: '${{ secrets[inputs.name] }}' }\n")),
+        "after another operand": wf((STEP, STEP + "        env: { T: '${{ inputs.token || secrets.DEPLOY }}' }\n")),
+        "expression across lines": wf((STEP, '      - run: |\n          echo "${{\n            secrets.DEPLOY }}"\n')),
+        "upper-case context name": wf((STEP, STEP + "        env: { T: '${{ SECRETS.DEPLOY }}' }\n")),
+        "expression in a script comment": wf((STEP, "      - run: |\n          # ${{ toJSON(secrets) }}\n          echo hi\n")),
+        "secrets: inherit": wf((STEP, STEP + "  call:\n    uses: ./.github/workflows/reusable.yml\n    secrets: inherit\n")),
+        "an escaped context name": wf((STEP, STEP + '        env: { T: "${{ s\\x65crets.DEPLOY }}" }\n')),
+        "an escaped inherit key": wf((STEP, STEP + '  call:\n    uses: ./.github/workflows/reusable.yml\n    "s\\x65crets": inherit\n')),
     },
     "evade_reusable_triggers": {
-        "reusable workflow gains pull_request_target": diff(".github/workflows/reusable.yml", "on:", "  pull_request_target:"),
-        "flow-map trigger": diff(W, "on: {workflow_run: {workflows: [ci]}}"),
-        "list trigger": diff(W, "on: [push, issue_comment]"),
+        "reusable workflow gains pull_request_target": wf(("on: workflow_call\n", "on:\n  workflow_call:\n  pull_request_target:\n"),
+                                                          base=BASE_WF.replace("on: pull_request\n", "on: workflow_call\n"),
+                                                          path=".github/workflows/reusable.yml"),
+        "flow-map trigger": wf(("on: pull_request", "on: {pull_request: {}, workflow_run: {workflows: [ci]}}")),
+        "list trigger": wf(("on: pull_request", "on: [pull_request, issue_comment]")),
+        "an escaped trigger name": wf(("on: pull_request", 'on: [pull_request, "pull_request_t\\x61rget"]')),
     },
     "evade_moved_workflows": {
-        "evidence workflow renamed": diff(".github/workflows/other.yml", old=WORKFLOWS[INTENT]),
-        "evidence workflow moved out": diff("scripts/intent-gate.yml", old=WORKFLOWS[INTENT]),
-        # A pure rename shows no content, so the moved file's triggers and
-        # permissions are invisible to a line classifier.
-        "privileged file moved in": "diff --git a/scripts/new.yml b/.github/workflows/new.yml\nsimilarity index 100%\n"
-                                    "rename from scripts/new.yml\nrename to .github/workflows/new.yml\n",
+        "evidence workflow renamed": change(".github/workflows/other.yml", BASE_WF, BASE_WF, old=WORKFLOWS[INTENT]),
+        "evidence workflow moved out": change("scripts/intent-gate.yml", BASE_WF, BASE_WF, old=WORKFLOWS[INTENT]),
+        # A pure rename shows no content: the gate reads the moved file.
+        "privileged file moved in": change(".github/workflows/new.yml", PRIVILEGED, PRIVILEGED, old="scripts/new.yml"),
     },
 }
 for _row in EVASIONS:
-    FIXTURES[_row] = (lambda row: lambda: {k: decide(findings(v)) for k, v in EVASIONS[row].items()})(_row)
+    FIXTURES[_row] = (lambda row: lambda: {k: decide(classify(c)) for k, c in EVASIONS[row].items()})(_row)
 
 
 @fixture
@@ -558,8 +618,10 @@ def live_gate_evasions():
     changes on evidence alone and permission or credential changes by the owner."""
     rules, _ = gate.load_policy(ROOT / ".claude/skills/merge-gate/decision-policy.toml")
 
-    def verdict(text: str) -> str:
-        outcome, why = gate.decide(gate.scope_findings(text), rules, set(), None)
+    def verdict(attempt) -> str:
+        text, base, head = attempt
+        found = list(dict.fromkeys(gate.scope_findings(text) + gate.workflow_changes(text, base.get, head.get)))
+        outcome, why = gate.decide(found, rules, set(), None)
         return " ".join([outcome, *why])
 
     return {f"{row.removeprefix('evade_').replace('_', ' ')}: {k}": verdict(v)
@@ -792,7 +854,10 @@ def main(argv: list[str]) -> int:
     assert len({x["slug"] for x in rows}) == len(rows), "duplicate slug"
     assert {x["fixture"] for x in rows} == set(FIXTURES), set(FIXTURES) ^ {x["fixture"] for x in rows}
     results = run(rows)
-    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    try:
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    except OSError:  # no git: the report says so rather than failing
+        commit = ""
     print(f"package {commit or 'unknown'}, manifest sha256:{hashlib.sha256(MANIFEST.read_bytes()).hexdigest()}, "
           f"registry {m.REGISTRY_VERSION}, fixture policy {POLICY}")
     for kind in ("matrix", "evasion", "regression"):

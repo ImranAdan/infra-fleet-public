@@ -61,7 +61,7 @@ title = "Forged proof: the PR adds a workflow that emits the required check's na
 threat = "forged evidence"
 requirement = "workflow and event correlation, not the check name, binds a producer"
 fixture = "forged_check_source"
-expect = { "forged check alone" = "BLOCK CHECK_WRONG_SOURCE EVIDENCE_REQUIRED:intent-gate", "forged check beside a genuine one" = "BLOCK CHECK_WRONG_SOURCE", "the forging workflow itself" = "BLOCK CHECK_WRONG_SOURCE" }
+expect = { "forged check alone" = "BLOCK CHECK_WRONG_SOURCE EVIDENCE_REQUIRED:intent-gate", "forged check beside a genuine one" = "BLOCK CHECK_WRONG_SOURCE", "the forging workflow itself" = "BLOCK CHECK_WRONG_SOURCE RESERVED:permission-added" }
 live = "NOT RUN — gate not reached"
 
 [[case]]
@@ -290,7 +290,7 @@ title = "Workflow permissions written as flow mappings, quoted, escaped or tagge
 threat = "classifier evasion"
 requirement = "any added write permission is permission-added"
 fixture = "evade_flow_permissions"
-expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE", "hex-escaped value" = "ESCALATE RESERVED:permission-added", "unicode-escaped value" = "ESCALATE RESERVED:permission-added", "escaped line break" = "ESCALATE RESERVED:permission-added", "only the continuation line changes" = "ESCALATE RESERVED:permission-added", "only a quote-free middle line changes" = "ESCALATE RESERVED:permission-added", "an escaped middle line" = "ESCALATE RESERVED:permission-added", "a value under an unknown tag" = "ESCALATE RESERVED:permission-added", "an escaped string in a script (control)" = "AUTHORIZE", "a shell inequality (control)" = "AUTHORIZE", "a double quote inside single quotes (control)" = "AUTHORIZE" }
+expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE", "hex-escaped value" = "ESCALATE RESERVED:permission-added", "unicode-escaped value" = "ESCALATE RESERVED:permission-added", "escaped line break" = "ESCALATE RESERVED:permission-added", "only the continuation line changes" = "ESCALATE RESERVED:permission-added", "only a quote-free middle line changes" = "ESCALATE RESERVED:permission-added", "an escaped middle line" = "ESCALATE RESERVED:permission-added", "a value under an unknown tag" = "ESCALATE RESERVED:permission-added", "an escaped string in a script (control)" = "AUTHORIZE", "a shell inequality (control)" = "AUTHORIZE", "a double quote inside single quotes (control)" = "AUTHORIZE", "a value of another type" = "ESCALATE RESERVED:permission-added", "permissions block removed" = "ESCALATE RESERVED:permission-added", "a duplicate key" = "ESCALATE RESERVED:permission-added", "a workflow whose head cannot be read" = "ESCALATE RESERVED:permission-added" }
 
 [[case]]
 slug = "evade-yaml-aliases"
@@ -308,7 +308,7 @@ title = "Secrets reached through toJSON, a computed index, another operand, a sp
 threat = "classifier evasion"
 requirement = "any expression that reads secrets is a credential"
 fixture = "evade_secret_expressions"
-expect = { "toJSON(secrets)" = "ESCALATE RESERVED:credential", "computed index" = "ESCALATE RESERVED:credential", "after another operand" = "ESCALATE RESERVED:credential", "expression across lines" = "ESCALATE RESERVED:credential RESERVED:permission-added", "upper-case context name" = "ESCALATE RESERVED:credential", "expression in a script comment" = "ESCALATE RESERVED:credential", "secrets: inherit" = "ESCALATE RESERVED:credential" }
+expect = { "toJSON(secrets)" = "ESCALATE RESERVED:credential", "computed index" = "ESCALATE RESERVED:credential", "after another operand" = "ESCALATE RESERVED:credential", "expression across lines" = "ESCALATE RESERVED:credential RESERVED:permission-added", "upper-case context name" = "ESCALATE RESERVED:credential", "expression in a script comment" = "ESCALATE RESERVED:credential", "secrets: inherit" = "ESCALATE RESERVED:credential", "an escaped context name" = "ESCALATE RESERVED:credential", "an escaped inherit key" = "ESCALATE RESERVED:credential" }
 
 [[case]]
 slug = "evade-reusable-triggers"
@@ -317,7 +317,7 @@ title = "Privileged triggers in a reusable workflow, a flow map or a list"
 threat = "classifier evasion"
 requirement = "any privileged trigger is merge-authority"
 fixture = "evade_reusable_triggers"
-expect = { "reusable workflow gains pull_request_target" = "ESCALATE RESERVED:merge-authority", "flow-map trigger" = "ESCALATE RESERVED:merge-authority", "list trigger" = "ESCALATE RESERVED:merge-authority" }
+expect = { "reusable workflow gains pull_request_target" = "ESCALATE RESERVED:merge-authority", "flow-map trigger" = "ESCALATE RESERVED:merge-authority", "list trigger" = "ESCALATE RESERVED:merge-authority", "an escaped trigger name" = "ESCALATE RESERVED:merge-authority" }
 
 [[case]]
 slug = "evade-moved-workflows"
@@ -326,7 +326,7 @@ title = "Workflows renamed, moved out of or into the workflow directory"
 threat = "classifier evasion"
 requirement = "a moved producer stays reserved, and a file moved into automation unseen escalates"
 fixture = "evade_moved_workflows"
-expect = { "evidence workflow renamed" = "ESCALATE RESERVED:evidence-producer RESERVED:merge-authority", "evidence workflow moved out" = "ESCALATE RESERVED:evidence-producer RESERVED:merge-authority", "privileged file moved in" = "ESCALATE RESERVED:merge-authority" }
+expect = { "evidence workflow renamed" = "ESCALATE RESERVED:evidence-producer RESERVED:merge-authority", "evidence workflow moved out" = "ESCALATE RESERVED:evidence-producer RESERVED:merge-authority", "privileged file moved in" = "ESCALATE RESERVED:merge-authority RESERVED:permission-added" }
 
 # --- regressions found in review ----------------------------------------------
 
@@ -438,6 +438,10 @@ fixture = "live_gate_evasions"
 "flow permissions: an escaped string in a script (control)" = "READY"
 "flow permissions: a shell inequality (control)" = "READY"
 "flow permissions: a double quote inside single quotes (control)" = "READY"
+"flow permissions: a value of another type" = "PARK owner decision required for: permission-added"
+"flow permissions: permissions block removed" = "PARK owner decision required for: permission-added"
+"flow permissions: a duplicate key" = "PARK owner decision required for: permission-added"
+"flow permissions: a workflow whose head cannot be read" = "PARK owner decision required for: permission-added"
 "yaml aliases: anchor then alias" = "PARK owner decision required for: permission-added"
 "yaml aliases: alias of an existing anchor" = "PARK owner decision required for: permission-added"
 "yaml aliases: anchored value" = "PARK owner decision required for: permission-added"
@@ -452,9 +456,12 @@ fixture = "live_gate_evasions"
 "secret expressions: upper-case context name" = "PARK owner decision required for: credential"
 "secret expressions: expression in a script comment" = "PARK owner decision required for: credential"
 "secret expressions: secrets: inherit" = "PARK owner decision required for: credential"
+"secret expressions: an escaped context name" = "PARK owner decision required for: credential"
+"secret expressions: an escaped inherit key" = "PARK owner decision required for: credential"
 "reusable triggers: reusable workflow gains pull_request_target" = "PARK owner decision required for: merge-authority"
 "reusable triggers: flow-map trigger" = "PARK owner decision required for: merge-authority"
 "reusable triggers: list trigger" = "PARK owner decision required for: merge-authority"
+"reusable triggers: an escaped trigger name" = "PARK owner decision required for: merge-authority"
 "moved workflows: evidence workflow renamed" = "PARK owner decision required for: merge-authority"
 "moved workflows: evidence workflow moved out" = "PARK owner decision required for: merge-authority"
-"moved workflows: privileged file moved in" = "PARK owner decision required for: merge-authority"
+"moved workflows: privileged file moved in" = "PARK owner decision required for: merge-authority, permission-added"

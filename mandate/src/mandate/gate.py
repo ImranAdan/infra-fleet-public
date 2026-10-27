@@ -411,6 +411,156 @@ def _line_findings(path: str, line: str) -> list[Finding]:
     return findings
 
 
+# Only top-level workflow files run; their parsed versions decide what changed.
+WORKFLOW_FILE = re.compile(r"^\.github/workflows/[^/]+\.ya?ml$")
+PRIVILEGED_EVENTS = frozenset({"pull_request_target", "issue_comment", "workflow_run"})
+LEVELS = {"none": 0, "read": 1, "write": 2}
+_ABSENT = object()
+
+
+def strict_loader() -> Any:
+    """A YAML SafeLoader whose duplicate and merge keys raise: what they mean
+    depends on the parser, and GitHub does not resolve merge keys."""
+    import yaml
+
+    class Strict(yaml.SafeLoader):
+        def construct_mapping(self, node: Any, deep: bool = False) -> Any:
+            # A merge key (<<) has no constructor here, so building it raises.
+            keys = [repr(self.construct_object(k, deep=True)) for k, _ in node.value]
+            if len(keys) != len(set(keys)):
+                raise ValueError("duplicate key")
+            return super().construct_mapping(node, deep)
+
+    return Strict
+
+
+def read_at(repo: str, ref: str) -> Callable[[str], str | None]:
+    """A file's text at one commit; None when it cannot be read."""
+
+    def read(path: str) -> str | None:
+        try:
+            return gh("api", "-H", "Accept: application/vnd.github.raw+json",
+                      f"repos/{repo}/contents/{urllib.parse.quote(path)}?ref={ref}")
+        except subprocess.CalledProcessError:
+            return None
+
+    return read
+
+
+def _level(value: Any, scope: str, side: str) -> int:
+    """A permissions value's level for one scope. Absent is the repository
+    default, which may grant write; an unknown value counts as least before
+    and most after."""
+    if value is _ABSENT:
+        return 2
+    if value in ("read-all", "write-all"):
+        return 1 if value == "read-all" else 2
+    if isinstance(value, dict) and all(isinstance(v, str) and v in LEVELS for v in value.values()):
+        return LEVELS[value.get(scope, "none")]
+    return 0 if side == "base" else 2
+
+
+def _jobs(doc: dict[str, Any]) -> tuple[Any, dict[Any, Any]]:
+    top = doc.get("permissions", _ABSENT)
+    jobs = doc.get("jobs") if isinstance(doc.get("jobs"), dict) else {}
+    return top, {k: v.get("permissions", top) if isinstance(v, dict) else None for k, v in jobs.items()}
+
+
+def _secret_reads(doc: Any) -> dict[str, int]:
+    """Each string holding an expression that names the secrets context, and each inherit."""
+    found: dict[str, int] = {}
+    stack = [doc]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if item.get("secrets") == "inherit":
+                found["secrets: inherit"] = found.get("secrets: inherit", 0) + 1
+            stack += [*item.keys(), *item.values()]
+        elif isinstance(item, list):
+            stack += item
+        elif isinstance(item, str) and "${{" in item and re.search(r"\bsecrets\b", item, re.I):
+            key = " ".join(item.split())
+            found[key] = found.get(key, 0) + 1
+    return found
+
+
+def _events(doc: dict[str, Any]) -> set[str] | None:
+    """Trigger names, or None when they cannot be read. YAML 1.1 reads on as True."""
+    on = doc.get("on", doc.get(True))
+    if on is None or isinstance(on, str):
+        return {on} if on else set()
+    if isinstance(on, (list, dict)):
+        return {e for e in on if isinstance(e, str)}
+    return None
+
+
+def workflow_findings(path: str, base: str | None, head: str) -> list[Finding]:
+    """What one workflow's head version grants beyond its base, read from the
+    parsed YAML, so no spelling, alias, escape or line break can hide it. A
+    head that cannot be parsed counts as a permission change; ``base`` None is
+    a new workflow."""
+    try:  # a missing parser (ImportError) fails closed here too
+        new = yaml_load(head)
+        if not isinstance(new, dict):
+            raise ValueError("not a mapping")
+    except Exception as exc:  # noqa: BLE001 - any parser failure: the effect is unknown
+        return [_finding("permission-added", f"cannot parse {path}: {type(exc).__name__}")]
+    try:
+        old = {"permissions": {}} if base is None else yaml_load(base)
+    except Exception:  # noqa: BLE001 - an unreadable base grants nothing to compare with
+        old = None
+    if not isinstance(old, dict):
+        old = {"permissions": {}}
+    findings: list[Finding] = []
+    old_top, old_jobs = _jobs(old)
+    new_top, new_jobs = _jobs(new)
+    values = [old_top, new_top, *old_jobs.values(), *new_jobs.values()]
+    scopes = {"*", *(k for v in values if isinstance(v, dict) for k in v if isinstance(k, str))}
+    compared = new_jobs or {"(workflow)": new_top}
+    widened = sorted(
+        str(job) for job, value in compared.items()
+        if any(_level(value, s, "head") > _level(old_jobs.get(job, old_top), s, "base") for s in scopes)
+    )
+    if widened:
+        findings.append(_finding("permission-added", f"widens workflow permissions in {path}: {', '.join(widened)}"))
+    before = _secret_reads(old)
+    if any(n > before.get(k, 0) for k, n in _secret_reads(new).items()):
+        findings.append(_finding("credential", f"reads more secrets in {path}"))
+    events, prior = _events(new), _events(old) or set()
+    if events is None or (events - prior) & PRIVILEGED_EVENTS:
+        findings.append(_finding("merge-authority", f"adds a privileged workflow trigger in {path}"))
+    return findings
+
+
+def yaml_load(text: str) -> Any:
+    import yaml
+
+    return yaml.load(text, Loader=strict_loader())  # noqa: S506 (SafeLoader subclass)
+
+
+def workflow_changes(
+    diff: str, read_base: Callable[[str], str | None], read_head: Callable[[str], str | None]
+) -> list[Finding]:
+    """workflow_findings() for each workflow file the diff adds, changes or
+    moves in; a version that cannot be read counts as a permission change."""
+    found: list[Finding] = []
+    for chunk in re.split(r"(?m)^(?=diff --git )", diff):
+        header = re.match(r"diff --git a/(.*) b/(.*)$", chunk, re.M)
+        if not header or not WORKFLOW_FILE.search(header.group(2)):
+            continue
+        if re.search(r"(?m)^deleted file mode ", chunk):
+            continue  # a removed workflow grants nothing
+        old, new = header.groups()
+        added = bool(re.search(r"(?m)^new file mode ", chunk)) or not WORKFLOW_FILE.search(old)
+        base = None if added else read_base(old)
+        head = read_head(new)
+        if head is None or (base is None and not added):
+            found.append(_finding("permission-added", f"cannot read {new} at both base and head"))
+            continue
+        found += workflow_findings(new, base, head)
+    return list(dict.fromkeys(found))
+
+
 def scope_findings(diff: str) -> list[Finding]:
     """Return structured decision findings from a unified diff."""
     findings: list[Finding] = []
@@ -897,7 +1047,7 @@ def main(argv: list[str], policy_path: Path) -> int:
             "-R",
             repo,
             "--json",
-            "state,isDraft,mergeStateStatus,body,headRefOid,headRefName,author,labels",
+            "state,isDraft,mergeStateStatus,body,baseRefOid,headRefOid,headRefName,author,labels",
         )
     )
     blocked: list[str] = []
@@ -973,7 +1123,12 @@ def main(argv: list[str], policy_path: Path) -> int:
     if silent:
         blocked.append(f"{silent} thread(s) resolved without a reply from {author}")
     diff = gh("pr", "diff", number, "-R", repo)
-    findings = scope_findings(diff)
+    merge_base = gh(
+        "api", f"repos/{repo}/compare/{pr['baseRefOid']}...{sha}", "--jq", ".merge_base_commit.sha"
+    ).strip()
+    findings = list(dict.fromkeys(
+        scope_findings(diff) + workflow_changes(diff, read_at(repo, merge_base), read_at(repo, sha))
+    ))
     bump_failures = ["not Dependabot"]
     if DEPENDABOT_VERSION_ONLY and author in DEPENDABOT_AUTHORS:
         commits = gh_json_lines(

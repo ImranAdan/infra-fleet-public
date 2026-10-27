@@ -348,20 +348,24 @@ input is built from:
 
 - **Findings:** the engine classifies each file from its own diff, plus
   reserved surfaces read at the trusted base. A file that appears in the diff
-  but not in the API's file list still counts. A diff line cannot follow
-  YAML, so workflow rules are deliberately broad. A line with a bare `write`,
-  a `permissions` key or an alias (any anchor name, `*1` included) is a
-  permission change, since anchors, tags, merge keys, block scalars and
-  explicit keys can each carry a value off its key's line. Double-quoted
-  scalars are checked after decoding their escapes (`"wri\x74e"` is
-  `write`), and a line whose value is elsewhere also counts: one that leaves
-  a double-quoted scalar open across lines, or that holds an explicit tag. A line naming `secrets` in any case is a credential,
-  which covers `toJSON(secrets)`, `a || secrets.X` and an expression split
-  across lines. Comment lines are skipped unless they hold `${{`, because
-  GitHub evaluates expressions even inside a script's comments. A file
-  renamed into `.github/workflows/` or `.github/actions/` is merge
-  authority, because a rename shows none of its triggers or permissions. A
-  Dependabot requirement bump may keep an inline comment, unchanged.
+  but not in the API's file list still counts. Each changed workflow is also
+  parsed at base and head (`gate.workflow_changes()`, with PyYAML's safe
+  loader; duplicate and merge keys refused), so no spelling, alias, escape,
+  tag or line break can hide what it grants. A job whose effective
+  permissions rise is a permission change: a removed `permissions` block
+  falls back to the repository default, which may grant write, and a new
+  workflow starts from none. A new expression that reads `secrets` (or a new
+  `secrets: inherit`) is a credential, and a new privileged trigger is merge
+  authority. A workflow that cannot be read or parsed, or a missing parser,
+  counts as a permission change. The diff's lines are classified too, as a
+  fallback for callers without file access: a bare `write`, a `permissions`
+  key, an alias, a decoded double-quoted value, an open quote or a tag is a
+  permission change, and a line naming `secrets` is a credential. A file
+  renamed into `.github/workflows/` or `.github/actions/` is merge authority.
+  A Dependabot requirement bump may keep an inline comment, unchanged. The
+  legacy gate compares the PR's merge base with its head, and the merge
+  worker installs PyYAML from `.claude/skills/merge-gate/requirements.txt`
+  with hashes.
 - **Evidence:** the head's check runs, each correlated to its workflow run.
 - **Policy:** the owner's delegation at a pinned commit.
 

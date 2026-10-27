@@ -77,9 +77,12 @@ def _per_file(diff: str) -> dict[str, str]:
 
 
 def findings(
-    diff: str, paths: list[str], delegation: d.Delegation, read
+    diff: str, paths: list[str], delegation: d.Delegation, read, read_head=lambda path: None
 ) -> tuple[tuple[str, str], ...]:
-    """(category, path) per changed path, classified from that file's own diff.
+    """(category, path) per changed path, classified from that file's own diff
+    and, for a workflow, from its parsed versions (``read`` at the base,
+    ``read_head`` at the head; a workflow it cannot read counts as a permission
+    change).
 
     A file in the diff but not in ``paths`` still contributes its findings.
     """
@@ -87,6 +90,7 @@ def findings(
     out: list[tuple[str, str]] = []
     for path in dict.fromkeys([*paths, *chunks]):
         cats = {c for c, _ in gate.scope_findings(chunks.get(path, ""))}
+        cats |= {c for c, _ in gate.workflow_changes(chunks.get(path, ""), read, read_head)}
         cats |= {c for c, _ in d.reserved_findings(delegation, [path], read)}
         out += [(c, path) for c in sorted(cats)] or [("unclassified", path)]
     return tuple(out)
@@ -123,7 +127,7 @@ def inputs(repository: str, number: int, delegation: d.Delegation) -> m.Decision
     return m.DecisionInput(
         delegation=delegation,
         subject=subject,
-        findings=findings(diff, paths, delegation, _reader(repository, base)),
+        findings=findings(diff, paths, delegation, _reader(repository, base), _reader(repository, head)),
         facts={},
         records=records,
         blocking=(),
