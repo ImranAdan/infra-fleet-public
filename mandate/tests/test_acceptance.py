@@ -508,6 +508,9 @@ EVASIONS = {
         "unicode-escaped value": diff(W, '      contents: "\\u0077rite"', removed=("      contents: read",)),
         "escaped line break": diff(W, '      contents: "wri\\', '        te"', removed=("      contents: read",)),
         "only the continuation line changes": diff(W, '        te"', removed=('        ad"',), context=('      contents: "wri\\',)),
+        # A quote-free middle line of a three-line quoted value ("\ / non\ / e").
+        "only a quote-free middle line changes": diff(W, "        writ\\", removed=("        non\\",), context=('      contents: "\\',)),
+        "an escaped middle line": diff(W, "        \\x77rit\\", removed=("        non\\",), context=('      contents: "\\',)),
         "a value under an unknown tag": diff(W, "      contents: !!binary d3JpdGU=", removed=("      contents: read",)),
         "an escaped string in a script (control)": diff(W, '        run: printf "a\\tb\\n"'),
         "a shell inequality (control)": diff(W, '        run: test "$A" != "b"'),

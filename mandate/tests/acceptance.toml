@@ -290,7 +290,7 @@ title = "Workflow permissions written as flow mappings, quoted, escaped or tagge
 threat = "classifier evasion"
 requirement = "any added write permission is permission-added"
 fixture = "evade_flow_permissions"
-expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE", "hex-escaped value" = "ESCALATE RESERVED:permission-added", "unicode-escaped value" = "ESCALATE RESERVED:permission-added", "escaped line break" = "ESCALATE RESERVED:permission-added", "only the continuation line changes" = "ESCALATE RESERVED:permission-added", "a value under an unknown tag" = "ESCALATE RESERVED:permission-added", "an escaped string in a script (control)" = "AUTHORIZE", "a shell inequality (control)" = "AUTHORIZE", "a double quote inside single quotes (control)" = "AUTHORIZE" }
+expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE", "hex-escaped value" = "ESCALATE RESERVED:permission-added", "unicode-escaped value" = "ESCALATE RESERVED:permission-added", "escaped line break" = "ESCALATE RESERVED:permission-added", "only the continuation line changes" = "ESCALATE RESERVED:permission-added", "only a quote-free middle line changes" = "ESCALATE RESERVED:permission-added", "an escaped middle line" = "ESCALATE RESERVED:permission-added", "a value under an unknown tag" = "ESCALATE RESERVED:permission-added", "an escaped string in a script (control)" = "AUTHORIZE", "a shell inequality (control)" = "AUTHORIZE", "a double quote inside single quotes (control)" = "AUTHORIZE" }
 
 [[case]]
 slug = "evade-yaml-aliases"
@@ -432,6 +432,8 @@ fixture = "live_gate_evasions"
 "flow permissions: unicode-escaped value" = "PARK owner decision required for: permission-added"
 "flow permissions: escaped line break" = "PARK owner decision required for: permission-added"
 "flow permissions: only the continuation line changes" = "PARK owner decision required for: permission-added"
+"flow permissions: only a quote-free middle line changes" = "PARK owner decision required for: permission-added"
+"flow permissions: an escaped middle line" = "PARK owner decision required for: permission-added"
 "flow permissions: a value under an unknown tag" = "PARK owner decision required for: permission-added"
 "flow permissions: an escaped string in a script (control)" = "READY"
 "flow permissions: a shell inequality (control)" = "READY"
