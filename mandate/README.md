@@ -377,3 +377,40 @@ python3 mandate/tests/test_shadow.py
 python3 mandate/tests/test_ledger.py
 python3 mandate/tests/test_receipt.py
 ```
+
+## Historical replay
+
+`mandate/replay/` measures the engine against past pull requests without
+treating past merges as proof of safety. A replay credits no stage exit by
+itself.
+
+- **`dictionary.toml`** fixes the populations, windows, sampling, historical
+  paths, the authority-class source, the metrics and the disagreement schema
+  before any outcome is collected. A change to it is a new version and a new
+  export, never an edit of an accepted one. Label membership is reconstructed
+  from `labeled`/`unlabeled` events at the discovery cut-off rather than from
+  today's labels, and the current census is a separate population.
+- **`collect.py`** records every provider response the replay reads: the
+  population queries, each item's comments, and the exact calls the real
+  `shadow.inputs()` makes. They all pass through one recorder around `gh`, and
+  each output is stored under its SHA-256 with a `manifest.json`. The manifest
+  also records the collection time, the `gh` version, repository IDs, the
+  engine commit and the delegation pin. It only reads.
+- **`report.py`** replays an export offline. `gh` is answered from the export
+  alone, and a missing call is an error. It recomputes the populations, which
+  must equal the manifest's, and decides each pull request with the real
+  `shadow.inputs()` and `decide()`. It reports the confusion matrix against
+  the historical path, the unsafe-authorization count (it exits 1 on any) and
+  the disagreements for manual review. Actions by the shared owner login are
+  attributed as "owner-principal, human/agent attribution unknown".
+
+```bash
+PYTHONPATH=mandate/src python3 mandate/replay/collect.py <export> --delegation-sha <sha>
+PYTHONPATH=mandate/src python3 mandate/replay/report.py <export> --json report.json
+PYTHONPATH=mandate/src python3 mandate/replay/collect.py --self-test
+PYTHONPATH=mandate/src python3 mandate/replay/report.py --self-test
+```
+
+A repository the pinned delegation does not cover replays as
+`DELEGATION_INVALID`, as live shadow decisions do. Its provider objects are
+still collected for a later delegation.
