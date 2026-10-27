@@ -89,6 +89,10 @@ def git(where: Path, *args: str) -> str:
         return ""
 
 
+def pin(where: Path) -> dict:
+    return {"commit": git(where, "rev-parse", "HEAD"), "clean": git(where, "status", "--porcelain", "--", ".") == ""}
+
+
 def delegation_for(rec: Recorder, repository: str, sha: str):
     """The pinned delegation, read the way delegation.fetch() reads it; None if the pin has none."""
     path = d.path_for(repository)
@@ -133,10 +137,18 @@ def main(argv: list[str] | None = None) -> int:
     if not d.COMMIT_SHA.fullmatch(args.delegation_sha):
         parser.error("--delegation-sha must be a full commit SHA")
     spec = tomllib.loads(DICTIONARY.read_text())
+    # Pins are taken before anything is read, from clean checkouts, and checked
+    # again at the end: a concurrent edit cannot change what is reported.
+    engine = Path(shadow.__file__).resolve().parents[2]  # the engine's mandate/ directory
+    pins = {"engine_start": pin(engine), "tooling": pin(HERE)}
+    for name, value in pins.items():
+        if not value["commit"] or not value["clean"]:
+            parser.error(f"{name} must be a clean git checkout: {value}")
+    started_at = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     rec = Recorder(args.out)
     gate.gh = rec.gh  # shadow reads the provider through gate.gh
     gate.configure(*gate.load_scope(Path(shadow.__file__).parents[3] / shadow.POLICY))
-    collected_at = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    collected_at = started_at
     cutoff, start = spec["windows"]["discovery_cutoff"], spec["windows"]["sample_start"]
 
     populations: dict[str, list[list]] = {p["id"]: [] for p in spec["population"]}
@@ -170,13 +182,18 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 - recorded, never dropped
             errors.append([repository, number, f"{type(exc).__name__}: {exc}"[:300]])
 
-    engine = Path(shadow.__file__).resolve().parents[2]  # the engine's mandate/ directory
+    pins["engine_end"] = pin(engine)
+    if pins["engine_end"] != pins["engine_start"]:
+        raise SystemExit(f"the engine changed during collection: {pins}")
     manifest = {
+        "protocol": 2,
+        "finished_at": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        **pins,
         "dictionary": {"version": spec["version"], "sha256": hashlib.sha256(DICTIONARY.read_bytes()).hexdigest()},
         "collected_at": collected_at,
         "gh": subprocess.run(["gh", "--version"], capture_output=True, text=True).stdout.splitlines()[0],
         "repositories": repositories,
-        "engine": {"commit": git(engine, "rev-parse", "HEAD"), "clean": git(engine, "status", "--porcelain", "--", ".") == ""},
+        "engine": pins["engine_start"],
         "delegation": {"repository": d.DELEGATION_REPOSITORY, "commit": args.delegation_sha,
                        "covers": [r for r, x in delegations.items() if x is not None]},
         "populations": populations,

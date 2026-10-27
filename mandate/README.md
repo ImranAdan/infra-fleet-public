@@ -394,14 +394,24 @@ itself.
   population queries, each item's comments, and the exact calls the real
   `shadow.inputs()` makes. They all pass through one recorder around `gh`, and
   each output is stored under its SHA-256 with a `manifest.json`. The manifest
-  also records the collection time, the `gh` version, repository IDs, the
-  engine commit and the delegation pin. It only reads.
+  also records the `gh` version, repository IDs and the delegation pin. It
+  only reads. Collection protocol 2 starts only from clean engine and tooling
+  checkouts, records both commits, records the start and finish times, and
+  fails if the engine commit changed during the run.
 - **`report.py`** replays an export offline. `gh` is answered from the export
   alone, and a missing call is an error. It recomputes the populations, which
   must equal the manifest's, and decides each pull request with the real
   `shadow.inputs()` and `decide()`. It reports the confusion matrix against
   the historical path, the unsafe-authorization count (it exits 1 on any) and
-  the disagreements for manual review. Actions by the shared owner login are
+  the disagreements for manual review. Coverage is reported per repository:
+  pull requests, valid delegations, configuration refusals, replay errors,
+  rows with missing observations, and the authority-class rows it could
+  evaluate. A row refused for want of a delegation tests no authorization
+  rule, so it never counts toward a safety rate; with nothing evaluable the
+  rate is N/A. Each item replays inside its own error boundary, and a missing
+  or failed recorded response becomes a counted error row. Everything except
+  label membership is provider state at collection time: a counterfactual
+  replay, not an as-of-merge snapshot. Actions by the shared owner login are
   attributed as "owner-principal, human/agent attribution unknown".
 
 ```bash
