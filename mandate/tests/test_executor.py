@@ -8,6 +8,7 @@ nothing here is evidence that a live merge works.
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -118,11 +119,14 @@ def main() -> int:
 
     # Shadow mode, an unregistered proposer and the owner as an agent never merge.
     shadow = d.parse(LIVE.replace('mode = "enforce"', 'mode = "shadow"'), REPO, POLICY)
-    colliding = d.parse(LIVE.replace(f'agents = ["{AGENT}"]', f'agents = ["{AGENT}", "ImranAdan"]'), REPO, POLICY)
+    # parse() refuses a live delegation listing the owner as an agent; the
+    # executor refuses one built any other way too.
+    colliding = dataclasses.replace(DELEG, agents=(AGENT, "ImranAdan"))
     for name, hub, delegation, want in (
         ("shadow", FakeGitHub(), shadow, "SHADOW"),
         ("stranger", FakeGitHub("someone"), DELEG, "PROPOSER_UNREGISTERED"),
-        ("owner", FakeGitHub("ImranAdan"), colliding, "PROPOSER_UNREGISTERED"),
+        ("owner", FakeGitHub("ImranAdan"), DELEG, "PROPOSER_UNREGISTERED"),
+        ("collision", FakeGitHub("ImranAdan"), colliding, "PROPOSER_UNREGISTERED"),
     ):
         git = FakeGit()
         code, _ = run(hub, git, delegation=delegation)
@@ -164,6 +168,12 @@ def main() -> int:
     hub, git = FakeGitHub(), FakeGit()
     hub.refuse = [405]
     assert run(hub, git) == ("NOT_MERGED", "HTTP 405 ") and hub.merges == []
+
+    # Refused because someone else merged a newer head meanwhile: unmanaged.
+    hub, git = FakeGitHub(), FakeGit()
+    hub.refuse = [409]
+    hub.on_read[3] = lambda pr: pr.update(state="closed", merged=True, merge_commit_sha="d" * 40, head={"sha": "c" * 40})
+    assert run(hub, git) == ("UNMANAGED_MERGE", "d" * 40) and hub.merges == []
 
     # A merge Mandate did not make is reported as unmanaged.
     hub, git = FakeGitHub(), FakeGit()

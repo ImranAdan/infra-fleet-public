@@ -420,8 +420,40 @@ python3 mandate/tests/test_decision.py
 python3 mandate/tests/test_shadow.py
 python3 mandate/tests/test_ledger.py
 python3 mandate/tests/test_receipt.py
+python3 mandate/tests/test_executor.py
 python3 mandate/tests/test_acceptance.py
 ```
+
+## Merge executor (inactive)
+
+`mandate.executor.execute()` handles one wake for one pull request. Nothing
+runs it yet: no workflow calls it and no token exists for it. Its tests run
+against transport fakes, so they are no evidence that a live merge works.
+
+Each wake starts from the provider, never from an event payload or an earlier
+decision:
+
+1. Read the PR. One merged under its own trailers (an AUTHORIZE receipt about
+   that PR at its merged head) is `ALREADY_MERGED`, one merged any other way
+   is `UNMANAGED_MERGE`, and a closed one is `CLOSED`.
+2. Refuse with `SHADOW` unless the delegation is in enforce mode, and with
+   `PROPOSER_UNREGISTERED` unless the PR's author is one of its agents (never
+   the owner).
+3. Read the PR's latest receipt and decide. A refusal is recorded and
+   returned as `REFUSED`.
+4. Only after an AUTHORIZE, mint a merge-only token, then re-read the PR and
+   the enforcement snapshot. `trailers()` revalidates them (`HEAD_CHANGED`,
+   `BASE_CHANGED`, `ENFORCEMENT_DRIFT`, or `ENFORCEMENT_MISSING` without a
+   snapshot) and records the revision.
+5. Squash-merge exactly that head with the trailers, then read the PR back:
+   `MERGED` with the merge SHA, `NOT_MERGED` with GitHub's refusal, or
+   `UNMANAGED_MERGE` if another head was merged meanwhile.
+
+`STALE_DECISION` decides again. An expired token (401) is replaced and the
+whole subject decided again. A lost merge response is settled by the
+read-back, never by a second request. After three unstable attempts the wake
+is `UNAVAILABLE`, and the next wake retries. The result is returned, not
+recorded: lifecycle reconciliation starts from a `MERGED` result's SHA.
 
 ## Acceptance matrix
 
