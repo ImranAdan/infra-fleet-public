@@ -367,7 +367,9 @@ input is built from:
   A Dependabot requirement bump may keep an inline comment, unchanged. The
   legacy gate compares the PR's merge base with its head, and the merge
   worker installs PyYAML from `.claude/skills/merge-gate/requirements.txt`
-  with hashes.
+  with hashes, on `ubuntu-24.04`, whose system Python 3.12 has a pinned
+  wheel. Validate Automation Workflows repeats that install on the same
+  runner for every change to the gate, its pins or the workflows.
 - **Evidence:** the head's check runs, each correlated to its workflow run.
 - **Policy:** the owner's delegation at a pinned commit.
 

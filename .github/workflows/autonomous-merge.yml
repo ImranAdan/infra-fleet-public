@@ -44,7 +44,8 @@ jobs:
   merge:
     # mandate: no-receipts (it records no Mandate receipts yet; drop
     # this before the merge worker records, see mandate/README.md)
-    runs-on: ubuntu-latest
+    # Pinned: the parser's hashes cover this image's system Python (3.12).
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out trusted merge code
@@ -59,7 +60,7 @@ jobs:
         run: |
           python3 -m pip install --quiet --break-system-packages --require-hashes \
             --only-binary=:all: -r .claude/skills/merge-gate/requirements.txt
-          python3 -c "import yaml"
+          python3 -c "import sys, yaml; print(sys.version.split()[0], yaml.__version__, yaml.__file__)"
 
       - name: Test the candidate selector and merge gate
         run: |
