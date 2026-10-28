@@ -13,10 +13,20 @@ permissions:
 
 jobs:
   validate-workflows:
-    runs-on: ubuntu-latest
+    # The merge worker's runner: its system Python must take the pinned wheel.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      
+
+      # The merge worker's install, so every change to the gate or its pins
+      # proves the parser installs from those hashes on the worker's runner.
+      # It runs first: yamllint below would otherwise install an unpinned PyYAML.
+      - name: Install the workflow parser
+        run: |
+          python3 -m pip install --quiet --break-system-packages --require-hashes \
+            --only-binary=:all: -r .claude/skills/merge-gate/requirements.txt
+          python3 -c "import yaml"
+
       - name: Validate YAML syntax
         run: |
           echo "🔍 Validating workflow YAML syntax..."
