@@ -372,9 +372,25 @@ input is built from:
   runner for every change to the gate, its pins or the workflows.
 - **Evidence:** the head's check runs, each correlated to its workflow run.
 - **Policy:** the owner's delegation at a pinned commit.
+- **Facts:** read from the change's own files at the exact head, never the
+  base or a branch. `lockfile_sibling` (the `dependency-manifest` class) is
+  true when every changed dependency manifest is resolved in the change:
+  - a changed `pyproject.toml`, `package.json` or `go.mod` has its `uv.lock`,
+    `package-lock.json` or `go.sum` changed in the same directory;
+  - a changed lockfile still exists;
+  - a `requirements*.txt` file, which is its own lockfile, names one exact
+    version per requirement (`==`, no wildcard). That applies to the file
+    itself and to every file it includes with `-r` or `-c`, which must be
+    inside the repository.
 
-Facts such as permission deltas aren't computed yet, so classes that need them
-never match. Mechanical refusals belong to the live merge executor.
+  Any other option (`-e`, another index) or an unreadable file makes it
+  false. A change with no manifest claims no fact.
+
+The other facts (permission, secret and trigger deltas, author, signatures)
+aren't computed yet, so classes that need them never match. Mechanical
+refusals, including a proposer the delegation doesn't register, belong to the
+live merge executor. Receipts and `decision.json` record the adapter version
+(2 since `lockfile_sibling`).
 
 `.github/workflows/mandate-shadow.yml` runs it from the default branch after
 each Intent Gate run (not the retarget variant, whose producer no class

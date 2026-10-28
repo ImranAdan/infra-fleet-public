@@ -6,10 +6,11 @@ it never merges, labels, comments or approves, so its output grants nothing.
 
     python3 -m mandate.shadow ImranAdan/infra-fleet-public 222 --delegation-sha <sha>
 
-ponytail: facts (permission/secret/trigger deltas, signatures) are not
-computed yet, so classes that match on them never match and fail closed; and
-mechanical refusals (head/base drift, reviews, enforcement, ledger) belong to
-the live merge executor, so ``blocking`` is empty here.
+It proves ``lockfile_sibling`` (see ``facts()``). ponytail: the other facts
+(permission/secret/trigger deltas, author, signatures) are not computed yet,
+so classes that match on them never match and fail closed; and mechanical
+refusals (head/base drift, reviews, enforcement, ledger, an unregistered
+proposer) belong to the live merge executor, so ``blocking`` is empty here.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import argparse
 import datetime
 import json
 import os
+import posixpath
 import re
 import sys
 from pathlib import Path
@@ -29,7 +31,12 @@ from mandate import evidence as e
 from mandate import gate
 from mandate import receipt as rc
 
-ADAPTER_VERSION = 1
+ADAPTER_VERSION = 2
+# Each manifest's resolved lockfile, by ecosystem.
+LOCKFILES = {"pyproject.toml": "uv.lock", "package.json": "package-lock.json", "go.mod": "go.sum"}
+REQUIREMENTS = re.compile(r"(?:^|/)requirements[^/]*\.txt$")
+EXACT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[^\]]*\])?\s*===?\s*[^\s*,;<>=!~]+")
+INCLUDE = re.compile(r"(?:-r|-c|--requirement|--constraint)(?:\s+|=)(\S+)$")
 POLICY = Path(".claude/skills/merge-gate/decision-policy.toml")
 
 
@@ -78,6 +85,51 @@ def findings(
     return tuple(out)
 
 
+def _pinned(path: str, read, seen: set[str]) -> bool:
+    """A requirements file at the head, and every file it includes, names one
+    exact version per requirement. Any option other than an include or a hash
+    is unproven, and so is an include outside the repository."""
+    if path in seen:
+        return True
+    seen.add(path)
+    text = read(path)
+    if text is None:
+        return False
+    for line in re.sub(r"\\\n", " ", text).splitlines():
+        line = re.sub(r"(?:^|\s)#.*", "", line)
+        line = re.sub(r"\s--hash[=\s]\S+", "", " " + line).strip()
+        include = INCLUDE.match(line)
+        if include:
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(path), include.group(1)))
+            if target.startswith("../") or not _pinned(target, read, seen):
+                return False
+        elif line and not EXACT.fullmatch(line.split(";", 1)[0].strip()):
+            return False
+    return True
+
+
+def facts(found: tuple[tuple[str, str], ...], paths: list[str], read_head) -> dict[str, Any]:
+    """Class facts proven from this change's files at the head; a fact it
+    cannot prove is absent or false, so its classes refuse.
+
+    ``lockfile_sibling``: every changed dependency manifest is resolved here.
+    A manifest whose ecosystem has a lockfile changes it alongside, a lockfile
+    still exists, and a requirements file (its own lockfile) pins exactly.
+    """
+    changed = set(paths)
+
+    def resolved(path: str) -> bool:
+        parent, name = posixpath.split(path)
+        if name in LOCKFILES:  # the lockfile is a manifest too, so it is read below
+            return posixpath.join(parent, LOCKFILES[name]) in changed
+        if REQUIREMENTS.search(path):
+            return _pinned(path, read_head, set())
+        return name in LOCKFILES.values() and read_head(path) is not None
+
+    manifests = sorted({p for c, p in found if c == "dependency-manifest"})
+    return {"lockfile_sibling": all(map(resolved, manifests))} if manifests else {}
+
+
 def inputs(repository: str, number: int, delegation: d.Delegation) -> m.DecisionInput:
     pr = json.loads(_gh("api", f"repos/{repository}/pulls/{number}"))
     head, base = pr["head"]["sha"], pr["base"]["sha"]
@@ -106,11 +158,13 @@ def inputs(repository: str, number: int, delegation: d.Delegation) -> m.Decision
         e.normalize(c, runs.get((c.get("check_suite") or {}).get("id")), subject)
         for c in checks
     )
+    read_head = gate.read_at(repository, head)
+    found = findings(diff, paths, delegation, gate.read_at(repository, base), read_head)
     return m.DecisionInput(
         delegation=delegation,
         subject=subject,
-        findings=findings(diff, paths, delegation, gate.read_at(repository, base), gate.read_at(repository, head)),
-        facts={},
+        findings=found,
+        facts=facts(found, paths, read_head),
         records=records,
         blocking=(),
     )
