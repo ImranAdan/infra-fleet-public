@@ -92,6 +92,40 @@ PATH_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 DEPENDABOT_VERSION_ONLY = False
 
 WORKFLOW = re.compile(r"^\.github/(?:workflows|actions)/.+\.ya?ml$")
+AUTOMATION = re.compile(r"^\.github/(?:workflows|actions)/")
+# A diff line cannot follow YAML: an anchor, alias, tag, merge key, block
+# scalar or explicit key can each carry a permission value off its key's line.
+# So any workflow line with a bare write, a permissions key or an alias (any
+# anchor name YAML allows) counts.
+PERMISSION = re.compile(
+    r"""(?:^|[\s{,])['"]?permissions['"]?\s*:|\bwrite\b|(?:^|[:,\[{]\s*|-\s+)\*[^\s,\[\]{}]"""
+)
+# A double-quoted scalar decodes escapes ("wri\x74e" is write), and one left
+# open continues on the next line, as does an explicit tag's value: what such
+# a line means is not on it, so it counts as a permission change too.
+QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"')
+ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)")
+TAG = re.compile(r"(?:^|:\s+|-\s+|(?<![${])[\[{,]\s*)!\S")
+
+
+def _decoded(text: str) -> str:
+    """The line with each double-quoted scalar's escapes decoded."""
+    return QUOTED.sub(
+        lambda m: ESCAPE.sub(
+            lambda e: chr(min(int(e.group(1)[1:], 16), 0x10FFFF)) if len(e.group(1)) > 1 else e.group(1),
+            m.group(0),
+        ),
+        text,
+    )
+
+
+def _unseen_value(text: str) -> bool:
+    """An open double-quoted scalar or an explicit tag: the value is elsewhere."""
+    rest = re.sub(r"'(?:[^']|'')*'", "", QUOTED.sub("", text))
+    return '"' in rest or bool(TAG.search(text))
+# Any line naming the secrets context, in any case: toJSON(secrets), an
+# operand after ||, or an expression split across lines all name it.
+SECRETS = re.compile(r"\bsecrets\b", re.I)
 RBAC_FILE = re.compile(r"(?:^|/)(?:rbac|clusterrole|rolebinding|role)[^/]*\.ya?ml$", re.I)
 DOCKERFILE = re.compile(r"(^|/)Dockerfile[^/]*$")
 YAML = re.compile(r"\.ya?ml$")
@@ -323,7 +357,12 @@ def _line_findings(path: str, line: str) -> list[Finding]:
     findings: list[Finding] = []
 
     if WORKFLOW.search(path):
-        if re.match(r"(?:permissions:|[a-z-]+:\s*write\b)", text):
+        # A comment line sets nothing, but GitHub evaluates ${{ }} anywhere,
+        # even in a script's comment.
+        comment = text.startswith("#") and "${{" not in text
+        if not comment and (
+            PERMISSION.search(text) or PERMISSION.search(_decoded(text)) or _unseen_value(text)
+        ):
             category = "permission-added" if added else "permission-removed"
             findings.append(
                 _finding(category, f"{verb} a workflow permission in {path}: {text[:80]}")
@@ -340,7 +379,7 @@ def _line_findings(path: str, line: str) -> list[Finding]:
             findings.append(
                 _finding("merge-authority", f"adds merge-control logic in {path}: {text[:80]}")
             )
-        if added and re.search(r"(?:\$\{\{\s*secrets(?:\.|\s*\[)|\bsecrets:\s*inherit\b)", text):
+        if added and not comment and SECRETS.search(text):
             findings.append(
                 _finding("credential", f"adds a credential reference in {path}: {text[:80]}")
             )
@@ -372,6 +411,190 @@ def _line_findings(path: str, line: str) -> list[Finding]:
     return findings
 
 
+# Only top-level workflow files run; their parsed versions decide what changed.
+WORKFLOW_FILE = re.compile(r"^\.github/workflows/[^/]+\.ya?ml$")
+PRIVILEGED_EVENTS = frozenset({"pull_request_target", "issue_comment", "workflow_run"})
+LEVELS = {"none": 0, "read": 1, "write": 2}
+_ABSENT = object()
+
+
+def strict_loader() -> Any:
+    """A YAML SafeLoader whose duplicate and merge keys raise: what they mean
+    depends on the parser, and GitHub does not resolve merge keys."""
+    import yaml
+
+    class Strict(yaml.SafeLoader):
+        def construct_mapping(self, node: Any, deep: bool = False) -> Any:
+            # A merge key (<<) has no constructor here, so building it raises.
+            keys = [repr(self.construct_object(k, deep=True)) for k, _ in node.value]
+            if len(keys) != len(set(keys)):
+                raise ValueError("duplicate key")
+            return super().construct_mapping(node, deep)
+
+    return Strict
+
+
+def read_at(repo: str, ref: str) -> Callable[[str], str | None]:
+    """A file's text at one commit; None when it cannot be read."""
+
+    def read(path: str) -> str | None:
+        try:
+            return gh("api", "-H", "Accept: application/vnd.github.raw+json",
+                      f"repos/{repo}/contents/{urllib.parse.quote(path)}?ref={ref}")
+        except subprocess.CalledProcessError:
+            return None
+
+    return read
+
+
+def _level(value: Any, scope: str, side: str) -> int:
+    """A permissions value's level for one scope. Absent is the repository
+    default, which may grant write; an unknown value counts as least before
+    and most after."""
+    if value is _ABSENT:
+        return 2
+    if value in ("read-all", "write-all"):
+        return 1 if value == "read-all" else 2
+    if isinstance(value, dict) and all(isinstance(v, str) and v in LEVELS for v in value.values()):
+        return LEVELS[value.get(scope, "none")]
+    return 0 if side == "base" else 2
+
+
+def _jobs(doc: dict[str, Any]) -> tuple[Any, dict[Any, Any]]:
+    top = doc.get("permissions", _ABSENT)
+    jobs = doc.get("jobs") if isinstance(doc.get("jobs"), dict) else {}
+    return top, {k: v.get("permissions", top) if isinstance(v, dict) else None for k, v in jobs.items()}
+
+
+def _secret_reads(doc: Any) -> dict[str, int]:
+    """Each string holding an expression that names the secrets context, and each inherit."""
+    found: dict[str, int] = {}
+    stack = [doc]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if item.get("secrets") == "inherit":
+                found["secrets: inherit"] = found.get("secrets: inherit", 0) + 1
+            stack += [*item.keys(), *item.values()]
+        elif isinstance(item, list):
+            stack += item
+        elif isinstance(item, str) and "${{" in item and re.search(r"\bsecrets\b", item, re.I):
+            key = " ".join(item.split())
+            found[key] = found.get(key, 0) + 1
+    return found
+
+
+def _events(doc: dict[str, Any]) -> dict[str, Any] | None:
+    """Each trigger and its configuration (source workflows, branch and
+    activity filters), or None when they cannot be read. YAML 1.1 reads on as True."""
+    on = doc.get("on", doc.get(True))
+    if on is None or isinstance(on, str):
+        return {on: None} if on else {}
+    if isinstance(on, list) and all(isinstance(e, str) for e in on):
+        return dict.fromkeys(on)
+    if isinstance(on, dict) and all(isinstance(e, str) for e in on):
+        return dict(on)
+    return None
+
+
+def workflow_findings(path: str, base: str | None, head: str) -> list[Finding]:
+    """What one workflow's head version grants beyond its base, read from the
+    parsed YAML, so no spelling, alias, escape or line break can hide it. A
+    head that cannot be parsed counts as a permission change; ``base`` None is
+    a new workflow."""
+    try:  # a missing parser (ImportError) fails closed here too
+        new = yaml_load(head)
+        if not isinstance(new, dict):
+            raise ValueError("not a mapping")
+    except Exception as exc:  # noqa: BLE001 - any parser failure: the effect is unknown
+        return [_finding("permission-added", f"cannot parse {path}: {type(exc).__name__}")]
+    try:
+        old = {"permissions": {}} if base is None else yaml_load(base)
+    except Exception:  # noqa: BLE001 - an unreadable base grants nothing to compare with
+        old = None
+    if not isinstance(old, dict):
+        old = {"permissions": {}}
+    findings: list[Finding] = []
+    old_top, old_jobs = _jobs(old)
+    new_top, new_jobs = _jobs(new)
+    values = [old_top, new_top, *old_jobs.values(), *new_jobs.values()]
+    scopes = {"*", *(k for v in values if isinstance(v, dict) for k in v if isinstance(k, str))}
+    compared = new_jobs or {"(workflow)": new_top}
+    widened = sorted(
+        str(job) for job, value in compared.items()
+        if any(_level(value, s, "head") > _level(old_jobs.get(job, old_top), s, "base") for s in scopes)
+    )
+    if widened:
+        findings.append(_finding("permission-added", f"widens workflow permissions in {path}: {', '.join(widened)}"))
+    before = _secret_reads(old)
+    if any(n > before.get(k, 0) for k, n in _secret_reads(new).items()):
+        findings.append(_finding("credential", f"reads more secrets in {path}"))
+    events, prior = _events(new), _events(old) or {}
+    if events is None or any(e in events and (e not in prior or events[e] != prior[e]) for e in PRIVILEGED_EVENTS):
+        findings.append(_finding("merge-authority", f"adds or changes a privileged workflow trigger in {path}"))
+    return findings
+
+
+# Aliases share nodes, so a document can be small yet huge or endless when
+# followed: bound it before anything walks or compares it.
+EXPANDED_LIMIT = 100_000
+
+
+def _expanded_size(doc: Any) -> int:
+    """Nodes in ``doc`` with its aliases expanded; a cycle or more than
+    EXPANDED_LIMIT nodes raises. Linear in the distinct nodes."""
+    sizes: dict[int, int] = {}
+    path: set[int] = set()
+
+    def size(node: Any) -> int:
+        if not isinstance(node, (dict, list)):
+            return 1
+        key = id(node)
+        if key in path:
+            raise ValueError("recursive alias")
+        if key not in sizes:
+            path.add(key)
+            children = [*node.keys(), *node.values()] if isinstance(node, dict) else node
+            sizes[key] = 1 + sum(size(child) for child in children)
+            path.discard(key)
+            if sizes[key] > EXPANDED_LIMIT:
+                raise ValueError(f"over {EXPANDED_LIMIT} nodes with aliases expanded")
+        return sizes[key]
+
+    return size(doc)
+
+
+def yaml_load(text: str) -> Any:
+    import yaml
+
+    doc = yaml.load(text, Loader=strict_loader())  # noqa: S506 (SafeLoader subclass)
+    _expanded_size(doc)
+    return doc
+
+
+def workflow_changes(
+    diff: str, read_base: Callable[[str], str | None], read_head: Callable[[str], str | None]
+) -> list[Finding]:
+    """workflow_findings() for each workflow file the diff adds, changes or
+    moves in; a version that cannot be read counts as a permission change."""
+    found: list[Finding] = []
+    for chunk in re.split(r"(?m)^(?=diff --git )", diff):
+        header = re.match(r"diff --git a/(.*) b/(.*)$", chunk, re.M)
+        if not header or not WORKFLOW_FILE.search(header.group(2)):
+            continue
+        if re.search(r"(?m)^deleted file mode ", chunk):
+            continue  # a removed workflow grants nothing
+        old, new = header.groups()
+        added = bool(re.search(r"(?m)^new file mode ", chunk)) or not WORKFLOW_FILE.search(old)
+        base = None if added else read_base(old)
+        head = read_head(new)
+        if head is None or (base is None and not added):
+            found.append(_finding("permission-added", f"cannot read {new} at both base and head"))
+            continue
+        found += workflow_findings(new, base, head)
+    return list(dict.fromkeys(found))
+
+
 def scope_findings(diff: str) -> list[Finding]:
     """Return structured decision findings from a unified diff."""
     findings: list[Finding] = []
@@ -390,6 +613,10 @@ def scope_findings(diff: str) -> list[Finding]:
             old, path = header.group(1), header.group(2)
             for changed in dict.fromkeys((old, path)):
                 findings.extend(_path_findings(changed))
+            if AUTOMATION.search(path) and not AUTOMATION.search(old):
+                # A rename shows only changed lines, so the moved file's
+                # triggers and permissions are unseen.
+                findings.append(_finding("merge-authority", f"moves {old} into automation unseen: {path}"))
             continue
         if not in_hunk:
             if line.startswith("rename from "):
@@ -711,7 +938,7 @@ VERSION_LINES = (
         re.I,
     ),
     re.compile(r"^(?:-\s*)?uses:\s*(?P<key>[^\s@]+)@[0-9a-f]{40}(?:\s+#\s*\S+)?$"),
-    re.compile(r"^(?P<key>[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]*\])?)==\d[^\s;#]*$"),
+    re.compile(r"^(?P<key>[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]*\])?)==\d[^\s;#]*(?P<comment>\s+#.*)?$"),
     re.compile(r'^"(?P<key>[@A-Za-z0-9_./-]+)":\s*"[\^~]?\d[\w.+-]*",?$'),
     re.compile(r'^(?P<key>version)\s*=\s*"[^"]+"$'),
 )
@@ -720,7 +947,8 @@ VERSION_LINES = (
 def _version_key(text: str) -> str | None:
     for pattern in VERSION_LINES:
         if match := pattern.match(text.strip()):
-            return match.group("key")
+            # An inline comment is part of the key: kept as is, never changed.
+            return match.group("key") + (match.groupdict().get("comment") or "")
     return None
 
 
@@ -853,7 +1081,7 @@ def main(argv: list[str], policy_path: Path) -> int:
             "-R",
             repo,
             "--json",
-            "state,isDraft,mergeStateStatus,body,headRefOid,headRefName,author,labels",
+            "state,isDraft,mergeStateStatus,body,baseRefOid,headRefOid,headRefName,author,labels",
         )
     )
     blocked: list[str] = []
@@ -929,7 +1157,12 @@ def main(argv: list[str], policy_path: Path) -> int:
     if silent:
         blocked.append(f"{silent} thread(s) resolved without a reply from {author}")
     diff = gh("pr", "diff", number, "-R", repo)
-    findings = scope_findings(diff)
+    merge_base = gh(
+        "api", f"repos/{repo}/compare/{pr['baseRefOid']}...{sha}", "--jq", ".merge_base_commit.sha"
+    ).strip()
+    findings = list(dict.fromkeys(
+        scope_findings(diff) + workflow_changes(diff, read_at(repo, merge_base), read_at(repo, sha))
+    ))
     bump_failures = ["not Dependabot"]
     if DEPENDABOT_VERSION_ONLY and author in DEPENDABOT_AUTHORS:
         commits = gh_json_lines(

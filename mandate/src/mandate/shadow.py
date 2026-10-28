@@ -19,7 +19,6 @@ import datetime
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -47,23 +46,6 @@ def _lines(*args: str) -> list[dict[str, Any]]:
     ]
 
 
-def _reader(repository: str, ref: str):
-    """Read files at the trusted base commit; a missing file is None."""
-
-    def read(path: str) -> str | None:
-        try:
-            return _gh(
-                "api",
-                "-H",
-                "Accept: application/vnd.github.raw+json",
-                f"repos/{repository}/contents/{path}?ref={ref}",
-            )
-        except subprocess.CalledProcessError:
-            return None
-
-    return read
-
-
 def _per_file(diff: str) -> dict[str, str]:
     """The unified diff split by file, keyed by its new path; a rename's old
     path is also a key (with the same chunk), so a moved file keeps its past."""
@@ -77,9 +59,13 @@ def _per_file(diff: str) -> dict[str, str]:
 
 
 def findings(
-    diff: str, paths: list[str], delegation: d.Delegation, read
+    diff: str, paths: list[str], delegation: d.Delegation, read, read_head=lambda path: None, read_from=None
 ) -> tuple[tuple[str, str], ...]:
-    """(category, path) per changed path, classified from that file's own diff.
+    """(category, path) per changed path, classified from that file's own diff
+    and, for a workflow, from its parsed versions (``read_from`` at the merge
+    base, default ``read``; ``read_head`` at the head; a workflow it cannot
+    read counts as a permission change). Reserved surfaces are read with
+    ``read``, at the trusted base.
 
     A file in the diff but not in ``paths`` still contributes its findings.
     """
@@ -87,6 +73,7 @@ def findings(
     out: list[tuple[str, str]] = []
     for path in dict.fromkeys([*paths, *chunks]):
         cats = {c for c, _ in gate.scope_findings(chunks.get(path, ""))}
+        cats |= {c for c, _ in gate.workflow_changes(chunks.get(path, ""), read_from or read, read_head)}
         cats |= {c for c, _ in d.reserved_findings(delegation, [path], read)}
         out += [(c, path) for c in sorted(cats)] or [("unclassified", path)]
     return tuple(out)
@@ -103,6 +90,10 @@ def inputs(repository: str, number: int, delegation: d.Delegation) -> m.Decision
         )
     ]
     diff = _gh("pr", "diff", str(number), "-R", repository)
+    # The diff runs from the merge base, so the parsed comparison does too.
+    merge_base = _gh(
+        "api", f"repos/{repository}/compare/{base}...{head}", "--jq", ".merge_base_commit.sha"
+    ).strip()
     checks = _lines(
         f"repos/{repository}/commits/{head}/check-runs?per_page=100",
         "--jq",
@@ -123,7 +114,8 @@ def inputs(repository: str, number: int, delegation: d.Delegation) -> m.Decision
     return m.DecisionInput(
         delegation=delegation,
         subject=subject,
-        findings=findings(diff, paths, delegation, _reader(repository, base)),
+        findings=findings(diff, paths, delegation, gate.read_at(repository, base), gate.read_at(repository, head),
+                          gate.read_at(repository, merge_base)),
         facts={},
         records=records,
         blocking=(),

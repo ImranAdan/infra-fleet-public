@@ -7,7 +7,9 @@ decide() are the real code. Nothing here calls GitHub.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -37,7 +39,10 @@ def diff(*paths: str) -> str:
     )
 
 
-def provider(paths: tuple[str, ...], *, head_check: str = HEAD):
+def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requested=None, merge_base=BASE):
+    """Canned REST responses. ``files`` maps (ref, path) to text; the server
+    decodes a contents path, so ``%41`` names ``A``. ``requested`` collects
+    each contents URL asked for."""
     check = {
         "id": 70,
         "name": INTENT,
@@ -70,8 +75,16 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD):
             return json.dumps(check)
         if "/actions/runs" in joined:
             return json.dumps(run)
+        if f"/compare/{BASE}...{HEAD}" in joined:
+            return merge_base + "\n"
         if "/contents/" in joined:
-            raise shadow.subprocess.CalledProcessError(1, "gh")
+            url = next(a for a in args if "/contents/" in a)
+            (requested if requested is not None else []).append(url)
+            path, _, query = url.split("/contents/", 1)[1].partition("?")
+            text = (files or {}).get((query.removeprefix("ref="), urllib.parse.unquote(path)))
+            if text is None:
+                raise subprocess.CalledProcessError(1, "gh")
+            return text
         if joined.endswith("/pulls/1"):
             return json.dumps({"head": {"sha": HEAD}, "base": {"sha": BASE}})
         raise AssertionError(f"unexpected gh call: {joined}")
@@ -80,7 +93,7 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD):
 
 
 def decide(paths: tuple[str, ...], **kwargs):
-    shadow._gh = provider(paths, **kwargs)
+    gate.gh = provider(paths, **kwargs)
     return shadow.m.decide(shadow.inputs(REPO, 1, DELEGATION))
 
 
@@ -157,6 +170,28 @@ def main() -> int:
         "credential",
         "docs/decisions/0009-x.md",
     ) not in found, found
+
+    # Revision reads quote the path: a workflow named x%41.yml is read as itself,
+    # not as xA.yml, a benign file the same PR may add. Only the parsed
+    # comparison sees the trigger, since the canned diff shows no workflow text.
+    quiet = "on: pull_request\njobs: {}\n"
+    loud = "on: pull_request_target\npermissions: write-all\njobs: {}\n"
+    odd, benign = ".github/workflows/x%41.yml", ".github/workflows/xA.yml"
+    files = {(BASE, odd): quiet, (HEAD, odd): loud, (BASE, benign): quiet, (HEAD, benign): quiet}
+    requested: list[str] = []
+    quoted = decide((odd,), files=files, requested=requested)
+    want = f"repos/{REPO}/contents/.github/workflows/x%2541.yml"
+    assert requested[:2] == [f"{want}?ref={BASE}", f"{want}?ref={HEAD}"], requested
+    assert (quoted.outcome, "RESERVED:merge-authority" in codes(quoted)) == ("ESCALATE", True), codes(quoted)
+
+    # Workflows are compared from the merge base, as the diff is: the base
+    # branch already having the PR's new trigger filter hides nothing.
+    fork = "e" * 40
+    run = "on:\n  workflow_run:\n    workflows: [CI]\n    branches: [{}]\njobs: {{}}\n"
+    path = ".github/workflows/result.yml"
+    moved = decide((path,), merge_base=fork, files={
+        (fork, path): run.format("main"), (BASE, path): run.format("release"), (HEAD, path): run.format("release")})
+    assert "RESERVED:merge-authority" in codes(moved), codes(moved)
 
     # The summary states that shadow grants nothing.
     assert "grants nothing" in shadow.summary(

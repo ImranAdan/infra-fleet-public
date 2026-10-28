@@ -1,0 +1,12 @@
+# The merge gate parses workflow files to compare effective permissions
+# (mandate.gate.workflow_changes). The merge worker installs this with
+# --require-hashes --only-binary=:all: on ubuntu-24.04, whose system Python is
+# 3.12: the hashes are the CPython 3.12 manylinux wheels (x86_64 for the
+# runner, aarch64 for arm64 containers) and the sdist. Without the parser
+# every workflow change fails closed. Validate Automation Workflows runs the
+# same install on the same runner, so a pin the worker cannot install fails
+# the pull request that changes it.
+pyyaml==6.0.3 \
+    --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc \
+    --hash=sha256:9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28 \
+    --hash=sha256:d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f

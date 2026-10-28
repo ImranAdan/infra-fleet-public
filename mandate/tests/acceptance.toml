@@ -1,0 +1,483 @@
+# Acceptance matrix for the Mandate decision engine (run: test_acceptance.py).
+#
+# One row per case. Matrix rows follow the acceptance plan's order; evasion rows
+# try to hide an authority change from the scope classifier; regression rows
+# pin defects found in review. Each row's fixture returns what it observed,
+# keyed by situation, and `expect` holds the literal values. `pending` lists
+# behaviour the case needs that is not built yet: such a row never PASSes.
+# `live` is credited only by linked run evidence.
+
+# --- matrix -------------------------------------------------------------------
+
+[[case]]
+slug = "routine-dependency-bump"
+kind = "matrix"
+title = "Authorized routine change: a verified Dependabot patch bump of a pinned action"
+threat = "none: positive control"
+requirement = "a delegated change with proven facts and evidence authorizes"
+fixture = "routine_dependency_bump"
+expect = { "Dependabot provenance" = "version-only", "routine bump with intent evidence" = "AUTHORIZE", "same bump, intent evidence missing" = "VERIFY EVIDENCE_REQUIRED:intent-gate" }
+pending = [
+  "fact extraction: permission, secret and trigger deltas proven from the diff (the fixture supplies them)",
+  "merge executor: merges at the evaluated head and reads the merge back",
+  "lifecycle verification: push workflows ran on the merge commit",
+]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "missing-runtime-evidence"
+kind = "matrix"
+title = "Missing evidence: admission policy change without runtime acceptance"
+threat = "insufficient evidence"
+requirement = "a class's every required producer must succeed on this head"
+fixture = "missing_runtime_evidence"
+expect = { "intent evidence only" = "VERIFY EVIDENCE_REQUIRED:runtime-acceptance", "runtime acceptance on this head" = "AUTHORIZE", "runtime acceptance on another head" = "VERIFY EVIDENCE_NOT_APPLICABLE:runtime-acceptance" }
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "stale-head"
+kind = "matrix"
+title = "Stale head: a push after AUTHORIZE, before merge"
+threat = "head drift"
+requirement = "no merge of an unevaluated head"
+fixture = "stale_head"
+expect = { "evidence from the evaluated head" = "VERIFY EVIDENCE_NOT_APPLICABLE:intent-gate", "the executor observed the push" = "BLOCK HEAD_CHANGED", "reconcile after the push" = "refused CONTRACT_ERROR", "old head's check after the push" = "failure CONTRACT_ERROR", "trailers for a decision on the new head" = "refused HEAD_CHANGED" }
+pending = ["merge executor: passes the evaluated head as the merge's expected SHA"]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "claimed-evidence-only"
+kind = "matrix"
+title = "Claimed evidence only: Verification prose in the PR body, required check absent"
+threat = "forged evidence"
+requirement = "prose never satisfies a requirement (the plan's CHECK_MISSING is the registry's EVIDENCE_REQUIRED)"
+fixture = "claimed_evidence_only"
+expect = { "Verification prose, required check absent" = "VERIFY EVIDENCE_REQUIRED:intent-gate", "prose is an input" = "no" }
+
+[[case]]
+slug = "forged-check-source"
+kind = "matrix"
+title = "Forged proof: the PR adds a workflow that emits the required check's name"
+threat = "forged evidence"
+requirement = "workflow and event correlation, not the check name, binds a producer"
+fixture = "forged_check_source"
+expect = { "forged check alone" = "BLOCK CHECK_WRONG_SOURCE EVIDENCE_REQUIRED:intent-gate", "forged check beside a genuine one" = "BLOCK CHECK_WRONG_SOURCE", "the forging workflow itself" = "BLOCK CHECK_WRONG_SOURCE RESERVED:permission-added" }
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "forged-dependabot"
+kind = "matrix"
+title = "Incomplete or forged Dependabot: agent on a dependabot/ branch, unsigned, or a major bump"
+threat = "authority expansion"
+requirement = "never authorized as a Dependabot bump without proven provenance"
+fixture = "forged_dependabot"
+expect = { "agent on a dependabot/ branch" = "author agent is not Dependabot", "unsigned commit" = "a commit is not a verified Dependabot commit", "major update" = "a major version update", "lockfile bump, provenance unproven" = "ESCALATE UNDELEGATED:dependency-manifest", "lockfile bump, unsigned" = "ESCALATE UNDELEGATED:dependency-manifest", "lockfile bump, agent author" = "ESCALATE UNDELEGATED:dependency-manifest", "lockfile bump, major" = "ESCALATE UNDELEGATED:dependency-manifest", "lockfile bump, proven Dependabot patch" = "AUTHORIZE" }
+pending = ["fact extraction: author, signature and update type proven from provider data, never the branch name"]
+
+[[case]]
+slug = "unauthorized-privilege"
+kind = "matrix"
+title = "Unauthorized privilege: a workflow adds contents: write, a secret or pull_request_target, or an App manifest widens"
+threat = "authority expansion"
+requirement = "reserved categories escalate to the owner whatever the delegation says"
+note = "No repository file configures App permissions here; such a file is unclassified and escalates as UNCLASSIFIED."
+fixture = "unauthorized_privilege"
+expect = { "adds contents: write" = "ESCALATE RESERVED:permission-added", "adds a secret" = "ESCALATE RESERVED:credential", "adds pull_request_target" = "ESCALATE RESERVED:merge-authority", "App manifest grants contents: write" = "ESCALATE UNCLASSIFIED" }
+
+[[case]]
+slug = "authority-change"
+kind = "matrix"
+title = "Authority change: the PR edits the engine, an evidence workflow, a ruleset or the merge gate"
+threat = "authority expansion"
+requirement = "what judges merges is reserved"
+fixture = "authority_change"
+expect = { "edits the engine" = "ESCALATE RESERVED:enforcement RESERVED:merge-authority", "edits an evidence workflow" = "ESCALATE RESERVED:evidence-producer RESERVED:merge-authority", "edits a ruleset" = "ESCALATE RESERVED:enforcement", "edits the merge gate" = "ESCALATE RESERVED:merge-authority" }
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "self-approval"
+kind = "matrix"
+title = "Self-approval: an agent identity posts /approve or an approving review"
+threat = "identity collision"
+requirement = "agent approvals have no effect; an owner listed as an agent never authorizes"
+fixture = "self_approval"
+expect = { "approval is an input" = "no", "owner listed as an agent, enforce" = "ESCALATE IDENTITY_COLLISION", "owner listed as an agent, shadow" = "ESCALATE IDENTITY_COLLISION" }
+pending = [
+  "separate agent identity: agents act under their own login (owner action)",
+  "escalation clearance: only an owner approval bound to the head clears ESCALATE",
+]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "lifecycle-failure"
+kind = "matrix"
+title = "Post-merge lifecycle failure: the release workflow is missing, late, duplicated or on another SHA"
+threat = "outcome correlation"
+requirement = "INCOMPLETE with LIFECYCLE_MISSING, owner notified, no automatic revert"
+fixture = "lifecycle_failure"
+pending = ["lifecycle verification: classifies configured GitHub follow-ups within a timeout"]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "concurrent-workers"
+kind = "matrix"
+title = "Concurrent workers on the same head"
+threat = "trigger disorder"
+requirement = "one decision ID, one recorded revision per observed tip, one merge"
+fixture = "concurrent_workers"
+expect = { "decision ID from two workers" = "same", "second worker records from the same tip" = "refused STALE_DECISION", "check after both reconcile" = "success AUTHORIZE (r1)" }
+pending = ["merge executor: one merge; the second worker's merge is a no-op"]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "unmanaged-merge"
+kind = "matrix"
+title = "Out-of-band merge by a bypass actor"
+threat = "ledger attack"
+requirement = "the ledger records UNMANAGED_MERGE"
+fixture = "unmanaged_merge"
+pending = ["unmanaged-merge detection: merges without a matching receipt are recorded"]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "invalid-delegation"
+kind = "matrix"
+title = "Invalid delegation: a reserved class set to authorize"
+threat = "authority expansion"
+requirement = "an invalid delegation escalates every PR"
+fixture = "invalid_delegation"
+expect = { "docs change" = "ESCALATE DELEGATION_INVALID", "reserved change" = "ESCALATE DELEGATION_INVALID", "no findings" = "ESCALATE DELEGATION_INVALID" }
+
+[[case]]
+slug = "non-fleet-repository"
+kind = "matrix"
+title = "Non-Fleet repository: a routine dependency PR and a permission-widening PR"
+threat = "portability"
+requirement = "the same engine version; only the delegation file differs"
+fixture = "non_fleet_repository"
+expect = { "routine bump" = "AUTHORIZE", "permission widening" = "ESCALATE RESERVED:permission-added", "Fleet's file used for it" = "refused DELEGATION_INVALID" }
+pending = ["fact extraction: as for the routine dependency bump"]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "base-changed"
+kind = "matrix"
+title = "Base branch changes after AUTHORIZE"
+threat = "base drift"
+requirement = "no merge on the old decision; re-evaluate at the new base"
+fixture = "base_changed"
+expect = { "evidence from the old base" = "VERIFY EVIDENCE_NOT_APPLICABLE:intent-gate", "the executor observed the move" = "BLOCK BASE_CHANGED", "reconcile after the move" = "refused CONTRACT_ERROR", "check after the base moved" = "failure CONTRACT_ERROR", "trailers for a decision on the new base" = "refused BASE_CHANGED" }
+pending = ["merge executor: refuses to merge on a decision about another base"]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "enforcement-drift"
+kind = "matrix"
+title = "Ruleset, required-check source, bypass list or App permissions change between decision and merge"
+threat = "enforcement drift"
+requirement = "ENFORCEMENT_DRIFT or ENFORCEMENT_MISSING; no merge"
+fixture = "enforcement_drift"
+expect = { "the executor observed drift" = "BLOCK ENFORCEMENT_DRIFT", "the executor found no protection" = "BLOCK ENFORCEMENT_MISSING", "trailers after the snapshot changed" = "refused ENFORCEMENT_DRIFT", "trailers for a shadow decision" = "refused CONTRACT_ERROR" }
+pending = ["enforcement snapshot: rulesets, required-check sources, bypass lists and App permissions read at decision and at merge"]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "insufficient-evidence"
+kind = "matrix"
+title = "Authentic, current but semantically insufficient evidence: a green check the class does not require"
+threat = "insufficient evidence"
+requirement = "irrelevant green checks carry no weight"
+fixture = "insufficient_evidence"
+expect = { "only an unrequired check is green" = "VERIFY EVIDENCE_REQUIRED:intent-gate" }
+
+[[case]]
+slug = "called-script-edit"
+kind = "matrix"
+title = "An evidence producer runs a mutable script, and the PR edits that script"
+threat = "authority expansion"
+requirement = "the indirect producer path is reserved (the registry names it evidence-producer)"
+fixture = "called_script_edit"
+expect = { "edits the script the producer runs" = "ESCALATE RESERVED:evidence-producer", "edits a script that script runs" = "ESCALATE RESERVED:evidence-producer", "edits an unrelated script" = "ESCALATE UNCLASSIFIED" }
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "delegation-changed"
+kind = "matrix"
+title = "The delegation changes after evidence was produced"
+threat = "policy drift"
+requirement = "the decision is re-evaluated under the new policy, and its receipt names it"
+fixture = "delegation_changed"
+expect = { "evidence produced under the old policy" = "VERIFY EVIDENCE_NOT_APPLICABLE:intent-gate", "rules changed between decision and merge" = "drifted", "receipt names" = "new policy" }
+
+[[case]]
+slug = "conflicting-evidence"
+kind = "matrix"
+title = "Conflicting or unknown producer results for one requirement"
+threat = "forged evidence"
+requirement = "never AUTHORIZE on conflict; a rerun's latest attempt supersedes"
+fixture = "conflicting_evidence"
+expect = { "success and failure from two runs" = "BLOCK EVIDENCE_CONFLICT", "success beside an unattributable result" = "BLOCK EVIDENCE_CONFLICT", "a rerun supersedes its failed attempt" = "AUTHORIZE" }
+
+[[case]]
+slug = "ledger-anchors"
+kind = "matrix"
+title = "Ledger and anchors: middle deletion, tail truncation, full rewrite, key compromise, expired check, merge trailers"
+threat = "ledger attack"
+requirement = "tampering is detected while an anchor remains, and the limits are stated exactly otherwise"
+fixture = "ledger_anchors"
+expect = { "middle entry deleted" = "detected", "tail truncated behind an anchor" = "detected", "full rewrite" = "detected", "no anchor (key compromise)" = "no anchor: truncation, rewrite or forged appends (key compromise) in all 3 entries are not detectable with available anchor", "check run expired, merge anchor kept" = "0 entries visible after the last anchor: truncation, rewrite or forged appends (key compromise) after it are not detectable with available anchor", "merge trailers resolve to the ledger" = "resolve" }
+pending = ["merge executor: the merge method keeps the three trailers on the merge commit"]
+live = "PASS for the ledger ref's integrity rules (https://github.com/ImranAdan/infra-fleet-public/actions/runs/39525358022); NOT RUN — gate not reached for merge trailers and default-branch protection"
+
+[[case]]
+slug = "wake-disorder"
+kind = "matrix"
+title = "Duplicate, missed or reordered wake"
+threat = "trigger disorder"
+requirement = "the scheduled reconcile converges on the newest revision, with one check and at most one merge"
+fixture = "wake_disorder"
+expect = { "check after a missed then a duplicate wake" = "failure ESCALATE (r2)", "check runs" = "1" }
+pending = ["merge executor: at most one merge across wakes"]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "break-glass-merge"
+kind = "matrix"
+title = "Owner break-glass merge while Mandate is unavailable"
+threat = "ledger attack"
+requirement = "the next run records UNMANAGED_MERGE from rule-suite or merge history"
+fixture = "break_glass_merge"
+pending = ["unmanaged-merge detection: as for the out-of-band merge"]
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "wrong-workflow-same-app"
+kind = "matrix"
+title = "The same check name from another workflow or event under the shared GitHub Actions App"
+threat = "forged evidence"
+requirement = "the App alone, which every workflow shares, never binds a producer"
+fixture = "wrong_workflow_same_app"
+expect = { "same App and name, another workflow" = "BLOCK CHECK_WRONG_SOURCE EVIDENCE_REQUIRED:intent-gate", "same App, name and workflow, another event" = "BLOCK CHECK_WRONG_SOURCE EVIDENCE_REQUIRED:intent-gate", "same name from another App" = "BLOCK CHECK_WRONG_SOURCE EVIDENCE_REQUIRED:intent-gate" }
+live = "NOT RUN — gate not reached"
+
+[[case]]
+slug = "token-expiry"
+kind = "matrix"
+title = "The installation token expires between decision and merge"
+threat = "credential lifetime"
+requirement = "a fresh narrowed token, and the decision's subject revalidated"
+fixture = "token_expiry"
+pending = ["merge executor: mints a fresh narrowed token and revalidates the subject before merging"]
+
+[[case]]
+slug = "bypass-topology"
+kind = "matrix"
+title = "The merge App configured as a bypass actor, or an exempt actor present"
+threat = "enforcement drift"
+requirement = "an unsafe topology is refused and enforce mode does not run"
+fixture = "bypass_topology"
+expect = { "sound topology" = "sound", "writer App exempt" = "writer ruleset bypass must be exactly App 5 (always); ruleset 'writer' has an exempt bypass (banned)", "App bypasses the integrity rules" = "no integrity ruleset (deletion, non_fast_forward, linear history) without bypass actors; ruleset 'integrity' has bypass actors; only the writer ruleset may" }
+pending = ["enforcement topology probe: refuse enforce mode when the merge App bypasses the protected branch's ruleset or any actor is exempt"]
+live = "NOT RUN — gate not reached"
+
+# --- classifier evasion: each must escalate as reserved, even when a fact
+# --- extractor claims no permission, secret or trigger change -----------------
+
+[[case]]
+slug = "evade-flow-permissions"
+kind = "evasion"
+title = "Workflow permissions written as flow mappings, quoted, escaped or tagged values, block scalars or explicit keys"
+threat = "classifier evasion"
+requirement = "any added write permission is permission-added"
+fixture = "evade_flow_permissions"
+expect = { "flow-style block" = "ESCALATE RESERVED:permission-added", "nested flow mapping" = "ESCALATE RESERVED:permission-added", "quoted value" = "ESCALATE RESERVED:permission-added", "quoted key" = "ESCALATE RESERVED:permission-added", "write-all" = "ESCALATE RESERVED:permission-added", "block scalar" = "ESCALATE RESERVED:permission-added", "explicit key" = "ESCALATE RESERVED:permission-added", "a comment naming write and secrets (control)" = "AUTHORIZE", "hex-escaped value" = "ESCALATE RESERVED:permission-added", "unicode-escaped value" = "ESCALATE RESERVED:permission-added", "escaped line break" = "ESCALATE RESERVED:permission-added", "only the continuation line changes" = "ESCALATE RESERVED:permission-added", "only a quote-free middle line changes" = "ESCALATE RESERVED:permission-added", "an escaped middle line" = "ESCALATE RESERVED:permission-added", "a value under an unknown tag" = "ESCALATE RESERVED:permission-added", "an escaped string in a script (control)" = "AUTHORIZE", "a shell inequality (control)" = "AUTHORIZE", "a double quote inside single quotes (control)" = "AUTHORIZE", "a value of another type" = "ESCALATE RESERVED:permission-added", "permissions block removed" = "ESCALATE RESERVED:permission-added", "a duplicate key" = "ESCALATE RESERVED:permission-added", "a workflow whose head cannot be read" = "ESCALATE RESERVED:permission-added" }
+
+[[case]]
+slug = "evade-yaml-aliases"
+kind = "evasion"
+title = "Workflow permissions through YAML anchors, aliases, tags and merge keys"
+threat = "classifier evasion"
+requirement = "permissions set through an alias are permission-added"
+fixture = "evade_yaml_aliases"
+expect = { "anchor then alias" = "ESCALATE RESERVED:permission-added", "alias of an existing anchor" = "ESCALATE RESERVED:permission-added", "anchored value" = "ESCALATE RESERVED:permission-added", "tagged value" = "ESCALATE RESERVED:permission-added", "value aliased to an unchanged anchor" = "ESCALATE RESERVED:permission-added", "merge key" = "ESCALATE RESERVED:permission-added", "numeric anchor name" = "ESCALATE RESERVED:permission-added", "recursive alias" = "ESCALATE RESERVED:permission-added", "aliases that expand exponentially" = "ESCALATE RESERVED:permission-added" }
+
+[[case]]
+slug = "evade-secret-expressions"
+kind = "evasion"
+title = "Secrets reached through toJSON, a computed index, another operand, a split expression or inheritance"
+threat = "classifier evasion"
+requirement = "any expression that reads secrets is a credential"
+fixture = "evade_secret_expressions"
+expect = { "toJSON(secrets)" = "ESCALATE RESERVED:credential", "computed index" = "ESCALATE RESERVED:credential", "after another operand" = "ESCALATE RESERVED:credential", "expression across lines" = "ESCALATE RESERVED:credential RESERVED:permission-added", "upper-case context name" = "ESCALATE RESERVED:credential", "expression in a script comment" = "ESCALATE RESERVED:credential", "secrets: inherit" = "ESCALATE RESERVED:credential", "an escaped context name" = "ESCALATE RESERVED:credential", "an escaped inherit key" = "ESCALATE RESERVED:credential" }
+
+[[case]]
+slug = "evade-reusable-triggers"
+kind = "evasion"
+title = "Privileged triggers added in a reusable workflow, a flow map or a list, or an existing one re-sourced or re-filtered"
+threat = "classifier evasion"
+requirement = "any privileged trigger is merge-authority"
+fixture = "evade_reusable_triggers"
+expect = { "reusable workflow gains pull_request_target" = "ESCALATE RESERVED:merge-authority", "flow-map trigger" = "ESCALATE RESERVED:merge-authority", "list trigger" = "ESCALATE RESERVED:merge-authority", "an escaped trigger name" = "ESCALATE RESERVED:merge-authority", "workflow_run source changed" = "ESCALATE RESERVED:merge-authority", "workflow_run branch filter changed" = "ESCALATE RESERVED:merge-authority", "pull_request_target filter changed" = "ESCALATE RESERVED:merge-authority", "privileged trigger unchanged, step changed (control)" = "AUTHORIZE", "ordinary trigger filter changed (control)" = "AUTHORIZE" }
+
+[[case]]
+slug = "evade-moved-workflows"
+kind = "evasion"
+title = "Workflows renamed, moved out of or into the workflow directory"
+threat = "classifier evasion"
+requirement = "a moved producer stays reserved, and a file moved into automation unseen escalates"
+fixture = "evade_moved_workflows"
+expect = { "evidence workflow renamed" = "ESCALATE RESERVED:evidence-producer RESERVED:merge-authority", "evidence workflow moved out" = "ESCALATE RESERVED:evidence-producer RESERVED:merge-authority", "privileged file moved in" = "ESCALATE RESERVED:merge-authority RESERVED:permission-added" }
+
+# --- regressions found in review ----------------------------------------------
+
+[[case]]
+slug = "forged-receipts"
+kind = "regression"
+title = "Receipts decide() could not have produced, recorded or planted below record()"
+threat = "forged evidence"
+requirement = "record() refuses an unsupported AUTHORIZE, and reconcile fails closed on one planted in the ledger"
+fixture = "forged_receipts"
+expect = { "AUTHORIZE with its reasons deleted" = "refused CONTRACT_ERROR", "evidence about another head" = "refused CONTRACT_ERROR", "a class the delegation never declared" = "refused CONTRACT_ERROR", "a renamed decision ID" = "refused CONTRACT_ERROR", "an unsupported schema" = "refused CONTRACT_ERROR", "planted below record()" = "refused LEDGER_INVALID", "check after the planted receipt" = "failure LEDGER_INVALID" }
+
+[[case]]
+slug = "shared-head"
+kind = "regression"
+title = "Two open PRs share one head; one is undecided or closes"
+threat = "identity collision"
+requirement = "one check per commit is green only when every open PR on it is decided alone"
+fixture = "shared_head"
+expect = { "an undecided PR shares the head" = "failure AUTHORIZE (r1), head shared by 2 PRs", "the other PR closed" = "success AUTHORIZE (r1)", "the only open PR is undecided" = "refused CONTRACT_ERROR" }
+
+[[case]]
+slug = "base-drift"
+kind = "regression"
+title = "The PR's base goes missing, moves, then is retargeted back"
+threat = "base drift"
+requirement = "a decision is current only at the PR's live base; no fallback to an older green receipt"
+fixture = "base_drift"
+expect = { "base missing" = "refused CONTRACT_ERROR", "a fresh decision at the new base" = "success AUTHORIZE (r1)", "retargeted back to the old base" = "refused CONTRACT_ERROR", "check after the retarget" = "failure CONTRACT_ERROR" }
+
+[[case]]
+slug = "stale-recorder"
+kind = "regression"
+title = "A recorder retries with a stale tip, including after its append response was lost"
+threat = "trigger disorder"
+requirement = "only deciding again with a fresh tip records; a retry with the old one is stale"
+fixture = "stale_recorder"
+expect = { "retry with the original tip after landing" = "refused STALE_DECISION", "decide again with a fresh tip" = "appended r2", "append response lost" = "refused LEDGER_UNAVAILABLE", "retry after the lost response" = "refused STALE_DECISION" }
+
+[[case]]
+slug = "publisher-contract"
+kind = "regression"
+title = "A recorder's follower that does not actually reconcile"
+threat = "outcome correlation"
+requirement = "the follower runs the supported reconcile step, unconditionally and with every argument"
+fixture = "publisher_contract"
+expect = { "the supported publisher" = "none", "a publisher that only echoes" = "w.yml:record", "a skipped reconcile step" = "w.yml:record", "a reconcile step without its own if" = "w.yml:record", "help instead of arguments" = "w.yml:record", "an argument bash comments out" = "w.yml:record" }
+
+[[case]]
+slug = "cancellation"
+kind = "regression"
+title = "A recorder or publisher that GitHub can cancel or replace while pending"
+threat = "trigger disorder"
+requirement = "recorders wait in no group; publishers serialize per head without cancelling"
+fixture = "cancellation"
+expect = { "a recorder waiting in a group" = "w.yml:record", "a publisher that cancels in progress" = "w.yml:record, w.yml:publish", "a publisher outside the canonical group" = "w.yml:record, w.yml:publish" }
+
+[[case]]
+slug = "ledger-limits"
+kind = "regression"
+title = "Ledger collisions, idempotent retries and a ledger past the contents API's inline limit"
+threat = "ledger attack"
+requirement = "one revision has one receipt; an unreadable ledger is never read as empty"
+fixture = "ledger_limits"
+expect = { "an identical retry" = "appended nothing", "other bytes at one revision" = "refused RECEIPT_COLLISION", "a ledger over the inline limit" = "refused LEDGER_UNAVAILABLE" }
+
+[[case]]
+slug = "renamed-reserved-paths"
+kind = "regression"
+title = "Reserved files moved away by a pure rename"
+threat = "classifier evasion"
+requirement = "a rename keeps the old path's reserved category"
+fixture = "renamed_reserved_paths"
+expect = { "the engine moved out" = "ESCALATE RESERVED:enforcement RESERVED:merge-authority", "agent instructions moved" = "ESCALATE RESERVED:agent-instructions RESERVED:merge-authority", "a ruleset moved" = "ESCALATE RESERVED:enforcement UNCLASSIFIED" }
+
+[[case]]
+slug = "dependabot-inline-comment"
+kind = "regression"
+title = "A pinned requirement bump whose line keeps an inline comment (Fleet #246)"
+threat = "none: false refusal of a routine bump"
+requirement = "an unchanged comment does not change the classification; any other token change still refuses"
+fixture = "dependabot_inline_comment"
+expect = { "comment kept" = "version-only", "comment changed" = "changes more than a version in requirements.txt: requests==2.32.4  # via urllib3", "comment added" = "changes more than a version in requirements.txt: requests==2.32.4  # via requests", "package swapped, comment kept" = "changes more than a version in requirements.txt: request==2.32.4  # via requests" }
+
+[[case]]
+slug = "live-gate-evasions"
+kind = "evasion"
+title = "The same evasion attempts through Fleet's legacy merge gate"
+threat = "classifier evasion"
+requirement = "a permission, credential or authority change never reaches evidence-only READY"
+fixture = "live_gate_evasions"
+
+[case.expect]
+"flow permissions: flow-style block" = "PARK owner decision required for: permission-added"
+"flow permissions: nested flow mapping" = "PARK owner decision required for: permission-added"
+"flow permissions: quoted value" = "PARK owner decision required for: permission-added"
+"flow permissions: quoted key" = "PARK owner decision required for: permission-added"
+"flow permissions: write-all" = "PARK owner decision required for: permission-added"
+"flow permissions: block scalar" = "PARK owner decision required for: permission-added"
+"flow permissions: explicit key" = "PARK owner decision required for: permission-added"
+"flow permissions: a comment naming write and secrets (control)" = "READY"
+"flow permissions: hex-escaped value" = "PARK owner decision required for: permission-added"
+"flow permissions: unicode-escaped value" = "PARK owner decision required for: permission-added"
+"flow permissions: escaped line break" = "PARK owner decision required for: permission-added"
+"flow permissions: only the continuation line changes" = "PARK owner decision required for: permission-added"
+"flow permissions: only a quote-free middle line changes" = "PARK owner decision required for: permission-added"
+"flow permissions: an escaped middle line" = "PARK owner decision required for: permission-added"
+"flow permissions: a value under an unknown tag" = "PARK owner decision required for: permission-added"
+"flow permissions: an escaped string in a script (control)" = "READY"
+"flow permissions: a shell inequality (control)" = "READY"
+"flow permissions: a double quote inside single quotes (control)" = "READY"
+"flow permissions: a value of another type" = "PARK owner decision required for: permission-added"
+"flow permissions: permissions block removed" = "PARK owner decision required for: permission-added"
+"flow permissions: a duplicate key" = "PARK owner decision required for: permission-added"
+"flow permissions: a workflow whose head cannot be read" = "PARK owner decision required for: permission-added"
+"yaml aliases: anchor then alias" = "PARK owner decision required for: permission-added"
+"yaml aliases: alias of an existing anchor" = "PARK owner decision required for: permission-added"
+"yaml aliases: anchored value" = "PARK owner decision required for: permission-added"
+"yaml aliases: tagged value" = "PARK owner decision required for: permission-added"
+"yaml aliases: value aliased to an unchanged anchor" = "PARK owner decision required for: permission-added"
+"yaml aliases: merge key" = "PARK owner decision required for: permission-added"
+"yaml aliases: numeric anchor name" = "PARK owner decision required for: permission-added"
+"yaml aliases: recursive alias" = "PARK owner decision required for: permission-added"
+"yaml aliases: aliases that expand exponentially" = "PARK owner decision required for: permission-added"
+"secret expressions: toJSON(secrets)" = "PARK owner decision required for: credential"
+"secret expressions: computed index" = "PARK owner decision required for: credential"
+"secret expressions: after another operand" = "PARK owner decision required for: credential"
+"secret expressions: expression across lines" = "PARK owner decision required for: permission-added, credential"
+"secret expressions: upper-case context name" = "PARK owner decision required for: credential"
+"secret expressions: expression in a script comment" = "PARK owner decision required for: credential"
+"secret expressions: secrets: inherit" = "PARK owner decision required for: credential"
+"secret expressions: an escaped context name" = "PARK owner decision required for: credential"
+"secret expressions: an escaped inherit key" = "PARK owner decision required for: credential"
+"reusable triggers: reusable workflow gains pull_request_target" = "PARK owner decision required for: merge-authority"
+"reusable triggers: flow-map trigger" = "PARK owner decision required for: merge-authority"
+"reusable triggers: list trigger" = "PARK owner decision required for: merge-authority"
+"reusable triggers: an escaped trigger name" = "PARK owner decision required for: merge-authority"
+"reusable triggers: workflow_run source changed" = "PARK owner decision required for: merge-authority"
+"reusable triggers: workflow_run branch filter changed" = "PARK owner decision required for: merge-authority"
+"reusable triggers: pull_request_target filter changed" = "PARK owner decision required for: merge-authority"
+"reusable triggers: privileged trigger unchanged, step changed (control)" = "READY"
+"reusable triggers: ordinary trigger filter changed (control)" = "READY"
+"moved workflows: evidence workflow renamed" = "PARK owner decision required for: merge-authority"
+"moved workflows: evidence workflow moved out" = "PARK owner decision required for: merge-authority"
+"moved workflows: privileged file moved in" = "PARK owner decision required for: merge-authority, permission-added"
+
+[[case]]
+slug = "structural-controls"
+kind = "evasion"
+title = "The parsed workflow comparison on its own: controls and alias graphs"
+threat = "classifier evasion"
+requirement = "ordinary aliases and unchanged privileged triggers grant nothing; an alias graph is refused promptly, never followed forever"
+fixture = "structural_controls"
+expect = { "an acyclic alias reused" = "none", "an unchanged privileged trigger" = "none", "a recursive alias" = "permission-added", "why a recursive alias is refused" = "ValueError", "an exponential alias graph" = "permission-added" }

@@ -2,8 +2,9 @@
 
 `mandate.gate` decides whether an agent-authored pull request may merge:
 `READY`, `PARK` (the owner decides), `JUDGE` or `BLOCKED`. It is one
-implementation shared by every governed repository, with no third-party
-dependencies.
+implementation shared by every governed repository. Its one third-party
+dependency is PyYAML, which parses workflow files (`pyproject.toml` declares
+it, so a repository that installs the engine with uv gets it locked).
 
 A repository binds the engine to its own rules through a thin entry point that
 calls `gate.cli(argv, policy_path, self_test)`. In this repository that is
@@ -348,7 +349,29 @@ input is built from:
 
 - **Findings:** the engine classifies each file from its own diff, plus
   reserved surfaces read at the trusted base. A file that appears in the diff
-  but not in the API's file list still counts.
+  but not in the API's file list still counts. Each changed workflow is also
+  parsed at the merge base (where the diff starts) and the head
+  (`gate.workflow_changes()`, with PyYAML's safe
+  loader; duplicate and merge keys refused), so no spelling, alias, escape,
+  tag or line break can hide what it grants. A job whose effective
+  permissions rise is a permission change: a removed `permissions` block
+  falls back to the repository default, which may grant write, and a new
+  workflow starts from none. A new expression that reads `secrets` (or a new
+  `secrets: inherit`) is a credential, and a new privileged trigger, or a
+  changed configuration of one (its source workflows, branch or activity
+  filters), is merge authority. A workflow that cannot be read or parsed, a
+  recursive alias, more than 100,000 nodes once aliases are expanded, or a
+  missing parser counts as a permission change. The diff's lines are classified too, as a
+  fallback for callers without file access: a bare `write`, a `permissions`
+  key, an alias, a decoded double-quoted value, an open quote or a tag is a
+  permission change, and a line naming `secrets` is a credential. A file
+  renamed into `.github/workflows/` or `.github/actions/` is merge authority.
+  A Dependabot requirement bump may keep an inline comment, unchanged. The
+  legacy gate compares the PR's merge base with its head, and the merge
+  worker installs PyYAML from `.claude/skills/merge-gate/requirements.txt`
+  with hashes, on `ubuntu-24.04`, whose system Python 3.12 has a pinned
+  wheel. Validate Automation Workflows repeats that install on the same
+  runner for every change to the gate, its pins or the workflows.
 - **Evidence:** the head's check runs, each correlated to its workflow run.
 - **Policy:** the owner's delegation at a pinned commit.
 
@@ -365,9 +388,14 @@ PYTHONPATH=mandate/src python3 -m mandate.shadow ImranAdan/infra-fleet-public 22
   --delegation-sha da6db52b465c99d955e07809bdf135104db3bc7f
 ```
 
-Test it through the entry point, the way the merge worker runs it:
+Test it through the entry point, the way the merge worker runs it. The tests
+need the parser: without it every workflow counts as a permission change, and
+the tests that expect a finer finding fail. `mandate/uv.lock` pins it for
+every platform (CI installs the merge worker's Linux pins instead):
 
 ```bash
+uv sync --locked --project mandate
+. mandate/.venv/bin/activate
 python3 .claude/skills/merge-gate/merge_ready.py --self-test
 python3 .claude/skills/merge-gate/judge.py --self-test
 python3 mandate/tests/test_delegation.py
@@ -376,4 +404,33 @@ python3 mandate/tests/test_decision.py
 python3 mandate/tests/test_shadow.py
 python3 mandate/tests/test_ledger.py
 python3 mandate/tests/test_receipt.py
+python3 mandate/tests/test_acceptance.py
 ```
+
+## Acceptance matrix
+
+`mandate/tests/acceptance.toml` has one row per acceptance case, per attempt
+to hide an authority change from the classifier, and per regression found in
+review. `test_acceptance.py` runs each row's fixture through the public
+boundary (`shadow.findings()`, `decide()`, the delegation and evidence
+modules, and receipts and the ledger against the test fakes) and compares
+what it observed with the row's literal values:
+
+- **PASS:** every value matches and the case needs nothing unbuilt.
+- **PARTIAL:** every value matches, but the case also needs behaviour listed
+  under `pending` (the merge executor, lifecycle verification, fact
+  extraction, …). It never counts as a pass.
+- **NOT BUILT:** nothing about the case is executable yet.
+- **FAIL:** a value differs.
+
+An AUTHORIZE or a green check where a row expects anything else is unsafe and
+fails the run by itself. Evasion rows claim that a fact extractor found no
+permission, secret or trigger change, so only a reserved finding can refuse.
+A self-check reruns every fixture with `decide()` stubbed to AUTHORIZE, and
+each row that expects a refusal must then fail. Live rows count only with a
+linked run; otherwise they read `NOT RUN — gate not reached`.
+
+The run exits 0 when no row fails and nothing unsafe was seen. With `--gate`
+it also needs every matrix row to PASS, which waits on the behaviour the
+PARTIAL and NOT BUILT rows name; it prints the package commit, the manifest's
+SHA-256 and the fixture policy pin for the evidence bundle.
