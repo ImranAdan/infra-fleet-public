@@ -45,6 +45,7 @@ def main() -> int:
 
     # The same observation again changes nothing and never regresses.
     assert lc.reconcile(PLAN, log, ok, LATER) == (log, False)
+    assert lc.reconcile(PLAN, log, None, LATER) == (log, False)  # OK is final
 
     # A run for another commit cannot satisfy an obligation.
     log, notify = lc.reconcile(PLAN, [], [run(RELEASE), run(APPLY, sha="2" * 40, run_id=2)], AFTER)
@@ -56,6 +57,11 @@ def main() -> int:
     log, _ = lc.reconcile(PLAN, [], [run(RELEASE), run(APPLY, "failure", run_id=2)], AFTER)
     log, notify = lc.reconcile(PLAN, log, [run(RELEASE), run(APPLY, "success", run_id=2, attempt=2)], LATER)
     assert (states(log), notify) == (["INCOMPLETE", "LIFECYCLE_OK"], False), states(log)
+
+    # Observing the same breach again neither appends nor notifies the owner again.
+    breach = [run(RELEASE), run(APPLY, "failure", run_id=2)]
+    log, _ = lc.reconcile(PLAN, [], breach, AFTER)
+    assert lc.reconcile(PLAN, log, breach, LATER) == (log, False)
 
     # An older attempt reported late does not undo the newer one.
     newer = [run(RELEASE), run(APPLY, "success", run_id=2, attempt=2), run(APPLY, "failure", run_id=2, attempt=1)]

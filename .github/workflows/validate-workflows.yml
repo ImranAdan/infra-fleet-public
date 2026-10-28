@@ -92,6 +92,7 @@ jobs:
           python3 mandate/tests/test_ledger.py
           python3 mandate/tests/test_receipt.py
           python3 mandate/tests/test_executor.py
+          python3 mandate/tests/test_lifecycle.py
           python3 mandate/tests/test_acceptance.py
           python3 .claude/skills/merge-gate/judge.py --self-test
 

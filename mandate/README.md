@@ -421,6 +421,7 @@ python3 mandate/tests/test_shadow.py
 python3 mandate/tests/test_ledger.py
 python3 mandate/tests/test_receipt.py
 python3 mandate/tests/test_executor.py
+python3 mandate/tests/test_lifecycle.py
 python3 mandate/tests/test_acceptance.py
 ```
 
@@ -454,6 +455,26 @@ whole subject decided again. A lost merge response is settled by the
 read-back, never by a second request. After three unstable attempts the wake
 is `UNAVAILABLE`, and the next wake retries. The result is returned, not
 recorded: lifecycle reconciliation starts from a `MERGED` result's SHA.
+
+## Lifecycle (inactive)
+
+`mandate.lifecycle` follows a merge to the GitHub follow-ups configured for
+it: `MERGED`, then `DOWNSTREAM_TRIGGERED`, then `LIFECYCLE_OK`, `INCOMPLETE`
+or `UNKNOWN`. Nothing calls it yet, and its tests use canned workflow runs.
+
+- `plan()` keys the obligations (workflow files expected to run on the merge
+  commit) to the decision ID, its receipt revision and the merge SHA, and
+  records the class's recovery level. Nothing rolls back or reverts.
+- `reconcile()` reduces the provider's workflow runs for that commit. An
+  obligation is satisfied by a run on the merge commit whose latest attempt
+  succeeded; a run on any other commit counts for nothing.
+- `LIFECYCLE_OK` means every obligation is satisfied, and it is final. It says
+  nothing about runtime or deployment health.
+- At the deadline, a missing or failed obligation is `INCOMPLETE`. A run
+  still going, or runs that could not be read, are `UNKNOWN`, never OK. Both
+  notify the owner, once per change.
+- The log is append-only. A repeated observation adds nothing, and a late
+  success after a breach is appended after it.
 
 ## Acceptance matrix
 
