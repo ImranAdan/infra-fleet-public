@@ -39,7 +39,7 @@ def diff(*paths: str) -> str:
     )
 
 
-def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requested=None):
+def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requested=None, merge_base=BASE):
     """Canned REST responses. ``files`` maps (ref, path) to text; the server
     decodes a contents path, so ``%41`` names ``A``. ``requested`` collects
     each contents URL asked for."""
@@ -75,6 +75,8 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requ
             return json.dumps(check)
         if "/actions/runs" in joined:
             return json.dumps(run)
+        if f"/compare/{BASE}...{HEAD}" in joined:
+            return merge_base + "\n"
         if "/contents/" in joined:
             url = next(a for a in args if "/contents/" in a)
             (requested if requested is not None else []).append(url)
@@ -181,6 +183,15 @@ def main() -> int:
     want = f"repos/{REPO}/contents/.github/workflows/x%2541.yml"
     assert requested[:2] == [f"{want}?ref={BASE}", f"{want}?ref={HEAD}"], requested
     assert (quoted.outcome, "RESERVED:merge-authority" in codes(quoted)) == ("ESCALATE", True), codes(quoted)
+
+    # Workflows are compared from the merge base, as the diff is: the base
+    # branch already having the PR's new trigger filter hides nothing.
+    fork = "e" * 40
+    run = "on:\n  workflow_run:\n    workflows: [CI]\n    branches: [{}]\njobs: {{}}\n"
+    path = ".github/workflows/result.yml"
+    moved = decide((path,), merge_base=fork, files={
+        (fork, path): run.format("main"), (BASE, path): run.format("release"), (HEAD, path): run.format("release")})
+    assert "RESERVED:merge-authority" in codes(moved), codes(moved)
 
     # The summary states that shadow grants nothing.
     assert "grants nothing" in shadow.summary(
