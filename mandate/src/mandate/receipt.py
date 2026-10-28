@@ -586,7 +586,7 @@ def _workflow(text: str) -> tuple[dict[str, Any], dict[str, list[str]]]:
     """The parsed workflow and, per job, its raw lines at the job's own
     indentation (comments, which parsing drops). Duplicate and merge keys
     raise: what they mean depends on the parser."""
-    import yaml  # ponytail: test-time scan only; CI has PyYAML through yamllint
+    import yaml  # ponytail: test-time scan only; CI installs the gate's pinned PyYAML
 
     from mandate.gate import strict_loader
 

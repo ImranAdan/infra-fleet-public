@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false  # the job runs PR code; gh steps pass their own token
 
       # The merge worker's install, so every change to the gate or its pins
       # proves the parser installs from those hashes on the worker's runner.
