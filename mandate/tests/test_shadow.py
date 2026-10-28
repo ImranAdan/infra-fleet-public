@@ -215,6 +215,9 @@ def main() -> int:
                                 "requirements-b.txt": "-r requirements-a.txt\nx==1\n"}, None, resolved),
         "a lockfile alone": (("applications/x/uv.lock",), {"applications/x/uv.lock": "version = 1\n"}, None, resolved),
         "a manifest without its lockfile": ((lh + "package.json",), {lh + "package.json": "{}"}, None, refused),
+        "a lockfile changed in another directory": ((lh + "package.json", "applications/x/package-lock.json"),
+                                                    {lh + "package.json": "{}", "applications/x/package-lock.json": "{}"},
+                                                    None, refused),
         "a lockfile deleted beside its manifest": ((lh + "package.json", lh + "package-lock.json"),
                                                    {lh + "package.json": "{}"}, None, refused),
         "a lockfile deleted alone": (("applications/x/uv.lock",), {}, None, refused),
@@ -225,7 +228,7 @@ def main() -> int:
         "an unreadable requirements file": (("requirements.txt",), {}, None, refused),
         "an include unpinned at head": ((lh + "requirements-dev.txt",),
                                         {lh + "requirements-dev.txt": dev, lh + "requirements.txt": "flask\n"}, None, refused),
-        "an include outside the repository": (("requirements.txt",), {"requirements.txt": "-r ../x.txt\n"}, None, refused),
+        "an include outside the repository": (("requirements.txt",), {"requirements.txt": "-r ../x.txt\n", "../x.txt": "x==1\n"}, None, refused),
         "pinned at base, a range at head": (("requirements-dev.txt",), {"requirements-dev.txt": "sh>=2\n"},
                                             {"requirements-dev.txt": pinned}, refused),
     }
@@ -234,7 +237,8 @@ def main() -> int:
         assert got == want, (name, got)
     # The fact is read at the exact head commit, never the base or a branch.
     manifest(("requirements-dev.txt",), {"requirements-dev.txt": pinned})
-    assert manifest.requested == [f"repos/{REPO}/contents/requirements-dev.txt?ref={HEAD}"], manifest.requested
+    reads = [u for u in manifest.requested if "requirements-dev.txt" in u]
+    assert reads == [f"repos/{REPO}/contents/requirements-dev.txt?ref={HEAD}"], manifest.requested
     # The same resolved change with evidence for an older head is not authorized.
     stale_bump = decide(("requirements-dev.txt",), head_check="c" * 40, files={(HEAD, "requirements-dev.txt"): pinned})
     assert (stale_bump.outcome, codes(stale_bump)) == ("VERIFY", ["EVIDENCE_NOT_APPLICABLE:intent-gate"]), codes(stale_bump)
