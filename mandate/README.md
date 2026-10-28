@@ -2,8 +2,9 @@
 
 `mandate.gate` decides whether an agent-authored pull request may merge:
 `READY`, `PARK` (the owner decides), `JUDGE` or `BLOCKED`. It is one
-implementation shared by every governed repository, with no third-party
-dependencies.
+implementation shared by every governed repository. Its one third-party
+dependency is PyYAML, which parses workflow files (`pyproject.toml` declares
+it, so a repository that installs the engine with uv gets it locked).
 
 A repository binds the engine to its own rules through a thin entry point that
 calls `gate.cli(argv, policy_path, self_test)`. In this repository that is
@@ -349,7 +350,8 @@ input is built from:
 - **Findings:** the engine classifies each file from its own diff, plus
   reserved surfaces read at the trusted base. A file that appears in the diff
   but not in the API's file list still counts. Each changed workflow is also
-  parsed at base and head (`gate.workflow_changes()`, with PyYAML's safe
+  parsed at the merge base (where the diff starts) and the head
+  (`gate.workflow_changes()`, with PyYAML's safe
   loader; duplicate and merge keys refused), so no spelling, alias, escape,
   tag or line break can hide what it grants. A job whose effective
   permissions rise is a permission change: a removed `permissions` block
@@ -386,9 +388,14 @@ PYTHONPATH=mandate/src python3 -m mandate.shadow ImranAdan/infra-fleet-public 22
   --delegation-sha da6db52b465c99d955e07809bdf135104db3bc7f
 ```
 
-Test it through the entry point, the way the merge worker runs it:
+Test it through the entry point, the way the merge worker runs it. The tests
+need the parser: without it every workflow counts as a permission change, and
+the tests that expect a finer finding fail. `mandate/uv.lock` pins it for
+every platform (CI installs the merge worker's Linux pins instead):
 
 ```bash
+uv sync --locked --project mandate
+. mandate/.venv/bin/activate
 python3 .claude/skills/merge-gate/merge_ready.py --self-test
 python3 .claude/skills/merge-gate/judge.py --self-test
 python3 mandate/tests/test_delegation.py

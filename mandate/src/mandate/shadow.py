@@ -59,12 +59,13 @@ def _per_file(diff: str) -> dict[str, str]:
 
 
 def findings(
-    diff: str, paths: list[str], delegation: d.Delegation, read, read_head=lambda path: None
+    diff: str, paths: list[str], delegation: d.Delegation, read, read_head=lambda path: None, read_from=None
 ) -> tuple[tuple[str, str], ...]:
     """(category, path) per changed path, classified from that file's own diff
-    and, for a workflow, from its parsed versions (``read`` at the base,
-    ``read_head`` at the head; a workflow it cannot read counts as a permission
-    change).
+    and, for a workflow, from its parsed versions (``read_from`` at the merge
+    base, default ``read``; ``read_head`` at the head; a workflow it cannot
+    read counts as a permission change). Reserved surfaces are read with
+    ``read``, at the trusted base.
 
     A file in the diff but not in ``paths`` still contributes its findings.
     """
@@ -72,7 +73,7 @@ def findings(
     out: list[tuple[str, str]] = []
     for path in dict.fromkeys([*paths, *chunks]):
         cats = {c for c, _ in gate.scope_findings(chunks.get(path, ""))}
-        cats |= {c for c, _ in gate.workflow_changes(chunks.get(path, ""), read, read_head)}
+        cats |= {c for c, _ in gate.workflow_changes(chunks.get(path, ""), read_from or read, read_head)}
         cats |= {c for c, _ in d.reserved_findings(delegation, [path], read)}
         out += [(c, path) for c in sorted(cats)] or [("unclassified", path)]
     return tuple(out)
@@ -89,6 +90,10 @@ def inputs(repository: str, number: int, delegation: d.Delegation) -> m.Decision
         )
     ]
     diff = _gh("pr", "diff", str(number), "-R", repository)
+    # The diff runs from the merge base, so the parsed comparison does too.
+    merge_base = _gh(
+        "api", f"repos/{repository}/compare/{base}...{head}", "--jq", ".merge_base_commit.sha"
+    ).strip()
     checks = _lines(
         f"repos/{repository}/commits/{head}/check-runs?per_page=100",
         "--jq",
@@ -109,7 +114,8 @@ def inputs(repository: str, number: int, delegation: d.Delegation) -> m.Decision
     return m.DecisionInput(
         delegation=delegation,
         subject=subject,
-        findings=findings(diff, paths, delegation, gate.read_at(repository, base), gate.read_at(repository, head)),
+        findings=findings(diff, paths, delegation, gate.read_at(repository, base), gate.read_at(repository, head),
+                          gate.read_at(repository, merge_base)),
         facts={},
         records=records,
         blocking=(),
