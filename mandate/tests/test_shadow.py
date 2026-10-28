@@ -90,9 +90,13 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requ
     return fake
 
 
-def decide(paths: tuple[str, ...], **kwargs):
+def snapshot(paths: tuple[str, ...], **kwargs):
     gate.gh = provider(paths, **kwargs)
-    return shadow.m.decide(shadow.inputs(REPO, 1, DELEGATION))
+    return shadow.inputs(REPO, 1, DELEGATION)
+
+
+def decide(paths: tuple[str, ...], **kwargs):
+    return shadow.m.decide(snapshot(paths, **kwargs))
 
 
 def codes(result) -> list[str]:
@@ -181,6 +185,61 @@ def main() -> int:
     want = f"repos/{REPO}/contents/.github/workflows/x%2541.yml"
     assert requested[:2] == [f"{want}?ref={BASE}", f"{want}?ref={HEAD}"], requested
     assert (quoted.outcome, "RESERVED:merge-authority" in codes(quoted)) == ("ESCALATE", True), codes(quoted)
+
+    # lockfile_sibling, the dependency-manifest class's one fact, is proven from
+    # the change's own files read at the exact head; whatever is unproven refuses.
+    lh = "applications/load-harness/"
+    pinned = "gitlint-core==0.19.1\nsh==2.4.0\n"  # Fleet #166's requirements-dev.txt
+    runtime = "attrs==26.1.0             # via jsonschema\nflask==3.1.2 \\\n    --hash=sha256:" + "0" * 64 + "\n"
+    dev = "# Test dependencies\n-r requirements.txt\npytest==9.1.1\n"
+
+    def manifest(paths, head, base=None):
+        """(facts, outcome, codes) for a change whose files read as ``head`` at
+        the head commit and ``base`` at the base commit."""
+        files = {(HEAD, k): v for k, v in head.items()} | {(BASE, k): v for k, v in (base or {}).items()}
+        requested: list[str] = []
+        snap = snapshot(paths, files=files, requested=requested)
+        result = shadow.m.decide(snap)
+        manifest.requested = requested
+        return snap.facts, result.outcome, codes(result)
+
+    resolved = ({"lockfile_sibling": True}, "AUTHORIZE", [])
+    refused = ({"lockfile_sibling": False}, "ESCALATE", ["UNDELEGATED:dependency-manifest"])
+    cases = {
+        "a pinned requirements file": (("requirements-dev.txt",), {"requirements-dev.txt": pinned}, None, resolved),
+        "a manifest with its lockfile": ((lh + "package.json", lh + "package-lock.json"),
+                                         {lh + "package.json": "{}", lh + "package-lock.json": "{}"}, None, resolved),
+        "an include pinned at head": ((lh + "requirements-dev.txt",),
+                                      {lh + "requirements-dev.txt": dev, lh + "requirements.txt": runtime}, None, resolved),
+        "includes in a cycle": (("requirements-a.txt",), {"requirements-a.txt": "-r requirements-b.txt\n",
+                                "requirements-b.txt": "-r requirements-a.txt\nx==1\n"}, None, resolved),
+        "a lockfile alone": (("applications/x/uv.lock",), {"applications/x/uv.lock": "version = 1\n"}, None, resolved),
+        "a manifest without its lockfile": ((lh + "package.json",), {lh + "package.json": "{}"}, None, refused),
+        "a lockfile deleted beside its manifest": ((lh + "package.json", lh + "package-lock.json"),
+                                                   {lh + "package.json": "{}"}, None, refused),
+        "a lockfile deleted alone": (("applications/x/uv.lock",), {}, None, refused),
+        "a range": (("requirements.txt",), {"requirements.txt": "requests>=2.32\n"}, None, refused),
+        "a wildcard": (("requirements.txt",), {"requirements.txt": "requests==2.*\n"}, None, refused),
+        "an editable source": (("requirements.txt",), {"requirements.txt": "-e git+https://example.com/x.git#egg=x\n"}, None, refused),
+        "another index": (("requirements.txt",), {"requirements.txt": "--index-url https://example.com/simple\nrequests==2.32.4\n"}, None, refused),
+        "an unreadable requirements file": (("requirements.txt",), {}, None, refused),
+        "an include unpinned at head": ((lh + "requirements-dev.txt",),
+                                        {lh + "requirements-dev.txt": dev, lh + "requirements.txt": "flask\n"}, None, refused),
+        "an include outside the repository": (("requirements.txt",), {"requirements.txt": "-r ../x.txt\n"}, None, refused),
+        "pinned at base, a range at head": (("requirements-dev.txt",), {"requirements-dev.txt": "sh>=2\n"},
+                                            {"requirements-dev.txt": pinned}, refused),
+    }
+    for name, (paths, head, base, want) in cases.items():
+        got = manifest(paths, head, base)
+        assert got == want, (name, got)
+    # The fact is read at the exact head commit, never the base or a branch.
+    manifest(("requirements-dev.txt",), {"requirements-dev.txt": pinned})
+    assert manifest.requested == [f"repos/{REPO}/contents/requirements-dev.txt?ref={HEAD}"], manifest.requested
+    # The same resolved change with evidence for an older head is not authorized.
+    stale_bump = decide(("requirements-dev.txt",), head_check="c" * 40, files={(HEAD, "requirements-dev.txt"): pinned})
+    assert (stale_bump.outcome, codes(stale_bump)) == ("VERIFY", ["EVIDENCE_NOT_APPLICABLE:intent-gate"]), codes(stale_bump)
+    # A change without a dependency manifest claims no fact.
+    assert snapshot(("docs/decisions/0009-x.md",)).facts == {}
 
     # The summary states that shadow grants nothing.
     assert "grants nothing" in shadow.summary(
