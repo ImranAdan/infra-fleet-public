@@ -637,6 +637,9 @@ def structural_controls():
         return ", ".join(sorted({c for c, _ in gate.workflow_findings(W, base, head)})) or "none"
 
     alias = BASE_WF.replace("jobs:\n", "x-env: &e {A: '1'}\njobs:\n").replace(STEP, STEP + "        env: *e\n")
+    # The control must reuse the anchor, and the parser must resolve it.
+    assert "env: *e" in alias, alias
+    assert gate.yaml_load(alias)["jobs"]["build"]["steps"][0]["env"] == {"A": "1"}
     return {
         "an acyclic alias reused": found(BASE_WF, alias),
         "an unchanged privileged trigger": found(RESULT, RESULT.replace("echo ready", "echo done")),
