@@ -7,6 +7,7 @@ decide() are the real code. Nothing here calls GitHub.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import urllib.parse
 from pathlib import Path
@@ -80,7 +81,7 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requ
             path, _, query = url.split("/contents/", 1)[1].partition("?")
             text = (files or {}).get((query.removeprefix("ref="), urllib.parse.unquote(path)))
             if text is None:
-                raise shadow.subprocess.CalledProcessError(1, "gh")
+                raise subprocess.CalledProcessError(1, "gh")
             return text
         if joined.endswith("/pulls/1"):
             return json.dumps({"head": {"sha": HEAD}, "base": {"sha": BASE}})

@@ -19,7 +19,6 @@ import datetime
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -45,23 +44,6 @@ def _lines(*args: str) -> list[dict[str, Any]]:
         for line in _gh("api", "--paginate", *args).splitlines()
         if line.strip()
     ]
-
-
-def _reader(repository: str, ref: str):
-    """Read files at the trusted base commit; a missing file is None."""
-
-    def read(path: str) -> str | None:
-        try:
-            return _gh(
-                "api",
-                "-H",
-                "Accept: application/vnd.github.raw+json",
-                f"repos/{repository}/contents/{path}?ref={ref}",
-            )
-        except subprocess.CalledProcessError:
-            return None
-
-    return read
 
 
 def _per_file(diff: str) -> dict[str, str]:
@@ -127,7 +109,7 @@ def inputs(repository: str, number: int, delegation: d.Delegation) -> m.Decision
     return m.DecisionInput(
         delegation=delegation,
         subject=subject,
-        findings=findings(diff, paths, delegation, _reader(repository, base), _reader(repository, head)),
+        findings=findings(diff, paths, delegation, gate.read_at(repository, base), gate.read_at(repository, head)),
         facts={},
         records=records,
         blocking=(),

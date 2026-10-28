@@ -538,7 +538,7 @@ def bypass_topology():
 
 # Each attempt is a change to a complete workflow; the evasion rows decide them
 # through the new engine, and live_gate_evasions through Fleet's legacy gate.
-STEP = "      - run: echo smoke\n"
+SMOKE = "      - run: echo smoke\n"
 ANCHORS = "env:\n  READ_PERMISSION: &r read\n  WRITE_PERMISSION: &1 write\n"
 PRIVILEGED = "on: pull_request_target\npermissions: write-all\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
 # A workflow_run workflow reading a secret: the run it acts on comes from elsewhere.
@@ -551,14 +551,14 @@ QUOTED3 = '  contents: "\\\n    non\\\n    e"\n'  # "none" over three lines
 EVASIONS = {
     "evade_flow_permissions": {
         "flow-style block": wf(("permissions:\n  contents: read\n", "permissions: {contents: write}\n")),
-        "nested flow mapping": wf(("  build:\n    runs-on: ubuntu-latest\n    steps:\n" + STEP,
+        "nested flow mapping": wf(("  build:\n    runs-on: ubuntu-latest\n    steps:\n" + SMOKE,
                                    "  build: {runs-on: ubuntu-latest, permissions: {contents: write}, steps: [{run: echo smoke}]}\n")),
         "quoted value": wf(("  contents: read", "  contents: 'write'")),
         "quoted key": wf(("  contents: read", '  "contents": write')),
         "write-all": wf(("permissions:\n  contents: read\n", "permissions: write-all\n")),
         "block scalar": wf(("  contents: read\n", "  contents: >-\n    write\n")),
         "explicit key": wf(("  contents: read\n", "  ? contents\n  : write\n")),
-        "a comment naming write and secrets (control)": wf((STEP, "      # write to the cache; no secrets here\n" + STEP)),
+        "a comment naming write and secrets (control)": wf((SMOKE, "      # write to the cache; no secrets here\n" + SMOKE)),
         # YAML decodes escapes in double-quoted scalars, and an escaped line
         # break joins two lines with no space.
         "hex-escaped value": wf(("  contents: read", '  contents: "wri\\x74e"')),
@@ -569,14 +569,14 @@ EVASIONS = {
         "only a quote-free middle line changes": wf(("    non\\", "    writ\\"), base=BASE_WF.replace("  contents: read\n", QUOTED3)),
         "an escaped middle line": wf(("    non\\", "    \\x77rit\\"), base=BASE_WF.replace("  contents: read\n", QUOTED3)),
         "a value under an unknown tag": wf(("  contents: read", "  contents: !!binary d3JpdGU=")),
-        "an escaped string in a script (control)": wf((STEP, STEP + '      - run: printf "a\\tb\\n"\n')),
-        "a shell inequality (control)": wf((STEP, STEP + '      - run: test "$A" != "b"\n')),
-        "a double quote inside single quotes (control)": wf((STEP, STEP + "      - run: echo 'say \"hi'\n")),
+        "an escaped string in a script (control)": wf((SMOKE, SMOKE + '      - run: printf "a\\tb\\n"\n')),
+        "a shell inequality (control)": wf((SMOKE, SMOKE + '      - run: test "$A" != "b"\n')),
+        "a double quote inside single quotes (control)": wf((SMOKE, SMOKE + "      - run: echo 'say \"hi'\n")),
         # Only the parsed versions show these: no changed line names a write.
         "a value of another type": wf(("  contents: read", "  contents: 2")),
         "permissions block removed": wf(("permissions:\n  contents: read\n", "")),
         "a duplicate key": wf(("  contents: read\n", "  contents: read\n  contents: read\n")),
-        "a workflow whose head cannot be read": (wf((STEP, STEP + STEP))[0], {W: BASE_WF}, {W: None}),
+        "a workflow whose head cannot be read": (wf((SMOKE, SMOKE + SMOKE))[0], {W: BASE_WF}, {W: None}),
     },
     "evade_yaml_aliases": {
         "anchor then alias": wf(("permissions:\n  contents: read\n", "x-perm: &w\n  contents: write\npermissions: *w\n")),
@@ -593,15 +593,15 @@ EVASIONS = {
         "aliases that expand exponentially": wf(("jobs:\n", LAUGHS + "jobs:\n")),
     },
     "evade_secret_expressions": {
-        "toJSON(secrets)": wf((STEP, STEP + "        env: { ALL: '${{ toJSON(secrets) }}' }\n")),
-        "computed index": wf((STEP, STEP + "        env: { T: '${{ secrets[inputs.name] }}' }\n")),
-        "after another operand": wf((STEP, STEP + "        env: { T: '${{ inputs.token || secrets.DEPLOY }}' }\n")),
-        "expression across lines": wf((STEP, '      - run: |\n          echo "${{\n            secrets.DEPLOY }}"\n')),
-        "upper-case context name": wf((STEP, STEP + "        env: { T: '${{ SECRETS.DEPLOY }}' }\n")),
-        "expression in a script comment": wf((STEP, "      - run: |\n          # ${{ toJSON(secrets) }}\n          echo hi\n")),
-        "secrets: inherit": wf((STEP, STEP + "  call:\n    uses: ./.github/workflows/reusable.yml\n    secrets: inherit\n")),
-        "an escaped context name": wf((STEP, STEP + '        env: { T: "${{ s\\x65crets.DEPLOY }}" }\n')),
-        "an escaped inherit key": wf((STEP, STEP + '  call:\n    uses: ./.github/workflows/reusable.yml\n    "s\\x65crets": inherit\n')),
+        "toJSON(secrets)": wf((SMOKE, SMOKE + "        env: { ALL: '${{ toJSON(secrets) }}' }\n")),
+        "computed index": wf((SMOKE, SMOKE + "        env: { T: '${{ secrets[inputs.name] }}' }\n")),
+        "after another operand": wf((SMOKE, SMOKE + "        env: { T: '${{ inputs.token || secrets.DEPLOY }}' }\n")),
+        "expression across lines": wf((SMOKE, '      - run: |\n          echo "${{\n            secrets.DEPLOY }}"\n')),
+        "upper-case context name": wf((SMOKE, SMOKE + "        env: { T: '${{ SECRETS.DEPLOY }}' }\n")),
+        "expression in a script comment": wf((SMOKE, "      - run: |\n          # ${{ toJSON(secrets) }}\n          echo hi\n")),
+        "secrets: inherit": wf((SMOKE, SMOKE + "  call:\n    uses: ./.github/workflows/reusable.yml\n    secrets: inherit\n")),
+        "an escaped context name": wf((SMOKE, SMOKE + '        env: { T: "${{ s\\x65crets.DEPLOY }}" }\n')),
+        "an escaped inherit key": wf((SMOKE, SMOKE + '  call:\n    uses: ./.github/workflows/reusable.yml\n    "s\\x65crets": inherit\n')),
     },
     "evade_reusable_triggers": {
         "reusable workflow gains pull_request_target": wf(("on: workflow_call\n", "on:\n  workflow_call:\n  pull_request_target:\n"),
@@ -636,7 +636,7 @@ def structural_controls():
     def found(base, head):
         return ", ".join(sorted({c for c, _ in gate.workflow_findings(W, base, head)})) or "none"
 
-    alias = BASE_WF.replace("jobs:\n", "x-env: &e {A: '1'}\njobs:\n").replace(STEP, STEP + "        env: *e\n")
+    alias = BASE_WF.replace("jobs:\n", "x-env: &e {A: '1'}\njobs:\n").replace(SMOKE, SMOKE + "        env: *e\n")
     # The control must reuse the anchor, and the parser must resolve it.
     assert "env: *e" in alias, alias
     assert gate.yaml_load(alias)["jobs"]["build"]["steps"][0]["env"] == {"A": "1"}
