@@ -9,6 +9,7 @@ nothing here is evidence that a live merge works.
 from __future__ import annotations
 
 import dataclasses
+import json
 import sys
 from pathlib import Path
 
@@ -90,8 +91,8 @@ def evaluate(outcome: str = "AUTHORIZE"):
     return receipt
 
 
-def run(hub: FakeGitHub, git: FakeGit, *, outcome="AUTHORIZE", delegation=DELEG, enforcement=lambda: ENF):
-    return x.execute(hub, hub.mint, git, REPO, REF, REPO, 7, delegation, evaluate(outcome), enforcement)
+def run(hub: FakeGitHub, git: FakeGit, *, outcome="AUTHORIZE", delegation=DELEG, enforcement=lambda: ENF, evaluator=None):
+    return x.execute(hub, hub.mint, git, REPO, REF, REPO, 7, delegation, evaluator or evaluate(outcome), enforcement)
 
 
 def revisions(git: FakeGit) -> list[str]:
@@ -142,7 +143,7 @@ def main() -> int:
         code, _ = run(hub, git)
         assert (code, hub.merges) == (want, []), (name, code)
     hub, git = FakeGitHub(), FakeGit()
-    snapshots = iter([ENF, "sha256:" + "9" * 64])
+    snapshots = iter([ENF, ENF, "sha256:" + "9" * 64])
     code, _ = run(hub, git, enforcement=lambda: next(snapshots))
     assert (code, hub.merges) == ("ENFORCEMENT_DRIFT", []), code
 
@@ -151,6 +152,19 @@ def main() -> int:
     def unreadable():
         raise l.LedgerError("ENFORCEMENT_MISSING", "no ruleset protects the base branch")
     assert run(hub, git, enforcement=unreadable)[0] == "ENFORCEMENT_MISSING" and hub.minted == 0
+
+    # Authorization is decided again after the token is minted. Evidence that
+    # changed meanwhile, on the same head, base and enforcement, refuses: the
+    # refusal is recorded and nothing is merged.
+    hub, git = FakeGitHub(), FakeGit()
+    outcomes, seen = iter(["AUTHORIZE", "ESCALATE"]), []
+
+    def changing(pr: dict, enforcement: str) -> dict:
+        seen.append(next(outcomes))
+        return evaluate(seen[-1])(pr, enforcement)
+    code = run(hub, git, evaluator=changing)
+    assert (code, seen, hub.minted, hub.merges) == (("REFUSED", "ESCALATE"), ["AUTHORIZE", "ESCALATE"], 1, []), code
+    assert [json.loads(line)["outcome"] for line in revisions(git)] == ["ESCALATE"], revisions(git)
 
     # An expired token is replaced and the whole subject decided again: one merge.
     hub, git = FakeGitHub(), FakeGit()
@@ -172,8 +186,29 @@ def main() -> int:
     # Refused because someone else merged a newer head meanwhile: unmanaged.
     hub, git = FakeGitHub(), FakeGit()
     hub.refuse = [409]
+    hub.messages["d" * 40] = "fix: merged by hand"
     hub.on_read[3] = lambda pr: pr.update(state="closed", merged=True, merge_commit_sha="d" * 40, head={"sha": "c" * 40})
     assert run(hub, git) == ("UNMANAGED_MERGE", "d" * 40) and hub.merges == []
+
+    # Every merged read-back is settled by its anchors, not by its head. Another
+    # actor merged the same head without Mandate's trailers: unmanaged.
+    hub, git = FakeGitHub(), FakeGit()
+    hub.refuse = [405]
+    hub.messages["d" * 40] = "fix: merged without Mandate"
+    hub.on_read[3] = lambda pr: pr.update(state="closed", merged=True, merge_commit_sha="d" * 40)
+    assert run(hub, git) == ("UNMANAGED_MERGE", "d" * 40) and hub.merges == []
+    # Another Mandate worker merged the same head under its own recorded
+    # AUTHORIZE: that worker's merge, not this one's.
+    hub, git = FakeGitHub(), FakeGit()
+    hub.refuse = [405]
+
+    def competitor(pr: dict) -> None:
+        other = evaluate()(pr, ENF)
+        message = r.trailers(git, REPO, REF, other["subject"], other, DELEG, after=r.pr_latest(git, REPO, REF, REPO, 7))
+        hub.messages["b" * 40] = f"Merge pull request #7\n\n{message}"
+        pr.update(state="closed", merged=True, merge_commit_sha="b" * 40)
+    hub.on_read[3] = competitor
+    assert run(hub, git) == ("ALREADY_MERGED", "b" * 40) and hub.merges == [] and len(revisions(git)) == 2
 
     # A merge Mandate did not make is reported as unmanaged.
     hub, git = FakeGitHub(), FakeGit()
