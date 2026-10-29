@@ -160,6 +160,19 @@ def applicability(record: EvidenceRecord, subject: Subject) -> tuple[str, ...]:
     return tuple(failed)
 
 
+def _mismatch(check: str, record: EvidenceRecord, subject: Subject) -> str:
+    """Why genuine evidence is about another subject. A run with no usable
+    pull request association has an unknown base, not a different one."""
+    failed = applicability(record, subject)
+    unknown = record.base_sha is None and "BASE" in failed
+    known = [f for f in failed if not (unknown and f == "BASE")]
+    parts = [f"is about another {'/'.join(known)}"] if known else []
+    if unknown:
+        parts.append("tested base is unknown (run has no usable PR base association)")
+    run = f"{check!r} check run {record.check_run_id} (run {record.run_id})"
+    return f"{run}{' ' if known else ': '}{'; '.join(parts)}"
+
+
 def _latest_attempts(records: list[EvidenceRecord]) -> list[EvidenceRecord]:
     """A rerun supersedes earlier attempts of the same workflow run; every
     result of the latest attempt is kept, so input order cannot matter."""
@@ -211,9 +224,7 @@ def evaluate(
                 (
                     f"EVIDENCE_NOT_APPLICABLE:{name}",
                     "; ".join(
-                        f"{producer.check!r} check run {r.check_run_id} (run {r.run_id}) is about another "
-                        f"{'/'.join(applicability(r, subject))}"
-                        for r in sorted(genuine, key=lambda r: r.check_run_id)
+                        _mismatch(producer.check, r, subject) for r in sorted(genuine, key=lambda r: r.check_run_id)
                     ),
                 )
             )

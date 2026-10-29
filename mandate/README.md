@@ -66,7 +66,7 @@ axes and returns typed failures, never an outcome:
 | Axis | Fails when | Failure |
 | --- | --- | --- |
 | Authenticity | The check name matches but the App, workflow path, event or dispatch branch is not the declared producer's | `CHECK_WRONG_SOURCE` |
-| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields |
+| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields, and says the tested base is unknown when the run has no usable pull request association |
 | Sufficiency | The required producer is absent, running, failed, or reports conflicting or unattributable results | `EVIDENCE_REQUIRED`, `EVIDENCE_PENDING`, `EVIDENCE_FAILED:<name>`, `EVIDENCE_CONFLICT` |
 
 A rerun supersedes earlier attempts of the same workflow run; every result of
@@ -385,7 +385,8 @@ input is built from:
     itself and to every file it includes with `-r` or `-c`, which must be
     inside the repository.
 
-  Any other option (`-e`, another index) or an unreadable file makes it
+  Any other option (`-e`, another index), a `${VAR}` that pip would fill
+  from the environment (outside a comment), or an unreadable file makes it
   false. A change with no manifest claims no fact.
 
 The other facts (permission, secret and trigger deltas, author, signatures)
