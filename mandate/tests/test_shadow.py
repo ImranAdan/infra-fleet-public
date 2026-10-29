@@ -242,6 +242,16 @@ def main() -> int:
         "an include outside the repository": (("requirements.txt",), {"requirements.txt": "-r ../x.txt\n", "../x.txt": "x==1\n"}, None, refused),
         "pinned at base, a range at head": (("requirements-dev.txt",), {"requirements-dev.txt": "sh>=2\n"},
                                             {"requirements-dev.txt": pinned}, refused),
+        # pip expands ${VAR} after stripping comments, so the bytes prove no version.
+        "a version from the environment": ((lh + "requirements-dev.txt",), {lh + "requirements-dev.txt": "requests==${PIN}\n"},
+                                           None, refused),
+        "an include with a version from the environment": ((lh + "requirements-dev.txt",),
+                                                           {lh + "requirements-dev.txt": dev,
+                                                            lh + "requirements.txt": "flask==${FLASK}\n"}, None, refused),
+        "an include path from the environment": (("requirements.txt",), {"requirements.txt": "-r ${DIR}/pins.txt\n",
+                                                 "${DIR}/pins.txt": "x==1\n"}, None, refused),
+        "a variable only in a comment": (("requirements.txt",), {"requirements.txt": "x==1  # bump with ${PIN}\n"},
+                                         None, resolved),
     }
     for name, (paths, head, base, want) in cases.items():
         got = manifest(paths, head, base)

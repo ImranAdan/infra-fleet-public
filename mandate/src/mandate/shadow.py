@@ -89,7 +89,8 @@ def findings(
 def _pinned(path: str, read, seen: set[str]) -> bool:
     """A requirements file at the head, and every file it includes, names one
     exact version per requirement. Any option other than an include or a hash
-    is unproven, and so is an include outside the repository."""
+    is unproven, and so is an include outside the repository or anything pip
+    would take from the environment (${VAR}, expanded after comments go)."""
     if path in seen:
         return True
     seen.add(path)
@@ -98,6 +99,8 @@ def _pinned(path: str, read, seen: set[str]) -> bool:
         return False
     for line in re.sub(r"\\\n", " ", text).splitlines():
         line = re.sub(r"(?:^|\s)#.*", "", line)
+        if "${" in line:
+            return False
         line = re.sub(r"\s--hash[=\s]\S+", "", " " + line).strip()
         include = INCLUDE.match(line)
         if include:

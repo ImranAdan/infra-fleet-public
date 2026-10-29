@@ -143,6 +143,22 @@ def main() -> int:
     # The rejection names the provider IDs and the mismatched subject fields.
     detail = dict(e.evaluate(DELEGATION, ("intent-gate",), [e.normalize(check(), run(base=OTHER), SUBJECT)], SUBJECT).failures)
     assert detail["EVIDENCE_NOT_APPLICABLE:intent-gate"] == "'Intent gate / Declared intent' check run 70 (run 7) is about another BASE", detail
+    # A run with no usable pull request association has an unknown base, not another one.
+    unknown = {**run(), "pull_requests": None}
+    detail = dict(e.evaluate(DELEGATION, ("intent-gate",), [e.normalize(check(), unknown, SUBJECT)], SUBJECT).failures)
+    assert detail == {"EVIDENCE_NOT_APPLICABLE:intent-gate": "'Intent gate / Declared intent' check run 70 (run 7): "
+                      "tested base is unknown (run has no usable PR base association)"}, detail
+    both = {**run(head=OTHER), "pull_requests": None}
+    detail = dict(e.evaluate(DELEGATION, ("intent-gate",), [e.normalize(check(head=OTHER), both, SUBJECT)], SUBJECT).failures)
+    assert detail == {"EVIDENCE_NOT_APPLICABLE:intent-gate": "'Intent gate / Declared intent' check run 70 (run 7) is about "
+                      "another HEAD; tested base is unknown (run has no usable PR base association)"}, detail
+    # A dispatch run never binds a base, so its missing base is not mentioned.
+    dispatch = d.parse((HERE.parent / "examples" / "infra-fleet-public.toml").read_text().replace(
+        'event = "pull_request"', 'event = "workflow_dispatch"', 1), REPO, POLICY)
+    stale = e.normalize(check(head=OTHER), {**run(event="workflow_dispatch", head=OTHER), "pull_requests": None}, SUBJECT)
+    detail = dict(e.evaluate(dispatch, ("intent-gate",), [stale], SUBJECT).failures)
+    assert detail == {"EVIDENCE_NOT_APPLICABLE:intent-gate": "'Intent gate / Declared intent' check run 70 (run 7) is about "
+                      "another HEAD"}, detail
     assert e.applicability(good, SUBJECT) == ()
     assert e.applicability(e.normalize(check(), run(base=OTHER), SUBJECT), SUBJECT) == ("BASE",)
 
