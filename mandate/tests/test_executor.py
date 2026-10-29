@@ -215,6 +215,13 @@ def main() -> int:
     hub.pr.update(state="closed", merged=True, merge_commit_sha="e" * 40)
     hub.messages["e" * 40] = "fix: merged by hand"
     assert run(hub, git) == ("UNMANAGED_MERGE", "e" * 40) and hub.minted == 0
+    # So is one whose trailers name a recorded refusal about this head.
+    hub, git = FakeGitHub(), FakeGit()
+    entry, chain, _ = r.record(git, REPO, REF, evaluate("ESCALATE")(hub.pr, ENF), DELEG, after=None)
+    named = zip(r.TRAILERS, (entry["decision_id"], entry["receipt_digest"], chain))
+    hub.messages["a" * 40] = "fix: merged\n\n" + "\n".join(f"{k}: {v}" for k, v in named)
+    hub.pr.update(state="closed", merged=True, merge_commit_sha="a" * 40)
+    assert run(hub, git) == ("UNMANAGED_MERGE", "a" * 40) and hub.minted == 0
     # So is one whose trailers name a decision about another head.
     hub, git = FakeGitHub(), FakeGit()
     code, sha = run(hub, git)

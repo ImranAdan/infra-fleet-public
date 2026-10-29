@@ -2,16 +2,21 @@
 most one exact-head merge.
 
     read the PR -> latest receipt -> decide -> (AUTHORIZE) mint a token ->
-    re-read the PR -> trailers() revalidates and records -> exact-head merge ->
-    read the merge back
+    decide again -> re-read the PR -> trailers() revalidates and records ->
+    exact-head merge -> read the merge back
 
 Every wake starts from provider state, never from an event payload or an
-earlier decision, so duplicate, late and reordered wakes converge: a PR
-already merged under its own trailers is ALREADY_MERGED, and one merged any
-other way is UNMANAGED_MERGE. The token is minted only after an AUTHORIZE and
-only writes the merge; an expired one (401) is replaced and the whole subject
-decided again. A merge whose response is lost is settled by reading the
-provider back, never by asking again.
+earlier decision, so duplicate, late and reordered wakes converge. The token
+is minted only after an AUTHORIZE and only writes the merge, and the whole
+subject is decided again once it exists, so nothing that changed while it was
+minted is merged on the earlier decision. An expired token (401) is replaced
+and the subject decided again.
+
+A merged PR is settled by its merge commit's trailers, never by its head:
+MERGED when they are this wake's, ALREADY_MERGED when they name another
+recorded AUTHORIZE about this PR at its merged head (an earlier wake or a
+competing worker), and UNMANAGED_MERGE otherwise. A merge whose response is
+lost is settled by reading the provider back, never by asking again.
 
 Inactive: nothing calls this yet. ponytail: the result is returned, not
 recorded; lifecycle reconciliation starts from a MERGED result's merge SHA.
@@ -32,9 +37,10 @@ ATTEMPTS = 3
 
 
 def _merged(provider: l.Api, ledger: l.Api, ledger_repo: str, ref: str, repository: str,
-            number: int, pr: dict[str, Any]) -> tuple[str, str]:
+            number: int, pr: dict[str, Any], mine: str = "") -> tuple[str, str]:
     """ALREADY_MERGED when the merge commit's trailers name an AUTHORIZE
-    receipt in the ledger about this PR at its merged head; else UNMANAGED_MERGE."""
+    receipt in the ledger about this PR at its merged head, MERGED when they
+    are also ``mine`` (this wake's trailers); else UNMANAGED_MERGE."""
     sha = pr["merge_commit_sha"]
     named = r.parse_trailers(provider("GET", f"repos/{repository}/commits/{sha}", None)["commit"]["message"])
     if named:
@@ -43,7 +49,7 @@ def _merged(provider: l.Api, ledger: l.Api, ledger_repo: str, ref: str, reposito
             if (entry["decision_id"], entry["receipt_digest"]) == (named["Mandate-Decision"], named["Mandate-Receipt-Digest"]) \
                     and (s["repository"], s["pull_request"], s["head_sha"]) == (repository, number, pr["head"]["sha"]) \
                     and entry["outcome"] == "AUTHORIZE":
-                return "ALREADY_MERGED", sha
+                return ("MERGED" if named == r.parse_trailers(mine) else "ALREADY_MERGED"), sha
     return "UNMANAGED_MERGE", sha
 
 
@@ -79,10 +85,12 @@ def execute(
         try:
             after = r.pr_latest(ledger, ledger_repo, ref, repository, number)
             fresh = evaluate(pr, enforcement())
+            if fresh["decision"]["outcome"] == "AUTHORIZE":
+                write = mint()
+                fresh = evaluate(pr, enforcement())  # whatever changed while it was minted
             if fresh["decision"]["outcome"] != "AUTHORIZE":
                 r.record(ledger, ledger_repo, ref, fresh, delegation, after=after)
                 return "REFUSED", fresh["decision"]["outcome"]
-            write = mint()
             now = provider("GET", pull, None)
             subject = {**fresh["subject"], "head_sha": now["head"]["sha"], "base_sha": now["base"]["sha"],
                        "enforcement": enforcement()}
@@ -105,7 +113,5 @@ def execute(
         done = provider("GET", pull, None)
         if not done["merged"]:
             return "NOT_MERGED", refused
-        if done["head"]["sha"] != subject["head_sha"]:
-            return "UNMANAGED_MERGE", done["merge_commit_sha"]
-        return "MERGED", done["merge_commit_sha"]
+        return _merged(provider, ledger, ledger_repo, ref, repository, number, done, message)
     return "UNAVAILABLE", f"no stable decision in {ATTEMPTS} attempts"

@@ -443,13 +443,18 @@ decision:
    the owner).
 3. Read the PR's latest receipt and decide. A refusal is recorded and
    returned as `REFUSED`.
-4. Only after an AUTHORIZE, mint a merge-only token, then re-read the PR and
-   the enforcement snapshot. `trailers()` revalidates them (`HEAD_CHANGED`,
-   `BASE_CHANGED`, `ENFORCEMENT_DRIFT`, or `ENFORCEMENT_MISSING` without a
-   snapshot) and records the revision.
-5. Squash-merge exactly that head with the trailers, then read the PR back:
-   `MERGED` with the merge SHA, `NOT_MERGED` with GitHub's refusal, or
-   `UNMANAGED_MERGE` if another head was merged meanwhile.
+4. Only after an AUTHORIZE, mint a merge-only token, then decide again from
+   fresh inputs, so evidence that changed while it was minted is never merged
+   on the earlier decision: a refusal is recorded and returned as `REFUSED`.
+   Then re-read the PR and the enforcement snapshot. `trailers()` revalidates
+   them (`HEAD_CHANGED`, `BASE_CHANGED`, `ENFORCEMENT_DRIFT`, or
+   `ENFORCEMENT_MISSING` without a snapshot) and records the revision.
+5. Squash-merge exactly that head with the trailers, then read the PR back.
+   Not merged is `NOT_MERGED` with GitHub's refusal. A merged PR is settled
+   by its merge commit's trailers, never by its head, as in step 1: `MERGED`
+   only when they are this wake's, `ALREADY_MERGED` when another worker merged
+   it under its own recorded AUTHORIZE, and `UNMANAGED_MERGE` otherwise, even
+   at the same head.
 
 `STALE_DECISION` decides again. An expired token (401) is replaced and the
 whole subject decided again. A lost merge response is settled by the
