@@ -1,0 +1,2442 @@
+{
+ "attribution": "owner-principal, human/agent attribution unknown",
+ "coverage": {
+  "ImranAdan/infra-fleet-advisor-public": {
+   "authority_evaluable": 0,
+   "authority_unsafe": 0,
+   "configuration_refusals": 38,
+   "pull_requests": 38,
+   "replay_errors": 0,
+   "unsafe_rate": "N/A (nothing evaluable)",
+   "valid_delegation": 0,
+   "with_missing_observations": 0
+  },
+  "ImranAdan/infra-fleet-public": {
+   "authority_evaluable": 27,
+   "authority_unsafe": 0,
+   "configuration_refusals": 0,
+   "pull_requests": 68,
+   "replay_errors": 0,
+   "unsafe_rate": "0/27",
+   "valid_delegation": 68,
+   "with_missing_observations": 1
+  }
+ },
+ "disagreements": [
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 132,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 134,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 143,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 144,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 147,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 148,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 163,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 164,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "note": "",
+   "number": 172,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 174,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 177,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 180,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 182,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 138,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 142,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 145,
+   "outcome": "VERIFY",
+   "path": "worker merge",
+   "reasons": [
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 148,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 150,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 155,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 158,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 165,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 166,
+   "outcome": "VERIFY",
+   "path": "worker merge",
+   "reasons": [
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 168,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 170,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 171,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 177,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 178,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 179,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 183,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 184,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 185,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 186,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 188,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 194,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 198,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 201,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 202,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 203,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 205,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 207,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 210,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 212,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 214,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 215,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 217,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 219,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 220,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 221,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 226,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 233,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  },
+  {
+   "authority_categories": [],
+   "note": "",
+   "number": 239,
+   "outcome": "VERIFY",
+   "path": "worker merge",
+   "reasons": [
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public",
+   "reviewer": "",
+   "rule": "worker merge and not AUTHORIZE",
+   "verdict": ""
+  }
+ ],
+ "engine_replayed": "e7a053ad5ca4e86cf49a064c6a9b4ca226da1be4",
+ "export": {
+  "collected_at": "2026-10-28T21:57:15Z",
+  "delegation": {
+   "commit": "da6db52b465c99d955e07809bdf135104db3bc7f",
+   "covers": [
+    "ImranAdan/infra-fleet-public"
+   ],
+   "repository": "ImranAdan/mandate-delegation"
+  },
+  "engine_collected": {
+   "clean": true,
+   "commit": "e7a053ad5ca4e86cf49a064c6a9b4ca226da1be4"
+  },
+  "manifest_sha256": "33ab4c15c8442b572ebe33fb514a16fd76cef82dcc2b3a0bfb21b259dcd7bfb9"
+ },
+ "observation": {
+  "collection_finished": "2026-10-28T22:06:07Z",
+  "collection_started": "2026-10-28T21:57:15Z",
+  "engine_pin": {
+   "clean": true,
+   "commit": "e7a053ad5ca4e86cf49a064c6a9b4ca226da1be4"
+  },
+  "engine_pin_note": "",
+  "semantics": "counterfactual replay of provider state at collection, not an as-of-merge snapshot",
+  "tooling": {
+   "clean": true,
+   "commit": "6d042f9db698b61fe09671b9dcc8fe915e50d96a"
+  }
+ },
+ "outcome_by_path": {
+  "closed unmerged -> ESCALATE": 6,
+  "closed unmerged -> not replayed (issue)": 2,
+  "head-bound approval -> ESCALATE": 15,
+  "open -> ESCALATE": 1,
+  "owner-principal merge without approval -> ESCALATE": 33,
+  "worker merge -> ESCALATE": 48,
+  "worker merge -> VERIFY": 3
+ },
+ "population_counts": {
+  "ever-labelled": {
+   "issue": 2,
+   "pull": 50,
+   "total": 52
+  },
+  "ever-labelled-census": {
+   "issue": 2,
+   "pull": 56,
+   "total": 58
+  },
+  "labelled-at-cutoff": {
+   "issue": 0,
+   "pull": 48,
+   "total": 48
+  },
+  "worker-merges": {
+   "issue": 0,
+   "pull": 58,
+   "total": 58
+  }
+ },
+ "report_version": 2,
+ "rows": [
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 109,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 112,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 115,
+   "outcome": "ESCALATE",
+   "path": "closed unmerged",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 125,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority",
+    "permission-added"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 126,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 128,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority",
+    "permission-added"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 129,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 131,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 132,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 134,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 136,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 142,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 143,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 144,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 145,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "credential",
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 146,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 147,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 148,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 149,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 150,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 151,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "issue",
+   "missing_observations": [],
+   "number": 156,
+   "outcome": "not replayed (issue)",
+   "path": "closed unmerged",
+   "reasons": [],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 157,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "credential",
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 158,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 160,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 163,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 164,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 170,
+   "outcome": "ESCALATE",
+   "path": "closed unmerged",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 172,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 173,
+   "outcome": "ESCALATE",
+   "path": "closed unmerged",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 174,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 175,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 177,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 178,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 180,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 181,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 182,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 183,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "configuration refusal: no usable delegation at the pin",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 187,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "DELEGATION_INVALID"
+   ],
+   "repository": "ImranAdan/infra-fleet-advisor-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "issue",
+   "missing_observations": [],
+   "number": 98,
+   "outcome": "not replayed (issue)",
+   "path": "closed unmerged",
+   "reasons": [],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 100,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:merge-authority",
+    "RESERVED:permission-added",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 104,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:credential",
+    "RESERVED:merge-authority",
+    "RESERVED:permission-added",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 111,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:merge-authority",
+    "RESERVED:permission-added",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 113,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:merge-authority",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "iam",
+    "permanent-infrastructure"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 114,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:evidence-producer",
+    "RESERVED:iam",
+    "RESERVED:merge-authority",
+    "RESERVED:permanent-infrastructure",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 118,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:merge-authority",
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority",
+    "permission-added"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 119,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:evidence-producer",
+    "RESERVED:merge-authority",
+    "RESERVED:permission-added",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 121,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:merge-authority",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority",
+    "permission-added"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 125,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:evidence-producer",
+    "RESERVED:merge-authority",
+    "RESERVED:permission-added",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 129,
+   "outcome": "ESCALATE",
+   "path": "closed unmerged",
+   "reasons": [
+    "RESERVED:merge-authority",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 131,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:merge-authority",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 138,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "credential",
+    "merge-authority",
+    "permission-added"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 141,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:credential",
+    "RESERVED:merge-authority",
+    "RESERVED:permission-added",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 142,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 145,
+   "outcome": "VERIFY",
+   "path": "worker merge",
+   "reasons": [
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "permanent-infrastructure"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 146,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:permanent-infrastructure"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 148,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 150,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 152,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:merge-authority"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 155,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 158,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 159,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:merge-authority"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 161,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:merge-authority",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 162,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:merge-authority",
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 165,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 166,
+   "outcome": "VERIFY",
+   "path": "worker merge",
+   "reasons": [
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 168,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 170,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 171,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 177,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 178,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 179,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 181,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "RESERVED:merge-authority"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 183,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 184,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 185,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 186,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 188,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "credential",
+    "merge-authority",
+    "permission-added"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 191,
+   "outcome": "ESCALATE",
+   "path": "closed unmerged",
+   "reasons": [
+    "RESERVED:agent-instructions",
+    "RESERVED:credential",
+    "RESERVED:evidence-producer",
+    "RESERVED:merge-authority",
+    "RESERVED:permission-added",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 194,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 196,
+   "outcome": "ESCALATE",
+   "path": "owner-principal merge without approval",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 198,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 201,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 202,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 203,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 205,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 207,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "permission-added"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 209,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "RESERVED:permission-added",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 210,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 212,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 213,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "RESERVED:evidence-producer",
+    "RESERVED:merge-authority",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 214,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 215,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 216,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "RESERVED:evidence-producer",
+    "RESERVED:merge-authority",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 217,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 219,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 220,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 221,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 226,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [
+    "gh: Not Found (HTTP 404): api -H Accept: application/vnd.github.raw+json repos/ImranAdan/infra-fleet-public/contents/.github/workflows/intent-gate-retarget.yml?ref=976ebf916283d0f7033c06f94df1610c6a6b",
+    "gh: Not Found (HTTP 404): api -H Accept: application/vnd.github.raw+json repos/ImranAdan/infra-fleet-public/contents/.github/workflows/intent-gate.yml?ref=976ebf916283d0f7033c06f94df1610c6a6bc5cf"
+   ],
+   "number": 233,
+   "outcome": "ESCALATE",
+   "path": "worker merge",
+   "reasons": [
+    "UNCLASSIFIED"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 238,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "RESERVED:enforcement",
+    "RESERVED:merge-authority",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 239,
+   "outcome": "VERIFY",
+   "path": "worker merge",
+   "reasons": [
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 242,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "RESERVED:enforcement",
+    "RESERVED:merge-authority",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 243,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "RESERVED:enforcement",
+    "RESERVED:merge-authority"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 244,
+   "outcome": "ESCALATE",
+   "path": "closed unmerged",
+   "reasons": [
+    "RESERVED:enforcement",
+    "RESERVED:merge-authority",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 245,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "RESERVED:enforcement",
+    "RESERVED:merge-authority",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "credential",
+    "merge-authority",
+    "permission-added"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 247,
+   "outcome": "ESCALATE",
+   "path": "head-bound approval",
+   "reasons": [
+    "RESERVED:credential",
+    "RESERVED:enforcement",
+    "RESERVED:merge-authority",
+    "RESERVED:permission-added",
+    "UNDELEGATED:workflow",
+    "EVIDENCE_NOT_APPLICABLE:intent-gate"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  },
+  {
+   "authority_categories": [
+    "merge-authority"
+   ],
+   "configuration": "valid delegation",
+   "kind": "pull",
+   "missing_observations": [],
+   "number": 249,
+   "outcome": "ESCALATE",
+   "path": "open",
+   "reasons": [
+    "RESERVED:enforcement",
+    "RESERVED:merge-authority",
+    "UNCLASSIFIED",
+    "UNDELEGATED:workflow"
+   ],
+   "repository": "ImranAdan/infra-fleet-public"
+  }
+ ],
+ "unsafe_authorizations": 0
+}

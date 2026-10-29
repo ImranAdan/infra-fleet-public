@@ -1,5 +1,13 @@
 # Mandate historical replay evidence
 
+Latest: [export v2 / report revision v3](historical-replay/v2/README.md), published 2026-10-29. Export v1 remains unchanged below and in its original directory.
+
+## Interpretation correction — 2026-10-29
+
+The zero-unsafe count is not a measured substantive safety rate. All 29 Fleet rows refusing intent-gate evidence in export v2 have unknown normalized run bases; 13 overlap its 27 historical authority-tagged rows. The reports' legacy `authority_evaluable` denominator means configured authority-tagged rows, not complete evidence observability. Advisor's missing delegation remains N/A coverage. Live captures must establish the actual tested subject; an open-PR association alone does not establish it. See the v2 README for the pinned primary source, same-data controlled comparison and remaining code-review limitation.
+
+## Export v1 / report v2 — historical record
+
 Export v1 and report v2, published 2026-10-28. This branch distributes research data; it is not merged into the application branch and activates no merge authority.
 
 The source observations came from the public Fleet, Advisor and delegation repositories. Files under `historical-replay/v1/` preserve the collected bytes. Check `SHA256SUMS` and cite the publication's full Git commit, rather than only its branch name. Git distribution does not make this branch a protected receipt ledger.
