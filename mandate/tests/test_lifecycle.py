@@ -67,6 +67,28 @@ def main() -> int:
     newer = [run(RELEASE), run(APPLY, "success", run_id=2, attempt=2), run(APPLY, "failure", run_id=2, attempt=1)]
     assert states(lc.reconcile(PLAN, [], newer, AFTER)[0]) == ["LIFECYCLE_OK"]
 
+    # The latest attempt seen of each run is kept across observations, so an
+    # older attempt reported later, alone, never satisfies a newer failed one...
+    failed2 = [run(RELEASE), run(APPLY, "failure", run_id=2, attempt=2)]
+    stale1 = [run(RELEASE), run(APPLY, "success", run_id=2, attempt=1)]
+    log, notify = lc.reconcile(PLAN, [], failed2, AFTER)
+    assert (states(log), notify) == (["INCOMPLETE"], True), states(log)
+    assert log[-1]["runs"]["2"] == {"attempt": 2, "path": APPLY, "status": "completed", "conclusion": "failure"}, log[-1]
+    assert lc.reconcile(PLAN, log, stale1, LATER) == (log, False)
+    # ...or a newer one still running, before and at the deadline.
+    log, _ = lc.reconcile(PLAN, [], [run(RELEASE), run(APPLY, None, run_id=2, attempt=2)], BEFORE)
+    assert lc.reconcile(PLAN, log, stale1, BEFORE) == (log, False)
+    assert states(lc.reconcile(PLAN, log, stale1, AFTER)[0]) == ["DOWNSTREAM_TRIGGERED", "UNKNOWN"]
+    # A run missing from a later observation is still known.
+    assert states(lc.reconcile(PLAN, log, [run(RELEASE)], AFTER)[0]) == ["DOWNSTREAM_TRIGGERED", "UNKNOWN"]
+    # A completed attempt never reverts to running.
+    log, _ = lc.reconcile(PLAN, [], [run(RELEASE), run(APPLY, "failure", run_id=2)], AFTER)
+    assert lc.reconcile(PLAN, log, [run(RELEASE), run(APPLY, None, run_id=2)], LATER) == (log, False)
+    # A genuinely newer attempt still resolves the breach.
+    log, _ = lc.reconcile(PLAN, [], failed2, AFTER)
+    log, notify = lc.reconcile(PLAN, log, [run(APPLY, "success", run_id=2, attempt=3)], LATER)
+    assert (states(log), notify) == (["INCOMPLETE", "LIFECYCLE_OK"], False), states(log)
+
     # Still running at the deadline is not definitive: UNKNOWN, as is a provider
     # that could not be read. Neither is ever OK.
     log, notify = lc.reconcile(PLAN, [], [run(RELEASE), run(APPLY, None, run_id=2)], AFTER)
