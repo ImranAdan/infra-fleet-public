@@ -473,7 +473,10 @@ or `UNKNOWN`. Nothing calls it yet, and its tests use canned workflow runs.
   records the class's recovery level. Nothing rolls back or reverts.
 - `reconcile()` reduces the provider's workflow runs for that commit. An
   obligation is satisfied by a run on the merge commit whose latest attempt
-  succeeded; a run on any other commit counts for nothing.
+  succeeded; a run on any other commit counts for nothing. Each log entry
+  records the latest attempt seen of every such run across all observations,
+  so an older attempt reported later, a run missing from a later listing or
+  an unreadable provider never undoes what a newer attempt showed.
 - `LIFECYCLE_OK` means every obligation is satisfied, and it is final. It says
   nothing about runtime or deployment health.
 - At the deadline, a missing or failed obligation is `INCOMPLETE`. A run

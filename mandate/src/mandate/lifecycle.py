@@ -13,6 +13,10 @@ A late success after a deadline breach is appended after the breach.
 
 An obligation is satisfied by a run of its workflow on the merge commit
 whose latest attempt succeeded; a run on any other commit counts for nothing.
+Each log entry carries the latest attempt seen of every such run, across all
+observations, so an older attempt reported later, or a run missing from a
+later listing, never undoes what a newer attempt showed. A completed attempt
+never reverts to running.
 LIFECYCLE_OK means every obligation is satisfied, and says nothing about
 runtime or deployment health. At the deadline a missing or failed obligation
 is INCOMPLETE; a run still going, or runs that could not be read, are
@@ -43,14 +47,22 @@ def plan(
     }
 
 
-def _status(plan: dict[str, Any], runs: list[dict[str, Any]]) -> dict[str, str]:
-    """Each obligation: satisfied, pending, failed or missing."""
-    latest: dict[int, dict[str, Any]] = {}
+def _latest(plan: dict[str, Any], known: dict[str, Any], runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """``known`` updated with the obligation runs on the merge commit in ``runs``."""
+    latest = dict(known)
     for run in runs:
         if run["head_sha"] == plan["merge_sha"] and run["path"] in plan["obligations"]:
-            kept = latest.get(run["id"])
-            if kept is None or run["run_attempt"] > kept["run_attempt"]:
-                latest[run["id"]] = run
+            seen = {"attempt": run["run_attempt"], "path": run["path"], "status": run["status"],
+                    "conclusion": run["conclusion"]}
+            kept = latest.get(str(run["id"]))
+            if kept is None or (seen["attempt"], seen["status"] == "completed") > (
+                    kept["attempt"], kept["status"] == "completed"):
+                latest[str(run["id"])] = seen
+    return latest
+
+
+def _status(plan: dict[str, Any], latest: dict[str, Any]) -> dict[str, str]:
+    """Each obligation: satisfied, pending, failed or missing."""
     found = {}
     for path in plan["obligations"]:
         mine = [run for run in latest.values() if run["path"] == path]
@@ -69,7 +81,9 @@ def reconcile(
     """(log, notify) after observing ``runs``: None when they could not be read."""
     if log and log[-1]["state"] == FINAL:
         return log, False
-    found = {} if runs is None else _status(plan, runs)
+    known = log[-1]["runs"] if log else {}
+    latest = known if runs is None else _latest(plan, known, runs)
+    found = {} if runs is None else _status(plan, latest)
     seen = set(found.values())
     if runs is None:
         state = "UNKNOWN"
@@ -79,6 +93,6 @@ def reconcile(
         state = "DOWNSTREAM_TRIGGERED" if seen - {"missing"} else "MERGED"
     else:
         state = "INCOMPLETE" if seen & {"missing", "failed"} else "UNKNOWN"
-    if log and (log[-1]["state"], log[-1]["obligations"]) == (state, found):
+    if log and (log[-1]["state"], log[-1]["obligations"], log[-1]["runs"]) == (state, found, latest):
         return log, False
-    return [*log, {"at": now, "state": state, "obligations": found}], state in NOTIFY
+    return [*log, {"at": now, "state": state, "obligations": found, "runs": latest}], state in NOTIFY

@@ -81,6 +81,13 @@ def main() -> int:
     assert states(lc.reconcile(PLAN, log, stale1, AFTER)[0]) == ["DOWNSTREAM_TRIGGERED", "UNKNOWN"]
     # A run missing from a later observation is still known.
     assert states(lc.reconcile(PLAN, log, [run(RELEASE)], AFTER)[0]) == ["DOWNSTREAM_TRIGGERED", "UNKNOWN"]
+    # An unreadable provider forgets nothing.
+    unread, _ = lc.reconcile(PLAN, log, None, AFTER)
+    assert states(lc.reconcile(PLAN, unread, stale1, LATER)[0])[-1] == "UNKNOWN"
+    # Each newer attempt seen is recorded, even when the state stays the same.
+    log, _ = lc.reconcile(PLAN, log, [run(RELEASE), run(APPLY, None, run_id=2, attempt=3)], BEFORE)
+    assert states(log) == ["DOWNSTREAM_TRIGGERED", "DOWNSTREAM_TRIGGERED"] and log[-1]["runs"]["2"]["attempt"] == 3, log
+    assert lc.reconcile(PLAN, log, [run(RELEASE), run(APPLY, "success", run_id=2, attempt=2)], BEFORE) == (log, False)
     # A completed attempt never reverts to running.
     log, _ = lc.reconcile(PLAN, [], [run(RELEASE), run(APPLY, "failure", run_id=2)], AFTER)
     assert lc.reconcile(PLAN, log, [run(RELEASE), run(APPLY, None, run_id=2)], LATER) == (log, False)
