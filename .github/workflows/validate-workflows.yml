@@ -13,10 +13,22 @@ permissions:
 
 jobs:
   validate-workflows:
-    runs-on: ubuntu-latest
+    # The merge worker's runner: its system Python must take the pinned wheel.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      
+        with:
+          persist-credentials: false  # the job runs PR code; gh steps pass their own token
+
+      # The merge worker's install, so every change to the gate or its pins
+      # proves the parser installs from those hashes on the worker's runner.
+      # It runs first: yamllint below would otherwise install an unpinned PyYAML.
+      - name: Install the workflow parser
+        run: |
+          python3 -m pip install --quiet --break-system-packages --require-hashes \
+            --only-binary=:all: -r .claude/skills/merge-gate/requirements.txt
+          python3 -c "import sys, yaml; print(sys.version.split()[0], yaml.__version__, yaml.__file__)"
+
       - name: Validate YAML syntax
         run: |
           echo "🔍 Validating workflow YAML syntax..."
@@ -79,6 +91,7 @@ jobs:
           python3 mandate/tests/test_shadow.py
           python3 mandate/tests/test_ledger.py
           python3 mandate/tests/test_receipt.py
+          python3 mandate/tests/test_acceptance.py
           python3 .claude/skills/merge-gate/judge.py --self-test
 
       - name: Check PR workflow changes

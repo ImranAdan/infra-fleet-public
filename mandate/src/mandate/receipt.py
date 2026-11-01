@@ -586,16 +586,11 @@ def _workflow(text: str) -> tuple[dict[str, Any], dict[str, list[str]]]:
     """The parsed workflow and, per job, its raw lines at the job's own
     indentation (comments, which parsing drops). Duplicate and merge keys
     raise: what they mean depends on the parser."""
-    import yaml  # ponytail: test-time scan only; CI has PyYAML through yamllint
+    import yaml  # ponytail: test-time scan only; CI installs the gate's pinned PyYAML
 
-    class Strict(yaml.SafeLoader):
-        def construct_mapping(self, node: Any, deep: bool = False) -> Any:
-            # A merge key (<<) has no constructor here, so building it raises.
-            keys = [repr(self.construct_object(k, deep=True)) for k, _ in node.value]
-            if len(keys) != len(set(keys)):
-                raise ValueError("duplicate key")
-            return super().construct_mapping(node, deep)
+    from mandate.gate import strict_loader
 
+    Strict = strict_loader()
     doc = yaml.load(text, Loader=Strict)  # noqa: S506 (SafeLoader subclass)
     root = yaml.compose(text, Loader=Strict)
     lines = text.splitlines()
