@@ -112,6 +112,7 @@ class DelegationClass:
     require: tuple[str, ...]
     recovery: str | None
     match: tuple[tuple[str, Any], ...]
+    obligations: tuple[str, ...] = ()  # workflow files expected to run on the merge commit
 
 
 @dataclass(frozen=True)
@@ -207,7 +208,7 @@ def parse(text: str, repository: str, source: str) -> Delegation:
         where = f"classes[{index}]"
         _keys(
             raw,
-            frozenset({"id", "match", "decide", "require", "recovery"}),
+            frozenset({"id", "match", "decide", "require", "recovery", "obligations"}),
             frozenset({"id", "match", "decide"}),
             where,
         )
@@ -245,6 +246,10 @@ def parse(text: str, repository: str, source: str) -> Delegation:
         recovery = raw.get("recovery")
         if recovery is not None and recovery not in RECOVERY:
             raise _invalid(f"{where}.recovery must be one of {', '.join(RECOVERY)}")
+        obligations = raw.get("obligations", [])
+        if not isinstance(obligations, list) or not all(
+                isinstance(o, str) and o.startswith(".github/workflows/") for o in obligations):
+            raise _invalid(f"{where}.obligations must be a list of files under .github/workflows/")
         classes.append(
             DelegationClass(
                 id=class_id,
@@ -253,6 +258,7 @@ def parse(text: str, repository: str, source: str) -> Delegation:
                 require=tuple(require),
                 recovery=recovery,
                 match=tuple(sorted((k, v) for k, v in raw["match"].items() if k != "category")),
+                obligations=tuple(obligations),
             )
         )
 

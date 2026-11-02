@@ -72,8 +72,8 @@ class FakeGit:
             return {"sha": self._put({"files": files})}
         if method == "POST" and tail == "git/commits":
             return {
-                "sha": self._put(
-                    {"tree": payload["tree"], "parents": payload["parents"]}
+                "sha": self._put(  # git hashes the message too
+                    {"tree": payload["tree"], "parents": payload["parents"], "message": payload["message"]}
                 )
             }
         if method == "PATCH" and tail.startswith("git/refs/heads/"):

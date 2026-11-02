@@ -53,6 +53,10 @@ Fleet's delegation.
 
 Two producers may not claim the same check name.
 
+A class may also list `obligations`: workflow files under `.github/workflows/`
+expected to run on the merge commit after a merge it authorized (see
+Lifecycle). Like `recovery`, they grant nothing.
+
 ## Evidence
 
 `mandate.evidence` turns a GitHub check run and the workflow run behind it
@@ -460,17 +464,42 @@ decision:
 whole subject decided again. A lost merge response is settled by the
 read-back, never by a second request. After three unstable attempts the wake
 is `UNAVAILABLE`, and the next wake retries. The result is returned, not
-recorded: lifecycle reconciliation starts from a `MERGED` result's SHA.
+recorded.
+
+**Recovery.** Before returning `MERGED` or `ALREADY_MERGED`, the executor
+ensures the merge's lifecycle plan. A worker that dies after GitHub merged
+but before the plan was saved is recovered by the next wake: it finds the
+merge under that receipt's trailers (`ALREADY_MERGED`, no second merge) and
+saves the same plan. The two results still say which wake merged.
+`UNMANAGED_MERGE` is never planned. Recovering under a delegation other than
+the receipt's is `CONTRACT_ERROR`, because only that delegation says which
+obligations were authorized.
 
 ## Lifecycle (inactive)
 
 `mandate.lifecycle` follows a merge to the GitHub follow-ups configured for
 it: `MERGED`, then `DOWNSTREAM_TRIGGERED`, then `LIFECYCLE_OK`, `INCOMPLETE`
-or `UNKNOWN`. Nothing calls it yet, and its tests use canned workflow runs.
+or `UNKNOWN`. The executor saves plans, but nothing observes runs yet, and
+its tests use canned workflow runs and the fake ledger.
 
 - `plan()` keys the obligations (workflow files expected to run on the merge
   commit) to the decision ID, its receipt revision and the merge SHA, and
-  records the class's recovery level. Nothing rolls back or reverts.
+  records each class's recovery level. Nothing rolls back or reverts.
+  `managed()` builds it for a managed merge from what every worker reads
+  alike: the receipt revision its trailers name, the obligations its
+  classes declare in the receipt's delegation, and a deadline one hour after
+  GitHub's `merged_at`. So two workers always build the same plan.
+- Records persist on the ledger branch, one per merge commit at
+  `v1/lifecycle/<merge_sha>.json` (`{"plan", "log"}`), written by the same
+  compare-and-swap as receipts. `ensure()` saves the plan once; competing
+  writers leave one record. A record holding another plan is
+  `LEDGER_INVALID` and never satisfies this one. `observe()` reconciles one
+  observation into the stored log, so a restarted worker keeps its history
+  and attempt watermarks, and only the writer whose commit appended an
+  `INCOMPLETE` or `UNKNOWN` entry notifies. A random nonce in each commit
+  message keeps two identical writes from being one commit that both would
+  win. Notice delivery isn't built: a worker that dies between its write and
+  its notice loses that notice.
 - `reconcile()` reduces the provider's workflow runs for that commit. An
   obligation is satisfied by a run on the merge commit whose latest attempt
   succeeded; a run on any other commit counts for nothing. Each log entry

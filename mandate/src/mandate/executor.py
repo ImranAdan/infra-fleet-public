@@ -18,8 +18,13 @@ recorded AUTHORIZE about this PR at its merged head (an earlier wake or a
 competing worker), and UNMANAGED_MERGE otherwise. A merge whose response is
 lost is settled by reading the provider back, never by asking again.
 
-Inactive: nothing calls this yet. ponytail: the result is returned, not
-recorded; lifecycle reconciliation starts from a MERGED result's merge SHA.
+Both managed results ensure the merge's lifecycle plan before returning, so a
+worker that dies between GitHub's merge and the plan is recovered by the next
+wake, which finds ALREADY_MERGED and saves the same plan. MERGED versus
+ALREADY_MERGED still says which wake merged; an unmanaged merge is never
+planned.
+
+Inactive: nothing calls this yet. The result is returned, not recorded.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from collections.abc import Callable
 from typing import Any
 
 from mandate import ledger as l
+from mandate import lifecycle as lc
 from mandate import receipt as r
 from mandate.delegation import Delegation
 
@@ -36,11 +42,12 @@ DRIFT = ("HEAD_CHANGED", "BASE_CHANGED", "ENFORCEMENT_DRIFT", "ENFORCEMENT_MISSI
 ATTEMPTS = 3
 
 
-def _merged(provider: l.Api, ledger: l.Api, ledger_repo: str, ref: str, repository: str,
-            number: int, pr: dict[str, Any], mine: str = "") -> tuple[str, str]:
+def _merged(provider: l.Api, ledger: l.Api, ledger_repo: str, ref: str, repository: str, number: int,
+            pr: dict[str, Any], delegation: Delegation, mine: str = "") -> tuple[str, str]:
     """ALREADY_MERGED when the merge commit's trailers name an AUTHORIZE
     receipt in the ledger about this PR at its merged head, MERGED when they
-    are also ``mine`` (this wake's trailers); else UNMANAGED_MERGE."""
+    are also ``mine`` (this wake's trailers); else UNMANAGED_MERGE. Either
+    managed result first ensures the plan that receipt's lifecycle starts."""
     sha = pr["merge_commit_sha"]
     named = r.parse_trailers(provider("GET", f"repos/{repository}/commits/{sha}", None)["commit"]["message"])
     if named:
@@ -49,6 +56,8 @@ def _merged(provider: l.Api, ledger: l.Api, ledger_repo: str, ref: str, reposito
             if (entry["decision_id"], entry["receipt_digest"]) == (named["Mandate-Decision"], named["Mandate-Receipt-Digest"]) \
                     and (s["repository"], s["pull_request"], s["head_sha"]) == (repository, number, pr["head"]["sha"]) \
                     and entry["outcome"] == "AUTHORIZE":
+                lc.ensure(ledger, ledger_repo, ref,
+                          lc.managed(receipt, entry["receipt_revision"], sha, pr["merged_at"], delegation))
                 return ("MERGED" if named == r.parse_trailers(mine) else "ALREADY_MERGED"), sha
     return "UNMANAGED_MERGE", sha
 
@@ -74,7 +83,7 @@ def execute(
     for _attempt in range(ATTEMPTS):
         pr = provider("GET", pull, None)
         if pr["merged"]:
-            return _merged(provider, ledger, ledger_repo, ref, repository, number, pr)
+            return _merged(provider, ledger, ledger_repo, ref, repository, number, pr, delegation)
         if pr["state"] != "open":
             return "CLOSED", ""
         if delegation.mode != "enforce":
@@ -113,5 +122,5 @@ def execute(
         done = provider("GET", pull, None)
         if not done["merged"]:
             return "NOT_MERGED", refused
-        return _merged(provider, ledger, ledger_repo, ref, repository, number, done, message)
+        return _merged(provider, ledger, ledger_repo, ref, repository, number, done, delegation, message)
     return "UNAVAILABLE", f"no stable decision in {ATTEMPTS} attempts"

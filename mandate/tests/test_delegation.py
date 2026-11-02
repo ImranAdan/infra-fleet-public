@@ -145,7 +145,7 @@ def main() -> int:
         ".github/workflows/release.yml",)
     assert d.parse(MINIMAL, REPO, SOURCE).classes[0].obligations == ()
     rejects(MINIMAL + 'obligations = ["scripts/release.sh"]\n', expect="obligations")
-    rejects(MINIMAL + 'obligations = ".github/workflows/release.yml"\n', expect="obligations")
+    rejects(MINIMAL + 'obligations = ""\n', expect="obligations")
 
     # Owner listed as an agent: tolerated in shadow, refused in enforce.
     collide = MINIMAL.replace("agents = []", 'agents = ["imranadan"]')
