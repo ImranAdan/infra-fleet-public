@@ -140,6 +140,12 @@ def main() -> int:
 
     # Recovery is metadata from a fixed set; it grants nothing.
     rejects(MINIMAL + 'recovery = "R9"\n', expect="recovery")
+    # Lifecycle obligations are workflow files expected to run on the merge commit.
+    assert d.parse(MINIMAL + 'obligations = [".github/workflows/release.yml"]\n', REPO, SOURCE).classes[0].obligations == (
+        ".github/workflows/release.yml",)
+    assert d.parse(MINIMAL, REPO, SOURCE).classes[0].obligations == ()
+    rejects(MINIMAL + 'obligations = ["scripts/release.sh"]\n', expect="obligations")
+    rejects(MINIMAL + 'obligations = ".github/workflows/release.yml"\n', expect="obligations")
 
     # Owner listed as an agent: tolerated in shadow, refused in enforce.
     collide = MINIMAL.replace("agents = []", 'agents = ["imranadan"]')

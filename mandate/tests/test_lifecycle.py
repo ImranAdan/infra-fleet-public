@@ -1,23 +1,29 @@
 """Lifecycle checks. Run: python3 mandate/tests/test_lifecycle.py
 
 The real reducer runs over canned workflow runs shaped like the REST API's
-``actions/runs?head_sha=`` items. Nothing calls GitHub, and nothing here is
-evidence that a live merge triggers anything.
+``actions/runs?head_sha=`` items, and its records persist through FakeGit,
+the fast-forward-only ledger from test_ledger. Nothing calls GitHub, and
+nothing here is evidence that a live merge triggers anything.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "src"))
+sys.path.insert(0, str(HERE))
 
+from test_ledger import REF, REPO, FakeGit  # noqa: E402
+
+from mandate import ledger as l  # noqa: E402
 from mandate import lifecycle as lc  # noqa: E402
 
 MERGE = "1" * 40
 RELEASE, APPLY = ".github/workflows/release-please.yml", ".github/workflows/infra-apply.yml"
-PLAN = lc.plan("d-" + "a" * 64, "r2", MERGE, "R0", (RELEASE, APPLY), "2026-10-28T12:00:00Z")
+PLAN = lc.plan("d-" + "a" * 64, "r2", MERGE, {"dependency-manifest": "R0"}, (RELEASE, APPLY), "2026-10-28T12:00:00Z")
 BEFORE, AFTER, LATER = "2026-10-28T11:00:00Z", "2026-10-28T12:00:00Z", "2026-10-28T13:00:00Z"
 
 
@@ -30,12 +36,16 @@ def states(log: list[dict]) -> list[str]:
     return [entry["state"] for entry in log]
 
 
+def stored(git: FakeGit) -> dict[str, dict]:
+    return {p: json.loads(b) for p, b in git.files(REF).items() if p.startswith("v1/lifecycle/")}
+
+
 def main() -> int:
     ok = [run(RELEASE), run(APPLY, run_id=2)]
 
     # The plan keys the obligations to the decision, its receipt revision and the merge.
     assert (PLAN["decision_id"], PLAN["receipt_revision"], PLAN["merge_sha"], PLAN["recovery"]) == (
-        "d-" + "a" * 64, "r2", MERGE, "R0")
+        "d-" + "a" * 64, "r2", MERGE, {"dependency-manifest": "R0"})
 
     # Nothing observed yet; then a run started; then every obligation satisfied.
     log, _ = lc.reconcile(PLAN, [], [], BEFORE)
@@ -109,8 +119,59 @@ def main() -> int:
         "DOWNSTREAM_TRIGGERED"]
 
     # No configured obligation: nothing to observe, so OK at once.
-    empty = lc.plan("d-" + "a" * 64, "r2", MERGE, "R0", (), "2026-10-28T12:00:00Z")
+    empty = lc.plan("d-" + "a" * 64, "r2", MERGE, {}, (), "2026-10-28T12:00:00Z")
     assert states(lc.reconcile(empty, [], [], BEFORE)[0]) == ["LIFECYCLE_OK"]
+
+    # Storage: one record per merge commit on the ledger branch, written by
+    # compare-and-swap. Ensuring it again writes nothing.
+    git = FakeGit()
+    assert lc.ensure(git, REPO, REF, PLAN) == {"plan": PLAN, "log": []}
+    tip = git.refs[REF]
+    assert lc.ensure(git, REPO, REF, PLAN) == {"plan": PLAN, "log": []} and git.refs[REF] == tip
+    assert stored(git) == {f"v1/lifecycle/{MERGE}.json": {"plan": PLAN, "log": []}}
+    # Two workers ensuring the same plan at once leave one record.
+    git = FakeGit()
+    git.before_advance = lambda: lc.ensure(git, REPO, REF, PLAN)
+    assert lc.ensure(git, REPO, REF, PLAN) == {"plan": PLAN, "log": []}
+    assert list(stored(git)) == [f"v1/lifecycle/{MERGE}.json"]
+
+    # A restarted worker continues from the stored log: the same or a stale
+    # observation appends nothing and notifies no one, and a newer attempt
+    # still resolves the breach, keeping it.
+    git = FakeGit()
+    lc.ensure(git, REPO, REF, PLAN)
+    log, notify = lc.observe(git, REPO, REF, PLAN, failed2, AFTER)
+    assert (states(log), notify) == (["INCOMPLETE"], True), states(log)
+    assert lc.observe(git, REPO, REF, PLAN, failed2, LATER) == (log, False)
+    assert lc.observe(git, REPO, REF, PLAN, stale1, LATER) == (log, False)
+    log, notify = lc.observe(git, REPO, REF, PLAN, [run(APPLY, "success", run_id=2, attempt=3)], LATER)
+    assert (states(log), notify) == (["INCOMPLETE", "LIFECYCLE_OK"], False), states(log)
+    assert stored(git)[f"v1/lifecycle/{MERGE}.json"] == {"plan": PLAN, "log": log}
+    # So does one restarted during UNKNOWN.
+    git = FakeGit()
+    log, notify = lc.observe(git, REPO, REF, PLAN, None, AFTER)
+    assert (states(log), notify) == (["UNKNOWN"], True), states(log)
+    assert lc.observe(git, REPO, REF, PLAN, None, LATER) == (log, False)
+    # Two workers observing the same breach at once: one entry, one notice.
+    git = FakeGit()
+    lc.ensure(git, REPO, REF, PLAN)
+    notices = []
+    git.before_advance = lambda: notices.append(lc.observe(git, REPO, REF, PLAN, failed2, AFTER)[1])
+    log, notify = lc.observe(git, REPO, REF, PLAN, failed2, AFTER)
+    assert (states(log), notices + [notify]) == (["INCOMPLETE"], [True, False]), (states(log), notices, notify)
+
+    # A record for another plan at this merge never satisfies this one.
+    other = lc.plan("d-" + "b" * 64, "r1", MERGE, {}, (), "2026-10-28T12:00:00Z")
+    git = FakeGit()
+    assert states(lc.observe(git, REPO, REF, other, [], BEFORE)[0]) == ["LIFECYCLE_OK"]
+    for name, call in (("ensure", lambda: lc.ensure(git, REPO, REF, PLAN)),
+                       ("observe", lambda: lc.observe(git, REPO, REF, PLAN, ok, BEFORE))):
+        try:
+            call()
+        except l.LedgerError as exc:
+            assert exc.code == "LEDGER_INVALID", (name, exc)
+        else:
+            raise AssertionError(f"{name} accepted another plan's record")
 
     print("lifecycle tests passed")
     return 0

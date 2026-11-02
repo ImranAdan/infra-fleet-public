@@ -1,8 +1,8 @@
 """Executor checks. Run: python3 mandate/tests/test_executor.py
 
-The real executor, receipts and ledger run against fakes: FakeGit (the
-fast-forward-only ledger from test_ledger) and FakeGitHub below, a pull
-request whose merge endpoint behaves like GitHub's. Nothing calls GitHub, and
+The real executor, receipts, ledger and lifecycle plans run against fakes:
+FakeGit (the fast-forward-only ledger from test_ledger) and FakeGitHub below,
+a pull request whose merge endpoint behaves like GitHub's. Nothing calls GitHub, and
 nothing here is evidence that a live merge works.
 """
 
@@ -27,9 +27,16 @@ from mandate import ledger as l  # noqa: E402
 from mandate import receipt as r  # noqa: E402
 
 AGENT = "fleet-agent[bot]"
-LIVE = EXAMPLE.replace('mode = "shadow"', 'mode = "enforce"').replace("agents = []", f'agents = ["{AGENT}"]')
+RELEASE = ".github/workflows/release-please.yml"
+LIVE = EXAMPLE.replace('mode = "shadow"', 'mode = "enforce"').replace("agents = []", f'agents = ["{AGENT}"]').replace(
+    'id = "decision-prose"', f'id = "decision-prose"\nobligations = ["{RELEASE}"]')
 DELEG = d.parse(LIVE, REPO, POLICY)
 PR = f"repos/{REPO}/pulls/7"
+MERGED_AT = "2026-10-29T12:00:00Z"
+
+
+class Crash(Exception):
+    """The worker process dies here."""
 
 
 class FakeGitHub:
@@ -38,7 +45,7 @@ class FakeGitHub:
     closed or merged PR (405), as GitHub does."""
 
     def __init__(self, author: str = AGENT) -> None:
-        self.pr = {"state": "open", "merged": False, "merge_commit_sha": None,
+        self.pr = {"state": "open", "merged": False, "merge_commit_sha": None, "merged_at": None,
                    "user": {"login": author}, "head": {"sha": HEAD}, "base": {"sha": BASE}}
         self.messages: dict[str, str] = {}
         self.merges: list[dict] = []  # merge requests GitHub carried out
@@ -74,7 +81,7 @@ class FakeGitHub:
             sha = f"{len(self.merges) + 1:040x}"
             self.merges.append(body)
             self.messages[sha] = f"{body['commit_title']}\n\n{body['commit_message']}"
-            self.pr.update(state="closed", merged=True, merge_commit_sha=sha)
+            self.pr.update(state="closed", merged=True, merge_commit_sha=sha, merged_at=MERGED_AT)
             if self.lose:
                 raise l.ApiError(self.lose.pop(0), "the response was lost")
             return {"sha": sha, "merged": True}
@@ -95,6 +102,18 @@ def run(hub: FakeGitHub, git: FakeGit, *, outcome="AUTHORIZE", delegation=DELEG,
     return x.execute(hub, hub.mint, git, REPO, REF, REPO, 7, delegation, evaluator or evaluate(outcome), enforcement)
 
 
+def plans(git: FakeGit) -> dict[str, dict]:
+    return {p: json.loads(b) for p, b in git.files(REF).items() if p.startswith("v1/lifecycle/")}
+
+
+def plan(sha: str, revision: str = "r1") -> dict:
+    """The lifecycle record a managed merge of HEAD at ``sha`` starts."""
+    return {f"v1/lifecycle/{sha}.json": {"plan": {
+        "decision_id": r.decision_id(REPO, 7, HEAD, BASE, POLICY, ENF), "receipt_revision": revision,
+        "merge_sha": sha, "recovery": {"decision-prose": "R0"}, "obligations": [RELEASE],
+        "deadline": "2026-10-29T13:00:00Z"}, "log": []}}
+
+
 def revisions(git: FakeGit) -> list[str]:
     return [line for line in git.files(REF).get(l.LEDGER, b"").decode().splitlines() if line]
 
@@ -109,9 +128,50 @@ def main() -> int:
     named = r.parse_trailers(hub.messages[sha])
     assert named and named["Mandate-Decision"] == r.decision_id(REPO, 7, HEAD, BASE, POLICY, ENF), named
     assert len(revisions(git)) == 1
+    # The merge starts its lifecycle: one plan keyed to the receipt revision
+    # its trailers name, with the class's obligations and recovery level.
+    assert plans(git) == plan(sha), plans(git)
 
-    # A duplicate or late wake converges: no token, no second merge.
+    # A duplicate or late wake converges: no token, no second merge, the same
+    # plan and nothing written.
+    tip = git.refs[REF]
     assert run(hub, git) == ("ALREADY_MERGED", sha) and (hub.minted, len(hub.merges)) == (1, 1)
+    assert plans(git) == plan(sha) and git.refs[REF] == tip
+
+    # A worker that dies after GitHub merged but before the plan was saved:
+    # the next wake finds the managed merge and saves the same plan, without
+    # merging again.
+    hub, git = FakeGitHub(), FakeGit()
+
+    def crash():
+        raise Crash
+    git.before_advance = lambda: setattr(git, "before_advance", crash)  # survive the receipt, die at the plan
+    try:
+        run(hub, git)
+    except Crash:
+        pass
+    else:
+        raise AssertionError("the worker did not die")
+    assert (len(hub.merges), plans(git)) == (1, {}), plans(git)
+    sha = hub.pr["merge_commit_sha"]
+    assert run(hub, git) == ("ALREADY_MERGED", sha) and (hub.minted, len(hub.merges)) == (1, 1)
+    assert plans(git) == plan(sha), plans(git)
+    # Recovery under another delegation pin cannot know the authorized
+    # obligations, so it plans nothing and says so.
+    hub, git = FakeGitHub(), FakeGit()
+    git.before_advance = lambda: setattr(git, "before_advance", crash)
+    try:
+        run(hub, git)
+    except Crash:
+        pass
+    moved = d.parse(LIVE, REPO, POLICY.replace("d" * 40, "e" * 40))
+    try:
+        run(hub, git, delegation=moved)
+    except l.LedgerError as exc:
+        assert exc.code == "CONTRACT_ERROR", exc
+    else:
+        raise AssertionError("planned under another delegation")
+    assert plans(git) == {}
 
     # Refusals record their receipt, and never mint a token or merge.
     hub, git = FakeGitHub(), FakeGit()
@@ -195,8 +255,8 @@ def main() -> int:
     hub, git = FakeGitHub(), FakeGit()
     hub.refuse = [405]
     hub.messages["d" * 40] = "fix: merged without Mandate"
-    hub.on_read[3] = lambda pr: pr.update(state="closed", merged=True, merge_commit_sha="d" * 40)
-    assert run(hub, git) == ("UNMANAGED_MERGE", "d" * 40) and hub.merges == []
+    hub.on_read[3] = lambda pr: pr.update(state="closed", merged=True, merge_commit_sha="d" * 40, merged_at=MERGED_AT)
+    assert run(hub, git) == ("UNMANAGED_MERGE", "d" * 40) and hub.merges == [] and plans(git) == {}
     # Another Mandate worker merged the same head under its own recorded
     # AUTHORIZE: that worker's merge, not this one's.
     hub, git = FakeGitHub(), FakeGit()
@@ -206,22 +266,24 @@ def main() -> int:
         other = evaluate()(pr, ENF)
         message = r.trailers(git, REPO, REF, other["subject"], other, DELEG, after=r.pr_latest(git, REPO, REF, REPO, 7))
         hub.messages["b" * 40] = f"Merge pull request #7\n\n{message}"
-        pr.update(state="closed", merged=True, merge_commit_sha="b" * 40)
+        pr.update(state="closed", merged=True, merge_commit_sha="b" * 40, merged_at=MERGED_AT)
     hub.on_read[3] = competitor
     assert run(hub, git) == ("ALREADY_MERGED", "b" * 40) and hub.merges == [] and len(revisions(git)) == 2
+    # Its plan is keyed to the revision that worker's trailers name.
+    assert plans(git) == plan("b" * 40, "r2"), plans(git)
 
     # A merge Mandate did not make is reported as unmanaged.
     hub, git = FakeGitHub(), FakeGit()
     hub.pr.update(state="closed", merged=True, merge_commit_sha="e" * 40)
     hub.messages["e" * 40] = "fix: merged by hand"
-    assert run(hub, git) == ("UNMANAGED_MERGE", "e" * 40) and hub.minted == 0
+    assert run(hub, git) == ("UNMANAGED_MERGE", "e" * 40) and hub.minted == 0 and plans(git) == {}
     # So is one whose trailers name a recorded refusal about this head.
     hub, git = FakeGitHub(), FakeGit()
     entry, chain, _ = r.record(git, REPO, REF, evaluate("ESCALATE")(hub.pr, ENF), DELEG, after=None)
     named = zip(r.TRAILERS, (entry["decision_id"], entry["receipt_digest"], chain))
     hub.messages["a" * 40] = "fix: merged\n\n" + "\n".join(f"{k}: {v}" for k, v in named)
     hub.pr.update(state="closed", merged=True, merge_commit_sha="a" * 40)
-    assert run(hub, git) == ("UNMANAGED_MERGE", "a" * 40) and hub.minted == 0
+    assert run(hub, git) == ("UNMANAGED_MERGE", "a" * 40) and hub.minted == 0 and plans(git) == {}
     # So is one whose trailers name a decision about another head.
     hub, git = FakeGitHub(), FakeGit()
     code, sha = run(hub, git)
