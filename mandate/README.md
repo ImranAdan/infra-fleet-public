@@ -63,14 +63,50 @@ Lifecycle). Like `recovery`, they grant nothing.
 into an `EvidenceRecord` (`normalize`) that keeps the provider IDs (check run,
 suite, workflow run and attempt, App), the workflow path and event, and the
 exact subject: repository, head, base and delegation source. `to_dict` /
-`from_dict` round-trip it for receipts. `evaluate(delegation, require,
+`from_dict` round-trip it for receipts, and only at record version 2: a
+version 1 record took its base from the run's pull request association and is
+refused, never read as a captured one.
+
+**The tested base.** A record's base is the one its producer actually
+compared, proven by `tested()` (capture contract v1), never the run's pull
+request association: GitHub lists only open pull requests there, and they
+"do not necessarily indicate pull requests that triggered the run"
+([REST description, `workflow-run.pull_requests`](https://github.com/github/rest-api-description/blob/c66e298030d4070b70a569dcd4268b3a041b5380/descriptions/api.github.com/api.github.com.json)).
+The check's head is the pull request head; the producer compared a synthetic
+merge of it (`compared_sha`). From the provider's own records of one run,
+every step is required:
+
+1. The Actions job with the check run's ID is that check run, in the run's
+   reported attempt, on the check's head.
+2. The run's `referenced_workflows` name exactly one commit it ran from, a
+   `refs/pull/<n>/merge` ref in its own repository. For `pull_request`,
+   `GITHUB_SHA` is the last merge commit of that ref
+   ([events: pull_request](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)),
+   and a gate run records it there for its local reusable workflow.
+3. That commit's parents are a base and the check's head.
+4. The producer's workflows there are byte-identical to the base's, so the
+   change did not edit what ran.
+5. The job log's runner echo of the comparing step's inputs (`base-sha`,
+   `head-sha` under `with:`) names that base and merge, once each. Matching
+   text anywhere else proves nothing, and an extra echo makes the log
+   ambiguous.
+
+If any step fails, `base_sha` and `compared_sha` are `None` and `unproven`
+says why, for example `job <id> log is unavailable, expired or missing` once
+GitHub's log retention has passed (observed as HTTP 410; the
+[job logs endpoint](https://docs.github.com/en/rest/actions/workflow-jobs#download-job-logs-for-a-workflow-run)
+documents only its redirect). The job's `check_run_url` must name the check
+run, rather than assuming job and check run IDs coincide. The shadow adapter captures
+only the declared producers' checks. Contract v1 knows one comparing step,
+the Intent Gate action's; another producer needs its own contract version.
+`evaluate(delegation, require,
 records, subject)` judges a class's required evidence on three independent
 axes and returns typed failures, never an outcome:
 
 | Axis | Fails when | Failure |
 | --- | --- | --- |
 | Authenticity | The check name matches but the App, workflow path, event or dispatch branch is not the declared producer's | `CHECK_WRONG_SOURCE` |
-| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields, and says the tested base is unknown when the run has no usable pull request association |
+| Applicability | Repository, head, base or delegation source differ from the subject | `EVIDENCE_NOT_APPLICABLE:<name>` (VERIFY) if only genuine evidence about another subject remains; the detail names the check runs and mismatched fields, and says the tested base is unknown, with the capture's reason, when the capture proved nothing |
 | Sufficiency | The required producer is absent, running, failed, or reports conflicting or unattributable results | `EVIDENCE_REQUIRED`, `EVIDENCE_PENDING`, `EVIDENCE_FAILED:<name>`, `EVIDENCE_CONFLICT` |
 
 A rerun supersedes earlier attempts of the same workflow run; every result of

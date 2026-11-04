@@ -6,6 +6,8 @@ it never merges, labels, comments or approves, so its output grants nothing.
 
     python3 -m mandate.shadow ImranAdan/infra-fleet-public 222 --delegation-sha <sha>
 
+Each declared producer's check is bound to the base and merge its job
+compared (``evidence.tested``), never to the PR's association or current base.
 It proves ``lockfile_sibling`` (see ``facts()``). ponytail: the other facts
 (permission/secret/trigger deltas, author, signatures) are not computed yet,
 so classes that match on them never match and fail closed; and mechanical
@@ -21,6 +23,7 @@ import json
 import os
 import posixpath
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -31,7 +34,7 @@ from mandate import evidence as e
 from mandate import gate
 from mandate import receipt as rc
 
-ADAPTER_VERSION = 2
+ADAPTER_VERSION = 3  # 3: evidence bases come from the capture contract
 # Each manifest's resolved lockfile, by ecosystem.
 LOCKFILES = {"pyproject.toml": "uv.lock", "package.json": "package-lock.json", "go.mod": "go.sum"}
 REQUIREMENTS = re.compile(r"(?:^|/)requirements[^/]*\.txt$")
@@ -51,6 +54,19 @@ def _lines(*args: str) -> list[dict[str, Any]]:
         for line in _gh("api", "--paginate", *args).splitlines()
         if line.strip()
     ]
+
+
+def _get(repository: str):
+    """The raw text of ``repos/<repository>/<path>``; None when GitHub refuses
+    it (404, or 410 once a job log has expired)."""
+
+    def get(path: str) -> str | None:
+        try:
+            return _gh("api", f"repos/{repository}/{path}")
+        except subprocess.CalledProcessError:
+            return None
+
+    return get
 
 
 def _per_file(diff: str) -> dict[str, str]:
@@ -162,10 +178,15 @@ def inputs(repository: str, number: int, delegation: d.Delegation) -> m.Decision
             ".workflow_runs[]",
         )
     }
-    records = tuple(
-        e.normalize(c, runs.get((c.get("check_suite") or {}).get("id")), subject)
-        for c in checks
-    )
+    # Only a declared producer's checks are captured; nothing reads the rest.
+    wanted = {producer.check for _, producer in delegation.evidence}
+    get = _get(repository)
+    records = []
+    for c in checks:
+        run = runs.get((c.get("check_suite") or {}).get("id"))
+        found = (e.tested(c, run, get, lambda sha: gate.read_at(repository, sha)) if c["name"] in wanted
+                 else e.Tested(None, None, "not a declared producer's check"))
+        records.append(e.normalize(c, run, subject, found))
     read_head = gate.read_at(repository, head)
     found = findings(diff, paths, delegation, gate.read_at(repository, base), read_head,
                      gate.read_at(repository, merge_base))
@@ -174,7 +195,7 @@ def inputs(repository: str, number: int, delegation: d.Delegation) -> m.Decision
         subject=subject,
         findings=found,
         facts=facts(found, paths, read_head),
-        records=records,
+        records=tuple(records),
         blocking=(),
     )
 
