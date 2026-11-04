@@ -38,9 +38,9 @@ def record(conclusion: str | None = "success", *, workflow: str = ".github/workf
             "id": run_id, "run_attempt": 1, "check_suite_id": run_id * 10, "path": workflow,
             "event": "pull_request", "head_sha": HEAD, "head_branch": "x",
             "repository": {"full_name": REPO},
-            "pull_requests": [{"number": 1, "head": {"sha": HEAD}, "base": {"sha": BASE}}],
         },
         SUBJECT,
+        e.Tested(BASE, "f" * 40, None),  # the gate compared the merge of HEAD into BASE
     )
 
 

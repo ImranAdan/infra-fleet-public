@@ -52,7 +52,8 @@ def proof(subject: e.Subject) -> e.EvidenceRecord:
         app_id=e.ACTIONS_APP_ID, app_slug="github-actions", check_run_id=70, check_suite_id=700,
         run_id=7, run_attempt=1, workflow=".github/workflows/intent-gate.yml", event="pull_request",
         head_branch="x", repository=subject.repository, head_sha=subject.head_sha,
-        base_sha=subject.base_sha, policy=subject.policy, started_at=None, completed_at=None,
+        base_sha=subject.base_sha, compared_sha="f" * 40, unproven=None, policy=subject.policy,
+        started_at=None, completed_at=None,
     )
 
 

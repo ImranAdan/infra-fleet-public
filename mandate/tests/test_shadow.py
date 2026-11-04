@@ -1,7 +1,7 @@
 """Shadow adapter checks. Run: python3 mandate/tests/test_shadow.py
 
-Provider responses are canned and shaped like the REST API; the adapter and
-decide() are the real code. Nothing here calls GitHub.
+Provider responses are canned and shaped like the REST API; the adapter,
+the evidence capture and decide() are the real code. Nothing here calls GitHub.
 """
 
 from __future__ import annotations
@@ -24,12 +24,15 @@ from mandate import (
 )
 
 REPO = "ImranAdan/infra-fleet-public"
-HEAD, BASE = "a" * 40, "b" * 40
+HEAD, BASE, MERGE = "a" * 40, "b" * 40, "f" * 40
 POLICY = f"{d.DELEGATION_REPOSITORY}@{'d' * 40}:repositories/infra-fleet-public.toml"
 DELEGATION = d.parse(
     (HERE.parent / "examples" / "infra-fleet-public.toml").read_text(), REPO, POLICY
 )
 INTENT = "Intent gate / Declared intent"
+SHARED = ".github/workflows/intent-gate-run.yml"
+# The gate's workflows, unchanged between the base and the merge it ran from.
+PRODUCER = {(sha, path): f"# {path}\n" for sha in (BASE, MERGE) for path in (".github/workflows/intent-gate.yml", SHARED)}
 
 
 def diff(*paths: str) -> str:
@@ -39,10 +42,12 @@ def diff(*paths: str) -> str:
     )
 
 
-def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requested=None, merge_base=BASE):
-    """Canned REST responses. ``files`` maps (ref, path) to text; the server
-    decodes a contents path, so ``%41`` names ``A``. ``requested`` collects
-    each contents URL asked for."""
+def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requested=None, merge_base=BASE,
+             logs: bool = True):
+    """Canned REST responses. ``files`` maps (ref, path) to text over the
+    gate's own workflows; the server decodes a contents path, so ``%41`` names
+    ``A``. ``requested`` collects each contents URL asked for. Without
+    ``logs`` the gate job's log has expired."""
     check = {
         "id": 70,
         "name": INTENT,
@@ -63,7 +68,13 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requ
         "pull_requests": [
             {"number": 1, "head": {"sha": head_check}, "base": {"sha": BASE}}
         ],
+        "referenced_workflows": [{"path": f"{REPO}/{SHARED}@{MERGE}", "sha": MERGE, "ref": "refs/pull/1/merge"}],
     }
+    job = {"id": 70, "run_id": 7, "run_attempt": 1, "head_sha": head_check,
+           "check_run_url": f"https://api.github.com/repos/{REPO}/check-runs/70"}
+    log = (f"2026-10-28T21:45:44.1956250Z   base-sha: {BASE}\n"
+           f"2026-10-28T21:45:44.1956686Z   head-sha: {MERGE}\n")
+    commit = {"sha": MERGE, "parents": [{"sha": BASE}, {"sha": head_check}]}
 
     def fake(*args: str) -> str:
         joined = " ".join(args)
@@ -73,6 +84,14 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requ
             return "\n".join(json.dumps({"filename": p}) for p in paths)
         if "/check-runs" in joined:
             return json.dumps(check)
+        if joined.endswith("/actions/jobs/70/logs"):
+            if not logs:
+                raise subprocess.CalledProcessError(1, "gh")  # HTTP 410 once logs expire
+            return log
+        if joined.endswith("/actions/jobs/70"):
+            return json.dumps(job)
+        if joined.endswith(f"/git/commits/{MERGE}"):
+            return json.dumps(commit)
         if "/actions/runs" in joined:
             return json.dumps(run)
         if f"/compare/{BASE}...{HEAD}" in joined:
@@ -81,7 +100,7 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requ
             url = next(a for a in args if "/contents/" in a)
             (requested if requested is not None else []).append(url)
             path, _, query = url.split("/contents/", 1)[1].partition("?")
-            text = (files or {}).get((query.removeprefix("ref="), urllib.parse.unquote(path)))
+            text = {**PRODUCER, **(files or {})}.get((query.removeprefix("ref="), urllib.parse.unquote(path)))
             if text is None:
                 raise subprocess.CalledProcessError(1, "gh")
             return text
@@ -119,6 +138,23 @@ def main() -> int:
         "VERIFY",
         ["EVIDENCE_NOT_APPLICABLE:intent-gate"],
     ), codes(stale)
+
+    # The base the gate compared is captured from its own job, never taken
+    # from the PR: it read the gate's workflows at the merge and the base.
+    requested: list[str] = []
+    assert decide(("docs/decisions/0009-x.md",), requested=requested).outcome == "AUTHORIZE"
+    reads = {f"repos/{REPO}/contents/{p}?ref={sha}" for p in (".github/workflows/intent-gate.yml", SHARED)
+             for sha in (MERGE, BASE)}
+    assert reads <= set(requested), requested
+    # Once the job log has expired, the tested base is unknown: refused, not
+    # filled in from the PR's association or its current base.
+    expired = decide(("docs/decisions/0009-x.md",), logs=False)
+    assert (expired.outcome, [(r.code, r.detail) for r in expired.reasons]) == ("VERIFY", [(
+        "EVIDENCE_NOT_APPLICABLE:intent-gate", "'Intent gate / Declared intent' check run 70 (run 7): "
+        "tested base is unknown (job 70 log is unavailable, expired or missing)")]), expired.reasons
+    # A change that edits the gate's own workflow ran that edit: unproven.
+    edited = decide(("docs/decisions/0009-x.md",), files={(MERGE, SHARED): "# skip the comparison\n"})
+    assert (edited.outcome, codes(edited)) == ("VERIFY", ["EVIDENCE_NOT_APPLICABLE:intent-gate"]), codes(edited)
 
     # The engine, agent instructions and unknown files escalate whatever else is delegated.
     mixed = decide(
@@ -185,7 +221,7 @@ def main() -> int:
     requested: list[str] = []
     quoted = decide((odd,), files=files, requested=requested)
     want = f"repos/{REPO}/contents/.github/workflows/x%2541.yml"
-    assert requested[:2] == [f"{want}?ref={BASE}", f"{want}?ref={HEAD}"], requested
+    assert [u for u in requested if u.startswith(want)][:2] == [f"{want}?ref={BASE}", f"{want}?ref={HEAD}"], requested
     assert (quoted.outcome, "RESERVED:merge-authority" in codes(quoted)) == ("ESCALATE", True), codes(quoted)
 
     # Workflows are compared from the merge base, as the diff is: the base

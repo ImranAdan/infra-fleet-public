@@ -95,15 +95,16 @@ def fixture(fn):
 def record(check: str = INTENT, conclusion: str | None = "success", *, workflow: str | None = None,
            event: str = "pull_request", head: str = HEAD, base: str = BASE, run_id: int = 7,
            attempt: int = 1, app: int = e.ACTIONS_APP_ID, policy: str = POLICY) -> e.EvidenceRecord:
-    """One check run and the workflow run behind it, through the real normalize()."""
+    """One check run and the workflow run behind it, through the real
+    normalize(); its job's capture proved it compared ``head`` merged into ``base``."""
     return e.normalize(
         {"id": run_id * 10, "name": check, "head_sha": head, "conclusion": conclusion,
          "app": {"id": app, "slug": "github-actions"}, "check_suite": {"id": run_id * 100}},
         {"id": run_id, "run_attempt": attempt, "check_suite_id": run_id * 100,
          "path": workflow or WORKFLOWS.get(check, ".github/workflows/other.yml"), "event": event,
-         "head_branch": "agent/x", "repository": {"full_name": REPO},
-         "pull_requests": [{"number": 7, "head": {"sha": head}, "base": {"sha": base}}]},
+         "head_branch": "agent/x", "repository": {"full_name": REPO}},
         e.Subject(REPO, head, base, policy),
+        e.Tested(base, "e" * 40, None),
     )
 
 
