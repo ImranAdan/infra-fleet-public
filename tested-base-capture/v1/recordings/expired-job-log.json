@@ -1,0 +1,27 @@
+{
+ "calls": [
+  {
+   "args": [
+    "api",
+    "repos/ImranAdan/infra-fleet-public/actions/jobs/69634027312"
+   ],
+   "exit": 0,
+   "sha256": "a97adf4e32a05d73f969b3c6838982b5ad5e154f8bd9a1bc86dc3d90ea47d759",
+   "stderr": "",
+   "stdout": "{\"id\":69634027312,\"run_id\":23881014443,\"workflow_name\":\"Commit Message Lint\",\"head_branch\":\"dependabot/pip/applications/load-harness/python-dependencies-d8845eb773\",\"run_url\":\"https://api.github.com/repos/ImranAdan/infra-fleet-public/actions/runs/23881014443\",\"run_attempt\":1,\"node_id\":\"CR_kwDORFZYqM8AAAAQNoLvMA\",\"head_sha\":\"7ebe4bfd93ab61d649993965435e975655126b37\",\"url\":\"https://api.github.com/repos/ImranAdan/infra-fleet-public/actions/jobs/69634027312\",\"html_url\":\"https://github.com/ImranAdan/infra-fleet-public/actions/runs/23881014443/job/69634027312\",\"status\":\"completed\",\"conclusion\":\"failure\",\"created_at\":\"2026-04-02T02:38:21Z\",\"started_at\":\"2026-04-02T02:38:24Z\",\"completed_at\":\"2026-04-02T02:38:34Z\",\"name\":\"gitlint\",\"steps\":[],\"check_run_url\":\"https://api.github.com/repos/ImranAdan/infra-fleet-public/check-runs/69634027312\",\"labels\":[\"ubuntu-latest\"],\"runner_id\":1000003472,\"runner_name\":\"GitHub Actions 1000003472\",\"runner_group_id\":0,\"runner_group_name\":\"GitHub Actions\"}"
+  },
+  {
+   "args": [
+    "api",
+    "repos/ImranAdan/infra-fleet-public/actions/jobs/69634027312/logs"
+   ],
+   "exit": 1,
+   "stderr": "gh: Server Error (HTTP 410)\n",
+   "stdout": null
+  }
+ ],
+ "collected": {
+  "started": "2026-11-04T22:11:31Z"
+ },
+ "purpose": "a completed job whose log retention has passed: the job record remains, its log is refused"
+}

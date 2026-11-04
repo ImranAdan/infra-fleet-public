@@ -1,0 +1,7 @@
+{
+ "api repos/ImranAdan/infra-fleet-public/actions/jobs/123120392489/logs": {
+  "exit": 1,
+  "stderr": "gh: Server Error (HTTP 410)\n",
+  "stdout": null
+ }
+}
