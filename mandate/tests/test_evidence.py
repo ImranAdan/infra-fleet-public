@@ -95,12 +95,13 @@ def log(base: str = BASE, merge: str = MERGE) -> str:
 
 
 def observations(*, head: str = HEAD, base: str = BASE, merge: str = MERGE, run_id: int = 7, attempt: int = 1,
-                 check_id: int = 70) -> dict[str, str]:
-    """REST path -> exact response text the capture reads for check run 70."""
+                 check_id: int = 70, job: int = 70, repo: str = REPO) -> dict[str, str]:
+    """REST path -> exact response text the capture reads for ``job``, a job
+    whose URL names check run ``check_id``."""
     return {
-        "actions/jobs/70": json.dumps({"id": 70, "run_id": run_id, "run_attempt": attempt, "head_sha": head,
-                                       "check_run_url": f"https://api.github.com/repos/{REPO}/check-runs/{check_id}"}),
-        "actions/jobs/70/logs": log(base, merge),
+        f"actions/jobs/{job}": json.dumps({"id": job, "run_id": run_id, "run_attempt": attempt, "head_sha": head,
+                                           "check_run_url": f"https://api.github.com/repos/{repo}/check-runs/{check_id}"}),
+        f"actions/jobs/{job}/logs": log(base, merge),
         f"git/commits/{merge}": json.dumps({"sha": merge, "parents": [{"sha": base}, {"sha": head}]}),
     }
 

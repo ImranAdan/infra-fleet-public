@@ -16,11 +16,9 @@ title = "Authorized routine change: a verified Dependabot patch bump of a pinned
 threat = "none: positive control"
 requirement = "a delegated change with proven facts and evidence authorizes"
 fixture = "routine_dependency_bump"
-expect = { "Dependabot provenance" = "version-only", "routine bump with intent evidence" = "AUTHORIZE", "same bump, intent evidence missing" = "VERIFY EVIDENCE_REQUIRED:intent-gate" }
+expect = { "Dependabot provenance" = "version-only", "routine bump with intent evidence" = "AUTHORIZE", "same bump, intent evidence missing" = "VERIFY EVIDENCE_REQUIRED:intent-gate", "the executor's wake" = "MERGED; merges 1; tokens 1", "the merge request" = "sha evaluated head, squash; read back merged", "release-please on the merge commit" = "LIFECYCLE_OK; notify no" }
 pending = [
   "fact extraction: permission, secret and trigger deltas proven from the diff (the fixture supplies them)",
-  "merge executor: merges at the evaluated head and reads the merge back",
-  "lifecycle verification: push workflows ran on the merge commit",
 ]
 live = "NOT RUN — gate not reached"
 
@@ -41,8 +39,7 @@ title = "Stale head: a push after AUTHORIZE, before merge"
 threat = "head drift"
 requirement = "no merge of an unevaluated head"
 fixture = "stale_head"
-expect = { "evidence from the evaluated head" = "VERIFY EVIDENCE_NOT_APPLICABLE:intent-gate", "the executor observed the push" = "BLOCK HEAD_CHANGED", "reconcile after the push" = "refused CONTRACT_ERROR", "old head's check after the push" = "failure CONTRACT_ERROR", "trailers for a decision on the new head" = "refused HEAD_CHANGED" }
-pending = ["merge executor: passes the evaluated head as the merge's expected SHA"]
+expect = { "evidence from the evaluated head" = "VERIFY EVIDENCE_NOT_APPLICABLE:intent-gate", "the executor observed the push" = "BLOCK HEAD_CHANGED", "the executor's wake after the push" = "HEAD_CHANGED; merges 0; tokens 1", "the executor's wake when GitHub refuses the expected SHA" = "NOT_MERGED; merges 0; tokens 1", "reconcile after the push" = "refused CONTRACT_ERROR", "old head's check after the push" = "failure CONTRACT_ERROR", "trailers for a decision on the new head" = "refused HEAD_CHANGED" }
 live = "NOT RUN — gate not reached"
 
 [[case]]
@@ -115,7 +112,12 @@ title = "Post-merge lifecycle failure: the release workflow is missing, late, du
 threat = "outcome correlation"
 requirement = "INCOMPLETE with LIFECYCLE_MISSING, owner notified, no automatic revert"
 fixture = "lifecycle_failure"
-pending = ["lifecycle verification: classifies configured GitHub follow-ups within a timeout"]
+note = "the plan's LIFECYCLE_MISSING is the obligation status `missing` in an INCOMPLETE entry; observe() says which writer notifies"
+expect = { "release missing at the deadline" = "INCOMPLETE (.github/workflows/release-please.yml: missing); notify yes", "the same breach observed again" = "no new entry; notify no", "release succeeds late" = "LIFECYCLE_OK; notify no", "after the merge, writes to GitHub" = "merges 1; tokens 1", "release ran on another commit" = "INCOMPLETE (.github/workflows/release-please.yml: missing); notify yes", "release still running at the deadline" = "UNKNOWN (.github/workflows/release-please.yml: pending); notify yes", "release duplicated: one failed, one succeeded" = "LIFECYCLE_OK; notify no", "runs unreadable" = "UNKNOWN; notify yes" }
+pending = [
+  "notification delivery: the owner receives the notice observe() claims",
+  "observer schedule: observe() runs on the provider's runs until the deadline",
+]
 live = "NOT RUN — gate not reached"
 
 [[case]]
@@ -125,8 +127,7 @@ title = "Concurrent workers on the same head"
 threat = "trigger disorder"
 requirement = "one decision ID, one recorded revision per observed tip, one merge"
 fixture = "concurrent_workers"
-expect = { "decision ID from two workers" = "same", "second worker records from the same tip" = "refused STALE_DECISION", "check after both reconcile" = "success AUTHORIZE (r1)" }
-pending = ["merge executor: one merge; the second worker's merge is a no-op"]
+expect = { "decision ID from two workers" = "same", "the worker that finished first" = "MERGED; merges 1; tokens 2", "the worker it overtook" = "ALREADY_MERGED; merges 1; tokens 2", "lifecycle plans for the merge" = "1", "second worker records from the same tip" = "refused STALE_DECISION", "check after both reconcile" = "success AUTHORIZE (r1)" }
 live = "NOT RUN — gate not reached"
 
 [[case]]
@@ -136,7 +137,8 @@ title = "Out-of-band merge by a bypass actor"
 threat = "ledger attack"
 requirement = "the ledger records UNMANAGED_MERGE"
 fixture = "unmanaged_merge"
-pending = ["unmanaged-merge detection: merges without a matching receipt are recorded"]
+expect = { "merged out of band, no trailers" = "UNMANAGED_MERGE; merges 0; tokens 0; plans 0", "trailers naming a recorded refusal" = "UNMANAGED_MERGE; merges 0; tokens 0; plans 0" }
+pending = ["unmanaged-merge recording: the executor detects and returns UNMANAGED_MERGE; nothing records it in the ledger yet"]
 live = "NOT RUN — gate not reached"
 
 [[case]]
@@ -166,8 +168,7 @@ title = "Base branch changes after AUTHORIZE"
 threat = "base drift"
 requirement = "no merge on the old decision; re-evaluate at the new base"
 fixture = "base_changed"
-expect = { "evidence from the old base" = "VERIFY EVIDENCE_NOT_APPLICABLE:intent-gate", "the executor observed the move" = "BLOCK BASE_CHANGED", "reconcile after the move" = "refused CONTRACT_ERROR", "check after the base moved" = "failure CONTRACT_ERROR", "trailers for a decision on the new base" = "refused BASE_CHANGED" }
-pending = ["merge executor: refuses to merge on a decision about another base"]
+expect = { "evidence from the old base" = "VERIFY EVIDENCE_NOT_APPLICABLE:intent-gate", "evidence whose tested base is unknown" = "VERIFY EVIDENCE_NOT_APPLICABLE:intent-gate", "the executor observed the move" = "BLOCK BASE_CHANGED", "the executor's wake after the move" = "BASE_CHANGED; merges 0; tokens 1", "reconcile after the move" = "refused CONTRACT_ERROR", "check after the base moved" = "failure CONTRACT_ERROR", "trailers for a decision on the new base" = "refused BASE_CHANGED" }
 live = "NOT RUN — gate not reached"
 
 [[case]]
@@ -225,8 +226,7 @@ title = "Ledger and anchors: middle deletion, tail truncation, full rewrite, key
 threat = "ledger attack"
 requirement = "tampering is detected while an anchor remains, and the limits are stated exactly otherwise"
 fixture = "ledger_anchors"
-expect = { "middle entry deleted" = "detected", "tail truncated behind an anchor" = "detected", "full rewrite" = "detected", "no anchor (key compromise)" = "no anchor: truncation, rewrite or forged appends (key compromise) in all 3 entries are not detectable with available anchor", "check run expired, merge anchor kept" = "0 entries visible after the last anchor: truncation, rewrite or forged appends (key compromise) after it are not detectable with available anchor", "merge trailers resolve to the ledger" = "resolve" }
-pending = ["merge executor: the merge method keeps the three trailers on the merge commit"]
+expect = { "middle entry deleted" = "detected", "tail truncated behind an anchor" = "detected", "full rewrite" = "detected", "no anchor (key compromise)" = "no anchor: truncation, rewrite or forged appends (key compromise) in all 3 entries are not detectable with available anchor", "check run expired, merge anchor kept" = "0 entries visible after the last anchor: truncation, rewrite or forged appends (key compromise) after it are not detectable with available anchor", "merge trailers resolve to the ledger" = "resolve", "the executor's merge commit" = "squash, 3 trailers, resolve" }
 live = "PASS for the ledger ref's integrity rules (https://github.com/ImranAdan/infra-fleet-public/actions/runs/39525358022); NOT RUN — gate not reached for merge trailers and default-branch protection"
 
 [[case]]
@@ -236,8 +236,7 @@ title = "Duplicate, missed or reordered wake"
 threat = "trigger disorder"
 requirement = "the scheduled reconcile converges on the newest revision, with one check and at most one merge"
 fixture = "wake_disorder"
-expect = { "check after a missed then a duplicate wake" = "failure ESCALATE (r2)", "check runs" = "1" }
-pending = ["merge executor: at most one merge across wakes"]
+expect = { "check after a missed then a duplicate wake" = "failure ESCALATE (r2)", "check runs" = "1", "executor wakes: merging, duplicate, late" = "MERGED; ALREADY_MERGED; ALREADY_MERGED; merges 1; tokens 1", "a worker died after the merge, before its plan" = "plans 0", "the next wake" = "ALREADY_MERGED; merges 1; tokens 1; plans 1" }
 live = "NOT RUN — gate not reached"
 
 [[case]]
@@ -247,7 +246,11 @@ title = "Owner break-glass merge while Mandate is unavailable"
 threat = "ledger attack"
 requirement = "the next run records UNMANAGED_MERGE from rule-suite or merge history"
 fixture = "break_glass_merge"
-pending = ["unmanaged-merge detection: as for the out-of-band merge"]
+expect = { "the next wake after the owner merged" = "UNMANAGED_MERGE; merges 0; tokens 0; plans 0" }
+pending = [
+  "unmanaged-merge recording: as for the out-of-band merge",
+  "merge history: merges no wake saw are found from rule suites or the branch history",
+]
 live = "NOT RUN — gate not reached"
 
 [[case]]
@@ -267,7 +270,8 @@ title = "The installation token expires between decision and merge"
 threat = "credential lifetime"
 requirement = "a fresh narrowed token, and the decision's subject revalidated"
 fixture = "token_expiry"
-pending = ["merge executor: mints a fresh narrowed token and revalidates the subject before merging"]
+expect = { "the token expired at the merge" = "MERGED; merges 1; tokens 2; receipts 2", "no token before AUTHORIZE" = "REFUSED ESCALATE; merges 0; tokens 0", "evidence changed while the token was minted" = "REFUSED ESCALATE; merges 0; tokens 1" }
+pending = ["token minting: a fresh installation token narrowed to the merge (the fixture's mint() is a fake; separate agent identity)"]
 
 [[case]]
 slug = "bypass-topology"

@@ -2,10 +2,11 @@
 
 Each row of acceptance.toml is one positive or adversarial case. Its fixture
 drives only the public Mandate boundary (shadow.findings, decide, delegation,
-evidence, receipt and ledger against the transport fakes) and returns what it
-observed, keyed by situation; the row holds the literal expected values. A
-decision reads "OUTCOME code ...", a check "conclusion title", a refusal
-"refused CODE".
+the evidence capture, receipt, ledger, executor and lifecycle against the
+provider and ledger fakes) and returns what it observed, keyed by situation;
+the row holds the literal expected values. A decision reads "OUTCOME code
+...", a check "conclusion title", a refusal "refused CODE", an executor wake
+"RESULT; merges n; tokens n". The fakes are never live evidence.
 
 A row is PASS when every value matches and nothing is pending, PARTIAL when
 every value matches but a behaviour it needs is not built yet, NOT BUILT when
@@ -36,20 +37,24 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent / "src"))
 sys.path.insert(0, str(HERE))
 
+import test_evidence as te  # noqa: E402
+import test_executor as tx  # noqa: E402
 import test_receipt as tr  # noqa: E402
 from test_ledger import REF, FakeGit, receipts  # noqa: E402
 
 from mandate import decision as m  # noqa: E402
 from mandate import delegation as d  # noqa: E402
 from mandate import evidence as e  # noqa: E402
+from mandate import executor as x  # noqa: E402
 from mandate import gate  # noqa: E402
 from mandate import ledger as l  # noqa: E402
+from mandate import lifecycle as lc  # noqa: E402
 from mandate import receipt as r  # noqa: E402
 from mandate import shadow  # noqa: E402
 
 MANIFEST = HERE / "acceptance.toml"
 REPO = "ImranAdan/infra-fleet-public"
-HEAD, BASE, OTHER = "a" * 40, "b" * 40, "c" * 40
+HEAD, BASE, OTHER, MERGE = "a" * 40, "b" * 40, "c" * 40, "e" * 40
 POLICY = f"{d.DELEGATION_REPOSITORY}@{'d' * 40}:repositories/infra-fleet-public.toml"
 NEW_POLICY = POLICY.replace("d" * 40, "f" * 40)
 INTENT, RUNTIME = "Intent gate / Declared intent", "Runtime acceptance"
@@ -94,18 +99,25 @@ def fixture(fn):
 
 def record(check: str = INTENT, conclusion: str | None = "success", *, workflow: str | None = None,
            event: str = "pull_request", head: str = HEAD, base: str = BASE, run_id: int = 7,
-           attempt: int = 1, app: int = e.ACTIONS_APP_ID, policy: str = POLICY) -> e.EvidenceRecord:
-    """One check run and the workflow run behind it, through the real
-    normalize(); its job's capture proved it compared ``head`` merged into ``base``."""
-    return e.normalize(
-        {"id": run_id * 10, "name": check, "head_sha": head, "conclusion": conclusion,
-         "app": {"id": app, "slug": "github-actions"}, "check_suite": {"id": run_id * 100}},
-        {"id": run_id, "run_attempt": attempt, "check_suite_id": run_id * 100,
-         "path": workflow or WORKFLOWS.get(check, ".github/workflows/other.yml"), "event": event,
-         "head_branch": "agent/x", "repository": {"full_name": REPO}},
-        e.Subject(REPO, head, base, policy),
-        e.Tested(base, "e" * 40, None),
-    )
+           attempt: int = 1, app: int = e.ACTIONS_APP_ID, policy: str = POLICY, repo: str = REPO,
+           logs: bool = True) -> e.EvidenceRecord:
+    """One check run and the workflow run behind it, through the real capture
+    and normalize(): its job compared ``head`` merged into ``base``. Without
+    ``logs`` the job log has expired."""
+    job = run_id * 10
+    check_run = {"id": job, "name": check, "head_sha": head, "conclusion": conclusion,
+                 "app": {"id": app, "slug": "github-actions"}, "check_suite": {"id": run_id * 100}}
+    run = {"id": run_id, "run_attempt": attempt, "check_suite_id": run_id * 100,
+           "path": workflow or WORKFLOWS.get(check, ".github/workflows/other.yml"), "event": event,
+           "head_branch": "agent/x", "repository": {"full_name": repo},
+           "referenced_workflows": [{"path": f"{repo}/.github/workflows/intent-gate-run.yml@{MERGE}", "sha": MERGE,
+                                     "ref": "refs/pull/7/merge"}]}
+    seen = te.observations(head=head, base=base, merge=MERGE, run_id=run_id, attempt=attempt, check_id=job,
+                           job=job, repo=repo)
+    if not logs:
+        del seen[f"actions/jobs/{job}/logs"]
+    tested = e.tested(check_run, run, seen.get, lambda sha: lambda path: f"# {path}\n")  # producer unchanged
+    return e.normalize(check_run, run, e.Subject(repo, head, base, policy), tested)
 
 
 GREEN = (record(),)
@@ -187,6 +199,53 @@ def shown(checks: tr.FakeChecks) -> str:
     return "; ".join(f"{c} {t}" for c, t in tr.visible(checks)) or "no check"
 
 
+# The receipt fixtures' delegation in enforce mode, with an agent, and with
+# release-please as an obligation of the routine classes.
+ENFORCED = d.parse(tx.LIVE.replace('id = "workflow-routine"', f'id = "workflow-routine"\nobligations = ["{tx.RELEASE}"]'),
+                   tr.REPO, tr.POLICY)
+
+
+def decided(found, facts=None):
+    """The executor's evaluate(): the receipt the real decide() gives for the
+    pull request as read, with its gate evidence captured for that head and base."""
+    def receipt(pr: dict, enforcement: str) -> dict:
+        subject = e.Subject(tr.REPO, pr["head"]["sha"], pr["base"]["sha"], tr.POLICY)
+        records = (record(head=subject.head_sha, base=subject.base_sha, policy=tr.POLICY, repo=tr.REPO),)
+        snapshot = m.DecisionInput(ENFORCED, subject, tuple(found), dict(NONE if facts is None else facts), records, ())
+        return r.build(m.decide(snapshot), 7, enforcement, versions=tr.VERSIONS, actors=tr.ACTORS,
+                       evaluated_at="2026-10-28T00:00:00Z")
+    return receipt
+
+
+PROSE = (("decision-record", "docs/decisions/0001-x.md"),)
+
+
+def wake(hub: tx.FakeGitHub, git: FakeGit, evaluator=None) -> str:
+    """One executor wake for PR 7 against the provider and ledger fakes."""
+    code, detail = x.execute(hub, hub.mint, git, tr.REPO, REF, tr.REPO, 7, ENFORCED, evaluator or decided(PROSE),
+                             lambda: tr.ENF)
+    return f"{code}{' ' + detail if code == 'REFUSED' else ''}; merges {len(hub.merges)}; tokens {hub.minted}"
+
+
+def lifecycle(git: FakeGit, runs, now: str) -> str:
+    """observe() the stored plan of the one merge: its new states and whether this call notifies."""
+    (stored,) = tx.plans(git).values()
+    before = len(stored["log"])
+    log, notify = lc.observe(git, tr.REPO, REF, stored["plan"], runs, now)
+    new = [entry["state"] + "".join(f" ({p}: {s})" for p, s in entry["obligations"].items() if s != "satisfied")
+           for entry in log[before:]]
+    return f"{', '.join(new) or 'no new entry'}; notify {'yes' if notify else 'no'}"
+
+
+def release(sha: str, conclusion: str | None = "success", run_id: int = 1, attempt: int = 1) -> dict:
+    """A release-please run as the REST API's actions/runs?head_sha= lists it."""
+    return {"id": run_id, "run_attempt": attempt, "path": tx.RELEASE, "head_sha": sha,
+            "status": "completed" if conclusion else "in_progress", "conclusion": conclusion}
+
+
+BEFORE, AFTER = "2026-10-29T12:30:00Z", "2026-10-29T13:00:00Z"  # tx.MERGED_AT + 30 minutes, + the window
+
+
 def live_receipts():
     """A fresh ledger and checks fake, and the reconcile call the publisher makes."""
     git, checks = FakeGit(), tr.FakeChecks()
@@ -203,10 +262,17 @@ def routine_dependency_bump():
               base=CHECKOUT, path=".github/workflows/ci.yml")
     commits = [{"author": "dependabot[bot]", "verified": True, "message": "update-type: version-update:semver-patch"}]
     failures = gate.dependabot_bump_failures("app/dependabot", "dependabot/github_actions/checkout", commits, bump[0])
+    hub, git = tx.FakeGitHub(), FakeGit()
+    merged = wake(hub, git, decided(classify(bump)))
+    sha = hub.pr["merge_commit_sha"]
     return {
         "Dependabot provenance": "; ".join(failures) or "version-only",
         "routine bump with intent evidence": decide(classify(bump)),
         "same bump, intent evidence missing": decide(classify(bump), ()),
+        "the executor's wake": merged,
+        "the merge request": f"sha {'evaluated head' if hub.merges[0]['sha'] == HEAD else 'other'}, "
+                             f"{hub.merges[0]['merge_method']}; read back {'merged' if hub.pr['merged'] else 'open'}",
+        "release-please on the merge commit": lifecycle(git, [release(sha)], BEFORE),
     }
 
 
@@ -232,9 +298,15 @@ def stale_head():
     moved = refusal(reconcile)
     old = tr.enforced(tr.decision())
     fresh = tr.enforced(tr.decision(subject=dataclasses.replace(tr.SUBJECT, head_sha=OTHER)))
+    pushed = tx.FakeGitHub()
+    pushed.on_read[2] = lambda pr: pr.update(head={"sha": OTHER})  # lands while the token is minted
+    stale = tx.FakeGitHub()
+    stale.refuse = [409]  # GitHub refuses a merge whose expected SHA is no longer the head
     return {
         "evidence from the evaluated head": decide(subject=dataclasses.replace(SUBJECT, head_sha=OTHER)),
         "the executor observed the push": decide(blocking=("HEAD_CHANGED",)),
+        "the executor's wake after the push": wake(pushed, FakeGit()),
+        "the executor's wake when GitHub refuses the expected SHA": wake(stale, FakeGit()),
         "reconcile after the push": moved,
         "old head's check after the push": shown(checks),
         "trailers for a decision on the new head": refusal(
@@ -322,7 +394,26 @@ def self_approval():
 
 @fixture
 def lifecycle_failure():
-    return {}
+    def merged():
+        hub, git = tx.FakeGitHub(), FakeGit()
+        wake(hub, git)
+        return hub, git, hub.pr["merge_commit_sha"]
+    seen = {}
+    hub, git, sha = merged()
+    seen["release missing at the deadline"] = lifecycle(git, [], AFTER)
+    seen["the same breach observed again"] = lifecycle(git, [], AFTER)
+    seen["release succeeds late"] = lifecycle(git, [release(sha)], AFTER)
+    seen["after the merge, writes to GitHub"] = f"merges {len(hub.merges)}; tokens {hub.minted}"  # no revert
+    _, git, sha = merged()
+    seen["release ran on another commit"] = lifecycle(git, [release(OTHER)], AFTER)
+    _, git, sha = merged()
+    seen["release still running at the deadline"] = lifecycle(git, [release(sha, None)], AFTER)
+    _, git, sha = merged()
+    seen["release duplicated: one failed, one succeeded"] = lifecycle(
+        git, [release(sha, "failure", run_id=1), release(sha, run_id=2)], BEFORE)
+    _, git, sha = merged()
+    seen["runs unreadable"] = lifecycle(git, None, BEFORE)
+    return seen
 
 
 @fixture
@@ -334,8 +425,15 @@ def concurrent_workers():
     second = tr.enforced(tr.decision())
     reconcile()
     reconcile()
+    hub, ledger = tx.FakeGitHub(), FakeGit()
+    inner = []
+    hub.on_read[2] = lambda pr: inner.append(wake(hub, ledger))  # a second worker runs to completion meanwhile
+    outer = wake(hub, ledger)
     return {
         "decision ID from two workers": "same" if first["decision_id"] == second["decision_id"] else "different",
+        "the worker that finished first": inner[0],
+        "the worker it overtook": outer,
+        "lifecycle plans for the merge": str(len(tx.plans(ledger))),
         "second worker records from the same tip": refusal(lambda: r.record(git, tr.REPO, REF, second, tr.DELEG, after=after)),
         "check after both reconcile": shown(checks),
     }
@@ -343,7 +441,18 @@ def concurrent_workers():
 
 @fixture
 def unmanaged_merge():
-    return {}
+    by_hand, git = tx.FakeGitHub(), FakeGit()
+    by_hand.pr.update(state="closed", merged=True, merge_commit_sha="d" * 40, merged_at=tx.MERGED_AT)
+    by_hand.messages["d" * 40] = "fix: merged by a bypass actor"
+    refused, ledger = tx.FakeGitHub(), FakeGit()
+    entry, chain, _ = r.record(ledger, tr.REPO, REF, tx.evaluate("ESCALATE")(refused.pr, tr.ENF), ENFORCED, after=None)
+    refused.pr.update(state="closed", merged=True, merge_commit_sha="d" * 40, merged_at=tx.MERGED_AT)
+    refused.messages["d" * 40] = "fix: merged\n\n" + "\n".join(
+        f"{k}: {v}" for k, v in zip(r.TRAILERS, (entry["decision_id"], entry["receipt_digest"], chain)))
+    return {
+        "merged out of band, no trailers": wake(by_hand, git) + f"; plans {len(tx.plans(git))}",
+        "trailers naming a recorded refusal": wake(refused, ledger) + f"; plans {len(tx.plans(ledger))}",
+    }
 
 
 @fixture
@@ -388,9 +497,13 @@ def base_changed():
     moved = refusal(reconcile)
     old = tr.enforced(tr.decision())
     fresh = tr.enforced(tr.decision(subject=dataclasses.replace(tr.SUBJECT, base_sha=OTHER)))
+    moved_hub = tx.FakeGitHub()
+    moved_hub.on_read[2] = lambda pr: pr.update(base={"sha": OTHER})
     return {
         "evidence from the old base": decide(subject=dataclasses.replace(SUBJECT, base_sha=OTHER)),
+        "evidence whose tested base is unknown": decide(records=(record(logs=False),)),
         "the executor observed the move": decide(blocking=("BASE_CHANGED",)),
+        "the executor's wake after the move": wake(moved_hub, FakeGit()),
         "reconcile after the move": moved,
         "check after the base moved": shown(checks),
         "trailers for a decision on the new base": refusal(
@@ -480,7 +593,13 @@ def ledger_anchors():
     message = "Merge pull request #7\n\n" + r.trailers(git, tr.REPO, REF, fresh["subject"], fresh, tr.DELEG, after=after)
     parsed = r.parse_trailers(message) or {}
     newest = l.read(git, tr.REPO, REF).text.splitlines()[-1]
+    hub, ledger = tx.FakeGitHub(), FakeGit()
+    wake(hub, ledger)
+    kept = r.parse_trailers(hub.messages[hub.pr["merge_commit_sha"]]) or {}
+    last = l.read(ledger, tr.REPO, REF).text.splitlines()[-1]
     return {
+        "the executor's merge commit": (f"{hub.merges[0]['merge_method']}, {len(kept)} trailers, "
+                                        + ("resolve" if kept and kept["Mandate-Chain-Head"] in last else "missing")),
         "middle entry deleted": audited(lines[0] + lines[2], [anchor(third)]),
         "tail truncated behind an anchor": audited("".join(lines[:2]), [anchor(third)]),
         "full rewrite": audited(rewritten.files(REF)[l.LEDGER].decode(), [anchor(first)]),
@@ -497,12 +616,32 @@ def wake_disorder():
     tr.put(git, tr.enforced(tr.decision("ESCALATE")), tr.DELEG)  # its wake was missed
     reconcile()  # the scheduled backstop
     reconcile()  # a duplicate wake
-    return {"check after a missed then a duplicate wake": shown(checks), "check runs": str(len(checks.runs))}
+    hub, ledger = tx.FakeGitHub(), FakeGit()
+    wakes = [wake(hub, ledger) for _ in range(3)]  # the merging wake, a duplicate and a late one
+    crashed, recovering = tx.FakeGitHub(), FakeGit()
+
+    def die():
+        raise tx.Crash
+    recovering.before_advance = lambda: setattr(recovering, "before_advance", die)  # dies after the merge, at the plan
+    try:
+        wake(crashed, recovering)
+    except tx.Crash:
+        pass
+    plans_after_crash = len(tx.plans(recovering))
+    return {
+        "check after a missed then a duplicate wake": shown(checks), "check runs": str(len(checks.runs)),
+        "executor wakes: merging, duplicate, late": "; ".join(w.split(";")[0] for w in wakes) + wakes[-1][wakes[-1].index(";"):],
+        "a worker died after the merge, before its plan": f"plans {plans_after_crash}",
+        "the next wake": wake(crashed, recovering) + f"; plans {len(tx.plans(recovering))}",
+    }
 
 
 @fixture
 def break_glass_merge():
-    return {}
+    hub, git = tx.FakeGitHub(), FakeGit()
+    hub.pr.update(state="closed", merged=True, merge_commit_sha="d" * 40, merged_at=tx.MERGED_AT)
+    hub.messages["d" * 40] = "fix: break-glass merge by the owner"
+    return {"the next wake after the owner merged": wake(hub, git) + f"; plans {len(tx.plans(git))}"}
 
 
 @fixture
@@ -516,7 +655,16 @@ def wrong_workflow_same_app():
 
 @fixture
 def token_expiry():
-    return {}
+    expired, git = tx.FakeGitHub(), FakeGit()
+    expired.refuse = [401]
+    outcomes = iter(["AUTHORIZE", "ESCALATE"])
+    lapsed = tx.FakeGitHub()
+    return {
+        "the token expired at the merge": wake(expired, git) + f"; receipts {len(tx.revisions(git))}",
+        "no token before AUTHORIZE": wake(tx.FakeGitHub(), FakeGit(), decided((("intent-policy", "intent/x.yaml"),))),
+        "evidence changed while the token was minted": wake(
+            lapsed, FakeGit(), lambda pr, enf: tx.evaluate(next(outcomes))(pr, enf)),
+    }
 
 
 @fixture

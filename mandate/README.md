@@ -555,14 +555,18 @@ its tests use canned workflow runs and the fake ledger.
 `mandate/tests/acceptance.toml` has one row per acceptance case, per attempt
 to hide an authority change from the classifier, and per regression found in
 review. `test_acceptance.py` runs each row's fixture through the public
-boundary (`shadow.findings()`, `decide()`, the delegation and evidence
-modules, and receipts and the ledger against the test fakes) and compares
-what it observed with the row's literal values:
+boundary and compares what it observed with the row's literal values. That
+boundary is `shadow.findings()`, `decide()`, the delegation module, evidence
+captured by `tested()`, and receipts, the ledger, the executor and lifecycle
+plans run against the test fakes. The fakes are FakeGit and the executor
+tests' GitHub pull request. They are never live evidence of a merge, a token,
+an identity or a notification.
 
 - **PASS:** every value matches and the case needs nothing unbuilt.
 - **PARTIAL:** every value matches, but the case also needs behaviour listed
-  under `pending` (the merge executor, lifecycle verification, fact
-  extraction, …). It never counts as a pass.
+  under `pending`, such as fact extraction, notification delivery, the
+  observer schedule, recording unmanaged merges, narrowed token minting or
+  the enforcement reader. It never counts as a pass.
 - **NOT BUILT:** nothing about the case is executable yet.
 - **FAIL:** a value differs.
 
