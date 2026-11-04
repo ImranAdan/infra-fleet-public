@@ -595,7 +595,7 @@ def main() -> int:
         **invented["decision"], "outcome": "AUTHORIZE", "reasons": [], "classes": ["invented-class"],
         "accepted": [{"requirement": "invented-evidence", "records": [{
             **proof(SUBJECT).to_dict(), "app_id": 0, "app_slug": None, "workflow": None,
-            "run_id": None, "repository": None, "base_sha": None}]}],
+            "run_id": None, "repository": None, "base_sha": None, "compared_sha": None, "unproven": "invented"}]}],
     }
     refused("CONTRACT_ERROR", put, FakeGit(), invented, DELEG)
     # ... each element alone: an undeclared class, a requirement the class
@@ -604,6 +604,10 @@ def main() -> int:
         ("classes", ["invented-class"]),
         ("accepted", [{"requirement": "invented-evidence", "records": [proof(SUBJECT).to_dict()]}]),
         ("accepted", [{"requirement": "intent-gate", "records": [{**proof(SUBJECT).to_dict(), "app_id": 0}]}]),
+        # ... or evidence whose capture is incomplete or says it proved nothing.
+        ("accepted", [{"requirement": "intent-gate", "records": [{**proof(SUBJECT).to_dict(), "compared_sha": None}]}]),
+        ("accepted", [{"requirement": "intent-gate", "records": [
+            {**proof(SUBJECT).to_dict(), "unproven": "capture did not prove a base"}]}]),
     ):
         tampered = enforced(decision())
         tampered["decision"] = {**tampered["decision"], field: value}
@@ -614,6 +618,15 @@ def main() -> int:
     l.append(planted_ok, REPO, REF, inv["decision_id"], "r1", l.canonical(inv), inv["subject_digest"], "AUTHORIZE", "t")
     refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_pl, planted_ok), REPO, REF, HEAD, app_id=APP, delegations=RESOLVE))
     assert all(c != "success" for c, _ in visible(ck_pl)), visible(ck_pl)
+    # So is a planted AUTHORIZE whose evidence declares an unproven capture.
+    planted_unproven, ck_pu = FakeGit(), FakeChecks()
+    pu = enforced(decision())
+    pu["decision"]["accepted"][0]["records"][0]["unproven"] = "capture did not prove a base"
+    pu["receipt_revision"] = "r1"
+    l.append(planted_unproven, REPO, REF, pu["decision_id"], "r1", l.canonical(pu), pu["subject_digest"], "AUTHORIZE", "t")
+    refused("LEDGER_INVALID", lambda: r.reconcile_check(both(ck_pu, planted_unproven), REPO, REF, HEAD, app_id=APP,
+                                                         delegations=RESOLVE))
+    assert all(c != "success" for c, _ in visible(ck_pu)), visible(ck_pu)
     # A receipt decided under another delegation than the one given is refused.
     other = d.parse((HERE.parent / "examples" / "infra-fleet-public.toml").read_text().replace(
         'repository = "ImranAdan/infra-fleet-public"', f'repository = "{REPO}"'), REPO, POLICY + "x")

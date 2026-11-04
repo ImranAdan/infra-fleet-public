@@ -7,6 +7,7 @@ live. The log lines copy the real runner's input echo of a gate run.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -25,6 +26,53 @@ SUBJECT = e.Subject(repository=REPO, head_sha=HEAD, base_sha=BASE, policy=POLICY
 INTENT = "Intent gate / Declared intent"
 CALLER, SHARED = ".github/workflows/intent-gate.yml", ".github/workflows/intent-gate-run.yml"
 OK = e.Tested(BASE, MERGE, None)
+ACTION = "ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@" + "7" * 40
+COMPARE = "Compare declared intent at base and merge result"
+# The gate's workflows as Fleet runs them (comments trimmed).
+CALLER_SOURCE = """name: Intent Gate
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  intent:
+    name: Intent gate
+    uses: ./.github/workflows/intent-gate-run.yml
+"""
+
+
+def shared_source(action: str = ACTION, name: str = COMPARE, extra: str = "") -> str:
+    return f"""name: Intent Gate (shared)
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  gate:
+    name: Declared intent
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the merge result with history
+        uses: actions/checkout@{"3" * 40} # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve the compared commits
+        id: commits
+        run: |
+          echo "base=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: {name}
+        uses: {action}
+        with:
+          base-sha: ${{{{ steps.commits.outputs.base }}}}
+          head-sha: ${{{{ steps.commits.outputs.head }}}}
+{extra}"""
+
+
+SHARED_SOURCE = shared_source()
 
 
 def run(
@@ -75,13 +123,12 @@ def check(
     }
 
 
-def log(base: str = BASE, merge: str = MERGE) -> str:
+def log(base: str = BASE, merge: str = MERGE, action: str = ACTION) -> str:
     """The runner's echo of the comparing step's inputs, as in a real gate job log."""
     return (
         "2026-10-28T21:45:44.1662541Z ##[group]Run echo \"base=$(git rev-parse HEAD^1)\" >> \"$GITHUB_OUTPUT\"\n"
         "2026-10-28T21:45:44.1701068Z ##[endgroup]\n"
-        "2026-10-28T21:45:44.1955212Z ##[group]Run ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate@"
-        + "7" * 40 + "\n"
+        f"2026-10-28T21:45:44.1955212Z ##[group]Run {action}\n"
         "2026-10-28T21:45:44.1955926Z with:\n"
         f"2026-10-28T21:45:44.1956250Z   base-sha: {base}\n"
         f"2026-10-28T21:45:44.1956686Z   head-sha: {merge}\n"
@@ -95,20 +142,24 @@ def log(base: str = BASE, merge: str = MERGE) -> str:
 
 
 def observations(*, head: str = HEAD, base: str = BASE, merge: str = MERGE, run_id: int = 7, attempt: int = 1,
-                 check_id: int = 70, job: int = 70, repo: str = REPO) -> dict[str, str]:
+                 check_id: int = 70, job: int = 70, repo: str = REPO, compare: str | None = "success") -> dict[str, str]:
     """REST path -> exact response text the capture reads for ``job``, a job
-    whose URL names check run ``check_id``."""
+    whose URL names check run ``check_id`` and whose comparing step concluded
+    ``compare`` (None: the job lists no such step)."""
+    steps = [{"number": 1, "name": "Set up job", "conclusion": "success"},
+             *([{"number": 4, "name": COMPARE, "conclusion": compare}] if compare else [])]
     return {
         f"actions/jobs/{job}": json.dumps({"id": job, "run_id": run_id, "run_attempt": attempt, "head_sha": head,
-                                           "check_run_url": f"https://api.github.com/repos/{repo}/check-runs/{check_id}"}),
+                                           "check_run_url": f"https://api.github.com/repos/{repo}/check-runs/{check_id}",
+                                           "steps": steps}),
         f"actions/jobs/{job}/logs": log(base, merge),
         f"git/commits/{merge}": json.dumps({"sha": merge, "parents": [{"sha": base}, {"sha": head}]}),
     }
 
 
-def sources(*shas: str, shared: str = "on: workflow_call\n") -> dict[tuple[str, str], str]:
+def sources(*shas: str, shared: str = SHARED_SOURCE) -> dict[tuple[str, str], str]:
     """(commit, path) -> the producer workflows' text at each commit."""
-    return {(sha, path): text for sha in shas for path, text in ((CALLER, "on: pull_request\n"), (SHARED, shared))}
+    return {(sha, path): text for sha in shas for path, text in ((CALLER, CALLER_SOURCE), (SHARED, shared))}
 
 
 def capture(responses=None, files=None, *, check_run=None, workflow_run=...) -> e.Tested:
@@ -154,6 +205,25 @@ def main() -> int:
             pass
         else:
             raise AssertionError(f"from_dict accepted {old}")
+    # A pull_request proof is whole or absent: a base with its compared merge
+    # and no reason, or neither with the reason. Nothing else can be built or
+    # read back, so no such record reaches evaluate() or a receipt.
+    unknown = e.normalize(check(), run(), SUBJECT, e.Tested(None, None, "job 70 is unavailable"))
+    assert e.EvidenceRecord.from_dict(json.loads(json.dumps(unknown.to_dict()))) == unknown
+    for name, change in (("no compared merge", {"compared_sha": None}),
+                         ("a declared failure", {"unproven": "capture did not prove a base"}),
+                         ("a merge without a base", {"base_sha": None}),
+                         ("an empty reason", {"base_sha": None, "compared_sha": None, "unproven": ""})):
+        for build in (lambda: e.EvidenceRecord.from_dict({**data, **change}),
+                      lambda: dataclasses.replace(good, **change),
+                      lambda: e.normalize(check(), run(), SUBJECT, e.Tested(*({**good.to_dict(), **change}[k] for k in (
+                          "base_sha", "compared_sha", "unproven"))))):
+            try:
+                build()
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"built a record with {name}")
     for version in (3, "2", True):
         try:
             e.EvidenceRecord.from_dict({**data, "version": version})
@@ -210,7 +280,10 @@ def main() -> int:
     one_merge = "run 7 records no single merge commit it ran from"
     not_merge = f"commit {MERGE} is not a merge of this head into a base"
     changed = f"producer {SHARED} differs from its version at the tested base"
-    no_echo = f"job 70 log does not show exactly one comparison of {BASE}...{MERGE}"
+    no_echo = f"job 70 log does not show exactly one comparison of {BASE}...{MERGE} by its comparing step"
+    in_step = no_echo
+    skipped = f"job 70 did not run its comparing step {COMPARE!r} to success"
+    unsupported = "run 7 producer has no single supported comparing step"
     unproven = {
         # missing or expired sources
         "no correlated run": (capture(workflow_run=None), "no workflow run correlates to check run 70"),
@@ -238,13 +311,37 @@ def main() -> int:
         "an octopus merge": (capture({**observations(), commit: json.dumps(
             {"sha": MERGE, "parents": [{"sha": BASE}, {"sha": HEAD}, {"sha": OTHER}]})}), not_merge),
         # misleading or spoofed context
-        "producer changed by the change": (capture(files=sources(BASE) | sources(MERGE, shared="on: push\n")), changed),
+        "producer changed by the change": (capture(files=sources(BASE) | sources(
+            MERGE, shared=SHARED_SOURCE.replace("HEAD^1", "HEAD~5"))), changed),
         "log names other commits": (capture({**observations(), logs: log(OTHER, MERGE)}), no_echo),
         "a forged echo beside the real one": (capture({**observations(), logs: log() + forged}), no_echo),
         "matching text, no input echo": (capture({**observations(), logs: f"BASE_SHA: {BASE}\nHEAD_SHA: {MERGE}\n"}),
                                          no_echo),
         "an echo with no run behind it": (capture(workflow_run={**run(), "referenced_workflows": None}), one_merge),
         "an unparseable job": (capture({**observations(), jobs: "<html>"}), "job 70 is unavailable"),
+        # The inputs count only inside the supported comparing step's own block.
+        "echo lines stripped of their step": (capture({**observations(), logs: "".join(
+            line + "\n" for line in log().splitlines() if "-sha: " in line and "_SHA" not in line)}), in_step),
+        "another action's block": (capture({**observations(), logs: log(action="example/unrelated-action@" + "7" * 40)}),
+                                   in_step),
+        "a block without its inputs": (capture({**observations(), logs: log().replace(" with:\n", " inputs:\n")}),
+                                       in_step),
+        "the comparing step skipped": (capture(observations(compare="skipped")), skipped),
+        "the comparing step absent from the job": (capture(observations(compare=None)), skipped),
+        # Contract v1 knows one comparing step: the Intent Gate action pinned by SHA.
+        "a producer with no supported step": (capture(files=sources(BASE, MERGE, shared=shared_source(
+            action="example/unrelated-action@" + "7" * 40))), unsupported),
+        "the action pinned by tag": (capture(files=sources(BASE, MERGE, shared=shared_source(
+            action=ACTION.split("@")[0] + "@v1"))), unsupported),
+        "two comparing steps": (capture(files=sources(BASE, MERGE, shared=shared_source(extra=f"""      - name: Again
+        uses: {ACTION}
+        with:
+          base-sha: x
+          head-sha: y
+"""))), unsupported),
+        "a comparing step without both inputs": (capture(files=sources(BASE, MERGE, shared=SHARED_SOURCE.replace(
+            "          head-sha: ${{ steps.commits.outputs.head }}\n", ""))), unsupported),
+        "an unparseable producer": (capture(files=sources(BASE, MERGE, shared="jobs: [\n")), unsupported),
     }
     for name, (got, why) in unproven.items():
         assert got == e.Tested(None, None, why), (name, got)

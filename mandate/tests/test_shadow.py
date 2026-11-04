@@ -15,6 +15,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent / "src"))
+sys.path.insert(0, str(HERE))
+
+import test_evidence as te  # noqa: E402
 
 from mandate import delegation as d  # noqa: E402
 from mandate import evidence as e  # noqa: E402
@@ -32,7 +35,7 @@ DELEGATION = d.parse(
 INTENT = "Intent gate / Declared intent"
 SHARED = ".github/workflows/intent-gate-run.yml"
 # The gate's workflows, unchanged between the base and the merge it ran from.
-PRODUCER = {(sha, path): f"# {path}\n" for sha in (BASE, MERGE) for path in (".github/workflows/intent-gate.yml", SHARED)}
+PRODUCER = te.sources(BASE, MERGE)
 
 
 def diff(*paths: str) -> str:
@@ -43,11 +46,11 @@ def diff(*paths: str) -> str:
 
 
 def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requested=None, merge_base=BASE,
-             logs: bool = True):
+             logs: bool = True, log: str | None = None):
     """Canned REST responses. ``files`` maps (ref, path) to text over the
     gate's own workflows; the server decodes a contents path, so ``%41`` names
     ``A``. ``requested`` collects each contents URL asked for. Without
-    ``logs`` the gate job's log has expired."""
+    ``logs`` the gate job's log has expired; ``log`` replaces its text."""
     check = {
         "id": 70,
         "name": INTENT,
@@ -70,11 +73,9 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requ
         ],
         "referenced_workflows": [{"path": f"{REPO}/{SHARED}@{MERGE}", "sha": MERGE, "ref": "refs/pull/1/merge"}],
     }
-    job = {"id": 70, "run_id": 7, "run_attempt": 1, "head_sha": head_check,
-           "check_run_url": f"https://api.github.com/repos/{REPO}/check-runs/70"}
-    log = (f"2026-10-28T21:45:44.1956250Z   base-sha: {BASE}\n"
-           f"2026-10-28T21:45:44.1956686Z   head-sha: {MERGE}\n")
-    commit = {"sha": MERGE, "parents": [{"sha": BASE}, {"sha": head_check}]}
+    seen = te.observations(head=head_check, base=BASE, merge=MERGE)
+    job, commit = seen["actions/jobs/70"], seen[f"git/commits/{MERGE}"]
+    log = seen["actions/jobs/70/logs"] if log is None else log
 
     def fake(*args: str) -> str:
         joined = " ".join(args)
@@ -89,9 +90,9 @@ def provider(paths: tuple[str, ...], *, head_check: str = HEAD, files=None, requ
                 raise subprocess.CalledProcessError(1, "gh")  # HTTP 410 once logs expire
             return log
         if joined.endswith("/actions/jobs/70"):
-            return json.dumps(job)
+            return job
         if joined.endswith(f"/git/commits/{MERGE}"):
-            return json.dumps(commit)
+            return commit
         if "/actions/runs" in joined:
             return json.dumps(run)
         if f"/compare/{BASE}...{HEAD}" in joined:
@@ -152,8 +153,11 @@ def main() -> int:
     assert (expired.outcome, [(r.code, r.detail) for r in expired.reasons]) == ("VERIFY", [(
         "EVIDENCE_NOT_APPLICABLE:intent-gate", "'Intent gate / Declared intent' check run 70 (run 7): "
         "tested base is unknown (job 70 log is unavailable, expired or missing)")]), expired.reasons
+    # Inputs echoed by another action's step prove nothing about the gate's.
+    other_step = decide(("docs/decisions/0009-x.md",), log=te.log(BASE, MERGE, action="example/unrelated-action@" + "7" * 40))
+    assert (other_step.outcome, codes(other_step)) == ("VERIFY", ["EVIDENCE_NOT_APPLICABLE:intent-gate"]), codes(other_step)
     # A change that edits the gate's own workflow ran that edit: unproven.
-    edited = decide(("docs/decisions/0009-x.md",), files={(MERGE, SHARED): "# skip the comparison\n"})
+    edited = decide(("docs/decisions/0009-x.md",), files={(MERGE, SHARED): te.SHARED_SOURCE.replace("HEAD^1", "HEAD~5")})
     assert (edited.outcome, codes(edited)) == ("VERIFY", ["EVIDENCE_NOT_APPLICABLE:intent-gate"]), codes(edited)
 
     # The engine, agent instructions and unknown files escalate whatever else is delegated.

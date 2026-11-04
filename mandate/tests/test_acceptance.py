@@ -102,8 +102,9 @@ def record(check: str = INTENT, conclusion: str | None = "success", *, workflow:
            attempt: int = 1, app: int = e.ACTIONS_APP_ID, policy: str = POLICY, repo: str = REPO,
            logs: bool = True) -> e.EvidenceRecord:
     """One check run and the workflow run behind it, through the real capture
-    and normalize(): its job compared ``head`` merged into ``base``. Without
-    ``logs`` the job log has expired."""
+    and normalize(): its job ran the gate's comparing step (contract v1 knows
+    no other) on ``head`` merged into ``base``. Without ``logs`` the job log
+    has expired."""
     job = run_id * 10
     check_run = {"id": job, "name": check, "head_sha": head, "conclusion": conclusion,
                  "app": {"id": app, "slug": "github-actions"}, "check_suite": {"id": run_id * 100}}
@@ -116,7 +117,8 @@ def record(check: str = INTENT, conclusion: str | None = "success", *, workflow:
                            job=job, repo=repo)
     if not logs:
         del seen[f"actions/jobs/{job}/logs"]
-    tested = e.tested(check_run, run, seen.get, lambda sha: lambda path: f"# {path}\n")  # producer unchanged
+    source = {".github/workflows/intent-gate-run.yml": te.SHARED_SOURCE}
+    tested = e.tested(check_run, run, seen.get, lambda sha: lambda path: source.get(path, te.CALLER_SOURCE))
     return e.normalize(check_run, run, e.Subject(repo, head, base, policy), tested)
 
 
