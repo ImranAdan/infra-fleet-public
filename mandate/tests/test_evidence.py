@@ -87,6 +87,10 @@ def log(base: str = BASE, merge: str = MERGE) -> str:
         f"2026-10-28T21:45:44.1956686Z   head-sha: {merge}\n"
         "2026-10-28T21:45:44.1957288Z   fleet-path: .\n"
         "2026-10-28T21:45:44.1957569Z ##[endgroup]\n"
+        # The action's own step then echoes its environment, uppercase.
+        "2026-10-28T21:45:47.2369224Z env:\n"
+        f"2026-10-28T21:45:47.2372245Z   BASE_SHA: {base}\n"
+        f"2026-10-28T21:45:47.2372584Z   HEAD_SHA: {merge}\n"
     )
 
 
@@ -230,6 +234,8 @@ def main() -> int:
             {"sha": MERGE, "parents": [{"sha": BASE}, {"sha": OTHER}]})}), not_merge),
         "not a merge": (capture({**observations(), commit: json.dumps({"sha": MERGE, "parents": [{"sha": BASE}]})}),
                         not_merge),
+        "an octopus merge": (capture({**observations(), commit: json.dumps(
+            {"sha": MERGE, "parents": [{"sha": BASE}, {"sha": HEAD}, {"sha": OTHER}]})}), not_merge),
         # misleading or spoofed context
         "producer changed by the change": (capture(files=sources(BASE) | sources(MERGE, shared="on: push\n")), changed),
         "log names other commits": (capture({**observations(), logs: log(OTHER, MERGE)}), no_echo),
@@ -241,6 +247,10 @@ def main() -> int:
     }
     for name, (got, why) in unproven.items():
         assert got == e.Tested(None, None, why), (name, got)
+    # Output that quotes an echo mid-line is not an echo: it neither proves
+    # nor clouds the comparison.
+    quoted = f"2026-10-28T21:45:50.0000000Z said 2026-10-28T21:45:44.1956250Z   base-sha: {OTHER}\n"
+    assert capture({**observations(), logs: log() + quoted}) == OK
 
     # Applicability: right producer, wrong subject.
     for stale in (

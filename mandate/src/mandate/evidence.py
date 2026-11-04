@@ -173,7 +173,7 @@ def tested(
     merge = merges.pop()
     commit = _json(get(f"git/commits/{merge}"))
     parents = [p.get("sha") for p in commit.get("parents") or [] if isinstance(p, dict)]
-    if commit.get("sha") != merge or len(parents) != 2 or parents[1] != head:
+    if len(parents) != 2 or parents[1] != head:
         return Tested(None, None, f"commit {merge} is not a merge of this head into a base")
     base = parents[0]
     producer = [str(run.get("path")).split("@", 1)[0]]
