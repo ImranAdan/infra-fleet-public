@@ -1,0 +1,4 @@
+intent-gate check run 123120392489, as recorded: read back: base 308ca0ad49ac3e66350812e115cbfeaa308ce0b4, compared 5941be3cc0a16796d34a67c09ecf4b389da3d681, unproven None
+intent-gate check run 123120392489, compared merge removed: read back: base 308ca0ad49ac3e66350812e115cbfeaa308ce0b4, compared None, unproven None
+intent-gate check run 123120392489, capture declared unproven: read back: base 308ca0ad49ac3e66350812e115cbfeaa308ce0b4, compared 5941be3cc0a16796d34a67c09ecf4b389da3d681, unproven capture did not prove a base
+intent-gate check run 123120392489, base removed: read back: base None, compared 5941be3cc0a16796d34a67c09ecf4b389da3d681, unproven None

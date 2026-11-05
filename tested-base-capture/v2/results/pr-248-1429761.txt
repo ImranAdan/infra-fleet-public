@@ -1,0 +1,4 @@
+{"check": "Intent gate / Declared intent", "conclusion": "success", "check_run_id": 120751463225, "run_id": 40053587651, "run_attempt": 1, "workflow": ".github/workflows/intent-gate.yml", "head_sha": "e5dc09b273702d309d60f67f0ffc91f9153cc6bc", "base_sha": "9da742b3017d1a8f20fce0c872de251ed4b4d6a0", "compared_sha": "e4ff523a113bd048a4a97279bf3a0e4e4fc27bed", "unproven": null}
+subject e5dc09b273702d309d60f67f0ffc91f9153cc6bc b6a59be8546adc97eac0bfee39d902f6671e6d19
+intent-gate: (('EVIDENCE_NOT_APPLICABLE:intent-gate', "'Intent gate / Declared intent' check run 120751463225 (run 40053587651) is about another BASE"),)
+intent-gate-retargeted: (('EVIDENCE_REQUIRED:intent-gate-retargeted', "no current 'Intent gate (retargeted) / Declared intent' from its producer"),)

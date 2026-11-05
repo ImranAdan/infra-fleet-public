@@ -4,6 +4,8 @@ Latest: [export v2 / report revision v3](historical-replay/v2/README.md), publis
 
 Tested-base capture v1 (2026-11-04): [real Intent Gate observations proving the base and synthetic merge each gate run compared](tested-base-capture/v1/README.md), with missing, mixed and spoofed variants. It is separate from the replay exports, whose bytes are unchanged.
 
+Tested-base capture v2 (2026-11-05): [the corrected contract replayed on v1's recordings](tested-base-capture/v2/README.md). Review found two limits in v1: inputs were not bound to the comparing step, and records with an incomplete capture proof could be read back. Both are fixed at engine `1429761`, and v1's bytes are unchanged.
+
 ## Interpretation correction — 2026-10-29
 
 The zero-unsafe count is not a measured substantive safety rate. All 29 Fleet rows refusing intent-gate evidence in export v2 have unknown normalized run bases; 13 overlap its 27 historical authority-tagged rows. The reports' legacy `authority_evaluable` denominator means configured authority-tagged rows, not complete evidence observability. Advisor's missing delegation remains N/A coverage. Live captures must establish the actual tested subject; an open-PR association alone does not establish it. See the v2 README for the pinned primary source, same-data controlled comparison and remaining code-review limitation.
