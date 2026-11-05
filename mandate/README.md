@@ -65,7 +65,10 @@ suite, workflow run and attempt, App), the workflow path and event, and the
 exact subject: repository, head, base and delegation source. `to_dict` /
 `from_dict` round-trip it for receipts, and only at record version 2: a
 version 1 record took its base from the run's pull request association and is
-refused, never read as a captured one.
+refused, never read as a captured one. A record's proof is whole or absent:
+a base, its `compared_sha` and no `unproven` reason, or neither, with the
+reason. Any other shape cannot be built or read back, so it can never
+satisfy evidence or appear in a receipt, and a receipt carrying one is refused.
 
 **The tested base.** A record's base is the one its producer actually
 compared, proven by `tested()` (capture contract v1), never the run's pull
@@ -86,10 +89,14 @@ every step is required:
 3. That commit's parents are a base and the check's head.
 4. The producer's workflows there are byte-identical to the base's, so the
    change did not edit what ran.
-5. The job log's runner echo of the comparing step's inputs (`base-sha`,
-   `head-sha` under `with:`) names that base and merge, once each. Matching
-   text anywhere else proves nothing, and an extra echo makes the log
-   ambiguous.
+5. Those workflows hold exactly one supported comparing step: the Intent
+   Gate action (`ImranAdan/infra-fleet-advisor-public/.github/actions/intent-gate`)
+   pinned to a full commit SHA and given both `base-sha` and `head-sha`. The
+   job's own steps list that step by name, concluded `success`.
+6. The job log opens that step's block exactly once (`##[group]Run <its
+   uses>`), and the block's `with:` echo names that base and merge, once
+   each. Inputs echoed anywhere else, or under another action's block, prove
+   nothing, and any extra echo makes the log ambiguous.
 
 If any step fails, `base_sha` and `compared_sha` are `None` and `unproven`
 says why, for example `job <id> log is unavailable, expired or missing` once

@@ -32,6 +32,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields
 from typing import Any, NamedTuple
 
+import yaml
+
 from mandate.delegation import Delegation
 
 VERSION = 2  # 2: base_sha is the captured tested base, never the PR association
@@ -40,10 +42,16 @@ ACTIONS_APP_ID = 15368
 SUCCESS = "success"
 CAPTURE_VERSION = 1
 MERGE_REF = re.compile(r"refs/pull/\d+/merge")
-# The runner echoes a step's `with:` inputs before the step runs. ponytail:
-# contract v1 knows one comparing step, the Intent Gate action's, whose
-# inputs are these; another producer needs its own contract version.
-ECHO = re.compile(r"\d{4}-\d\d-\d\dT[\d:.]+Z   (base|head)-sha: (.*)")
+# ponytail: contract v1 knows one comparing step, the Intent Gate action
+# pinned to a commit, given these two inputs; another producer needs its own
+# contract version.
+SUPPORTED = re.compile(r"ImranAdan/infra-fleet-advisor-public/\.github/actions/intent-gate@[0-9a-f]{40}")
+INPUTS = {"base-sha", "head-sha"}
+# A job log line: the runner's timestamp, then the text. The runner opens an
+# action step with "##[group]Run <uses>" and echoes its `with:` inputs
+# before it runs.
+STAMP = re.compile(r"\d{4}-\d\d-\d\dT[\d:.]+Z (.*)")
+ECHO = re.compile(r"  (base|head)-sha: (.*)")
 
 
 @dataclass(frozen=True)
@@ -78,6 +86,14 @@ class EvidenceRecord:
     policy: str
     started_at: str | None
     completed_at: str | None
+
+    def __post_init__(self) -> None:
+        """A proof is whole or absent: a base with the merge it was compared
+        in and no reason, or neither, with the reason. Nothing else can be
+        built or read back, so no other shape reaches evaluate() or a receipt."""
+        whole = self.base_sha is not None and self.compared_sha is not None and self.unproven is None
+        if not whole and not (self.base_sha is None and self.compared_sha is None and self.unproven):
+            raise ValueError(f"evidence record {self.check_run_id} has an incomplete capture proof")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -129,6 +145,19 @@ def _json(text: str | None) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _comparing(sources: list[str]) -> list[dict]:
+    """The supported comparing steps in the producer's workflow sources."""
+    found = []
+    for text in sources:
+        try:
+            jobs = (yaml.safe_load(text) or {}).get("jobs") or {}
+            found += [step for job in jobs.values() for step in job.get("steps") or []
+                      if isinstance(step, dict) and SUPPORTED.fullmatch(str(step.get("uses")))]
+        except (yaml.YAMLError, AttributeError, TypeError):
+            return []
+    return found
+
+
 def tested(
     check_run: dict,
     workflow_run: dict | None,
@@ -149,9 +178,12 @@ def tested(
     3. That commit merges the check's head (second parent) into a base.
     4. The producer's workflows there are the base's own, so the change did
        not edit what ran.
-    5. The job log's runner echo of the comparing step's inputs names that
-       base and merge, once each. Matching text anywhere else counts for
-       nothing, and an extra echo makes the log ambiguous.
+    5. Those workflows hold exactly one supported comparing step, given both
+       inputs, and the job ran that step, by its name, to success.
+    6. The job log opens that step's block once ("##[group]Run <its uses>")
+       and its `with:` echo names that base and merge, once each. Inputs
+       echoed anywhere else, or by another action, count for nothing, and
+       any extra echo makes the log ambiguous.
     """
     check_id, head = check_run["id"], check_run["head_sha"]
     run = _run(check_run, workflow_run)
@@ -178,16 +210,31 @@ def tested(
     base = parents[0]
     producer = [str(run.get("path")).split("@", 1)[0]]
     producer += [str(w["path"]).removeprefix(f"{repository}/").split("@", 1)[0] for w in refs]
+    sources = []
     for path in producer:
         ran = read_at(merge)(path)
         if ran is None or ran != read_at(base)(path):
             return Tested(None, None, f"producer {path} differs from its version at the tested base")
+        sources.append(ran)
+    steps = _comparing(sources)
+    if len(steps) != 1 or not (isinstance(steps[0].get("with"), dict) and INPUTS <= set(steps[0]["with"])):
+        return Tested(None, None, f"run {run.get('id')} producer has no single supported comparing step")
+    uses = steps[0]["uses"]
+    name = steps[0].get("name") or f"Run {uses}"
+    if [s.get("conclusion") for s in job.get("steps") or [] if isinstance(s, dict) and s.get("name") == name] != ["success"]:
+        return Tested(None, None, f"job {check_id} did not run its comparing step {name!r} to success")
     log = get(f"actions/jobs/{check_id}/logs")
     if log is None:
         return Tested(None, None, f"job {check_id} log is unavailable, expired or missing")
-    echoed = sorted(m.groups() for m in map(ECHO.fullmatch, log.splitlines()) if m)
-    if echoed != [("base", base), ("head", merge)]:
-        return Tested(None, None, f"job {check_id} log does not show exactly one comparison of {base}...{merge}")
+    texts = [m.group(1) for m in map(STAMP.fullmatch, log.splitlines()) if m]
+    opened = [i for i, text in enumerate(texts) if text == f"##[group]Run {uses}"]
+    block = texts[opened[0] + 1:] if len(opened) == 1 else []
+    block = block[:block.index("##[endgroup]")] if "##[endgroup]" in block else []
+    inside = sorted(m.groups() for m in map(ECHO.fullmatch, block[1:]) if m) if block[:1] == ["with:"] else []
+    anywhere = sorted(m.groups() for m in map(ECHO.fullmatch, texts) if m)
+    if inside != [("base", base), ("head", merge)] or anywhere != inside:
+        return Tested(None, None,
+                      f"job {check_id} log does not show exactly one comparison of {base}...{merge} by its comparing step")
     return Tested(base, merge, None)
 
 

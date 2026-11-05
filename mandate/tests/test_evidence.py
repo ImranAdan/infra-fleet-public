@@ -326,6 +326,13 @@ def main() -> int:
                                    in_step),
         "a block without its inputs": (capture({**observations(), logs: log().replace(" with:\n", " inputs:\n")}),
                                        in_step),
+        "the comparing block opened twice": (capture({**observations(), logs: log() + f"2026-10-28T21:45:50.0000000Z "
+                                                      f"##[group]Run {ACTION}\n"}), in_step),
+        "inputs echoed after the block closed": (capture({**observations(), logs: "".join(
+            line + "\n" for line in log().splitlines() if "-sha: " not in line) + "".join(
+            line + "\n" for line in log().splitlines() if "-sha: " in line and "_SHA" not in line)}), in_step),
+        "a block never closed": (capture({**observations(), logs: log().replace(" ##[endgroup]\n", " (closed)\n")}),
+                                 in_step),
         "the comparing step skipped": (capture(observations(compare="skipped")), skipped),
         "the comparing step absent from the job": (capture(observations(compare=None)), skipped),
         # Contract v1 knows one comparing step: the Intent Gate action pinned by SHA.
